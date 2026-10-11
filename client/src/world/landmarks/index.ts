@@ -21,6 +21,8 @@ export interface LandmarkSeat {
   pos: Vec2; face: number; y: number; prop: SeatProp;
   /** Put a (mock) laptop on the table in front of whoever sits here. */
   laptop?: boolean;
+  /** Inside a building: only for the player, and only from inside. */
+  indoor?: boolean;
 }
 
 export interface LandmarkBuild {
@@ -32,6 +34,8 @@ export interface LandmarkBuild {
   /** Furniture you can't walk through but can jump on (local, axis-aligned). */
   solids?: { x: number; z: number; hx: number; hz: number; top: number }[];
   update?(dt: number, t: number): void;
+  /** Raised ground the player walks on (stairs, a floor up a storey), local. */
+  groundAt?(local: Vec2): number;
   /** Something nice happened in the village (a reaction, a zap). */
   pulse?(): void;
   /** Where the landmark's resident stands, local space, facing +z. */
@@ -68,7 +72,7 @@ export interface LandmarkDef {
 
 /** In priority order: earlier ones pick their slot first. */
 export const LANDMARKS: LandmarkDef[] = [
-  { id: 'lacrypta', want: { x: 3.5, z: 5.5 }, minSize: 3, forward: 0.55, footprint: { minX: -1.5, maxX: 1.5, minZ: -2.15, maxZ: 0.15 }, lawn: { along: 3.4, across: 2.1 }, build: buildLaCryptaHouse },
+  { id: 'lacrypta', want: { x: 3.5, z: 5.5 }, minSize: 3, forward: 0.55, footprint: { minX: -2.55, maxX: 1.5, minZ: -2.15, maxZ: 0.15 }, lawn: { along: 3.4, across: 2.6 }, build: buildLaCryptaHouse },
   { id: 'nostrwot', want: 'plaza', minSize: 3, forward: 0.2, footprint: { minX: -1.4, maxX: 1.4, minZ: -2.05, maxZ: 0.1 }, lawn: { along: 2.6, across: 1.8 }, build: buildNostrWotHq },
   { id: 'coffee', want: { x: -6.5, z: 1 }, minSize: 2, forward: 0.25, footprint: { minX: -1.3, maxX: 1.3, minZ: -1.75, maxZ: 0.1 }, lawn: { along: 2.4, across: 1.6 }, build: buildCoffeeShop },
   { id: 'parrilla', want: { x: -7, z: 5.5 }, minSize: 2, forward: 0.1, footprint: { minX: -1.0, maxX: 1.0, minZ: -1.55, maxZ: -0.95 }, lawn: { along: 2.2, across: 1.6 }, build: buildParrilla },

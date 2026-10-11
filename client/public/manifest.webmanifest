@@ -2,10 +2,10 @@
   "name": "Obelisk Sky",
   "short_name": "Sky",
   "description": "The Obelisk village: walk to a channel and talk there.",
-  "start_url": "/",
+  "start_url": "/app",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#cfeaff",
+  "theme_color": "#cfeaff",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -20,16 +20,16 @@
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "src": "/brand/sky-mark-flat.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }

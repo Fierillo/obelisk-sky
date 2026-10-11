@@ -22,6 +22,20 @@ describe('landmark slots', () => {
   it('respects each landmark minimum size', () => {
     for (const d of LANDMARKS) expect(held.get(d.id)!.w).toBeGreaterThanOrEqual(d.minSize);
   });
+  it("keeps La Crypta's wide footprint (the left wing) clear of every other slot", () => {
+    const d = LANDMARKS.find((x) => x.id === 'lacrypta')!;
+    const s = held.get('lacrypta')!;
+    const c = Math.cos(s.rot), sn = Math.sin(s.rot);
+    const f = d.footprint;
+    const corners = [[f.minX, f.minZ], [f.maxX, f.minZ], [f.minX, f.maxZ], [f.maxX, f.maxZ]].map(([x, z]) => ({
+      x: s.pos.x + sn * d.forward + x * c + z * sn, z: s.pos.z + c * d.forward - x * sn + z * c,
+    }));
+    for (const o of plan.slots) {
+      if (o.index === s.index) continue;
+      // Corners stay out of the other slot's building square, with room to walk.
+      for (const p of corners) expect(Math.max(Math.abs(p.x - o.pos.x), Math.abs(p.z - o.pos.z))).toBeGreaterThan(o.w / 2 + 0.3);
+    }
+  });
 });
 
 describe('the HQ graph grows like the animated logo', () => {

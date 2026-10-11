@@ -38,7 +38,7 @@ interface ConvoSpot { center: Vec2; groupId: string; members: string[]; fire: TH
 
 interface Effect { obj: THREE.Object3D; age: number; life: number; tick: (e: Effect, dt: number) => void }
 
-export interface Seat { pos: Vec2; face: number; y: number; taken: string | null; dynamic?: boolean; prop?: SeatProp; landmark?: LandmarkId; laptop?: boolean }
+export interface Seat { pos: Vec2; face: number; y: number; taken: string | null; dynamic?: boolean; prop?: SeatProp; landmark?: LandmarkId; laptop?: boolean; indoor?: boolean }
 
 /** A place to train in the sports park (see districts.ts CALISTHENICS_STATIONS). */
 export interface Station { pos: Vec2; face: number; grip: number; half?: number; kinds: ExerciseKind[]; taken: string | null }
@@ -71,6 +71,9 @@ const FLOWERS = ['nature/flower_redA', 'nature/flower_yellowA', 'nature/flower_p
 const BUSHES = ['nature/plant_bush', 'nature/plant_bushLarge', 'nature/plant_bushDetailed', 'nature/plant_bushSmall'];
 const GRASS = ['nature/grass', 'nature/grass_large', 'nature/grass_leafs'];
 const ROCKS = ['nature/rock_largeA', 'nature/rock_largeB', 'nature/rock_tallA', 'nature/rock_smallA', 'nature/rock_smallB', 'nature/stone_smallA'];
+
+/** Height of `personAnchor` above the ground a person stands on. */
+export const ANCHOR_Y = 0.5;
 
 export class World {
   readonly renderer: THREE.WebGLRenderer;
@@ -190,6 +193,7 @@ export class World {
       for (const [id, i] of order) this.slotOf.set(id, i);
     }
     if (!this.built) {
+      this.buildGround();
       this.buildStatic();
       this.built = true;
     }
@@ -356,11 +360,18 @@ export class World {
     for (const [i, o] of this.slotDecor) o.visible = !used.has(i);
   }
 
+  /** The bare island (ground, river, mountains, waterfall): procedural, no
+   *  models, so the loading screen can show it from above while they load. */
+  buildGround(): void {
+    if (this.island) return;
+    const footprints = this.plan.slots.map((s) => ({ pos: s.pos, r: s.w * 0.8 + 0.4 }));
+    this.island = buildIsland(this.plan, footprints);
+    this.staticRoot.add(this.island.group);
+  }
+
+  /** Everything on the island that comes from models. Needs buildGround(). */
   private buildStatic(): void {
     const plan = this.plan;
-    const footprints = plan.slots.map((s) => ({ pos: s.pos, r: s.w * 0.8 + 0.4 }));
-    this.island = buildIsland(plan, footprints);
-    this.staticRoot.add(this.island.group);
 
     // Bridges where the paths will cross the river.
     const rp = this.island.riverPts;
@@ -501,7 +512,7 @@ export class World {
         this.solids.push({ minX: c.x - hx, maxX: c.x + hx, minZ: c.z - hz, maxZ: c.z + hz, top: so.top });
       }
       for (const seat of b.seats ?? []) {
-        this.seats.push({ pos: this.landmarkToWorld(s, d.forward, seat.pos), face: seat.face + s.rot, y: seat.y, taken: null, prop: seat.prop, landmark: d.id, laptop: seat.laptop });
+        this.seats.push({ pos: this.landmarkToWorld(s, d.forward, seat.pos), face: seat.face + s.rot, y: seat.y, taken: null, prop: seat.prop, landmark: d.id, laptop: seat.laptop, indoor: seat.indoor });
       }
     }
   }
@@ -526,14 +537,32 @@ export class World {
     return false;
   }
 
-  /** Doors open for the player; the building you're in shows its inside. */
+  /** How high the ground is at p: raised where a landmark has stairs or a
+   *  floor up a storey (La Crypta's steps and living room), else 0. */
+  groundAt(p: Vec2): number {
+    let h = 0;
+    for (const [id, b] of this.landmarks) {
+      if (!b.groundAt) continue;
+      const l = this.toLandmarkLocal(id, p);
+      if (l) h = Math.max(h, b.groundAt(l));
+    }
+    return h;
+  }
+
+  /** Doors open for the player and for people walking live from another
+   *  browser; the building you're in shows its inside. */
   private updateInteriors(): void {
     const me = this.playerPk ? this.people.get(this.playerPk) : null;
+    const walkers = [me, ...[...this.movers.keys()].map((pk) => this.people.get(pk))].filter((c): c is Character => !!c);
     for (const [id, b] of this.landmarks) {
       const it = b.interior;
       if (!it) continue;
       const l = me ? this.toLandmarkLocal(id, me.pos) : null;
-      const d = l ? Math.hypot(l.x - it.door.x, l.z - it.door.z) : 99;
+      let d = 99;
+      for (const c of walkers) {
+        const w = this.toLandmarkLocal(id, c.pos);
+        if (w) d = Math.min(d, Math.hypot(w.x - it.door.x, w.z - it.door.z));
+      }
       it.setDoor(THREE.MathUtils.clamp((1.3 - d) / 0.5, 0, 1));
       const r = it.rooms[0];
       // The cutaway is for the follow camera; in first person the room stays whole.
@@ -1432,7 +1461,7 @@ export class World {
     }
     // Some sit down with a mate for a while.
     if (roll > 0.88) {
-      const seat = this.nearestFreeSeat(c.pos, 9);
+      const seat = this.nearestFreeSeat(c.pos, 9, true);
       if (seat) {
         this.reserve(c.pk, seat);
         this.walkTo(c, seat.pos, {
@@ -1562,10 +1591,13 @@ export class World {
 
   private seatedUntil = new Map<string, number>();
 
-  nearestFreeSeat(p: Vec2, within: number): Seat | null {
+  nearestFreeSeat(p: Vec2, within: number, npc = false): Seat | null {
     let best: Seat | null = null;
+    const inside = !npc && this.insideWalkable(p);
     for (const s of this.seats) {
       if (s.taken) continue;
+      // Sofas indoors are for players, and only offered from inside the room.
+      if (s.indoor && !inside) continue;
       const d = dist(s.pos, p);
       // A landmark's tables stand on its terrace, which you can't walk onto:
       // they count as near from the path in front.
@@ -1929,7 +1961,12 @@ export class World {
     const go = () => {
       const ch = this.people.get(pk);
       if (!ch) return;
-      const path = dist(ch.pos, target) > 0.05 ? this.grid.findPath(ch.pos, target) : null;
+      const far = dist(ch.pos, target) > 0.05;
+      let path = far ? this.grid.findPath(ch.pos, target) : null;
+      // Inside a building the grid stops at its door (it ends on the nearest
+      // cell it knows): walk the rest straight in, or straight out of the room.
+      if (far && this.insideWalkable(target) && !this.grid.isWalkable(target)) path = [...(path ?? []), target];
+      else if (far && !path && this.insideWalkable(ch.pos)) path = [target];
       if (path) ch.walk(path, m.run);
       else ch.halt();
     };
@@ -2048,7 +2085,9 @@ export class World {
   personAnchor(pk: string): () => THREE.Vector3 | null {
     return () => {
       const c = this.people.get(pk);
-      return c ? c.root.position.clone().setY(0.5) : null;
+      // Half a metre above the floor under them (raised floors, upstairs). Not
+      // groundY: your own character's height arrives through drive() instead.
+      return c ? c.root.position.clone().setY(this.groundAt(c.pos) + ANCHOR_Y) : null;
     };
   }
 
@@ -2093,6 +2132,8 @@ export class World {
       else if (c.opacity === 0) { this.blinks.delete(pk); then(); }
     }
     for (const c of this.people.values()) {
+      // The viewer's own height comes with drive(); seats carry their own height.
+      c.groundY = c.external || this.seatOf.has(c.pk) ? 0 : this.groundAt(c.pos);
       c.update(dt);
       if (!this.residents.has(c.pk)) this.idleLife(c, dt);
     }
@@ -2105,6 +2146,7 @@ export class World {
       if (e.age >= e.life) this.effects = this.effects.filter((x) => x !== e);
     }
     this.cam.update(dt);
+    this.post.setTiltAmount(this.cam.introProgress);
     this.overlay.update();
     this.post.render(dt);
     return dt;

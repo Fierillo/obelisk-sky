@@ -6,6 +6,13 @@
   --white: #fafafa;
   --muted: #a3a3a3;
   --glass: rgba(16, 16, 20, 0.62);
+  /* Sky's own palette (the cloud with the Obelisk): loading, gate, brand pill, landing page. */
+  --sky-top: #8fd3ff;
+  --sky: #cfeaff;
+  --cloud: #ffffff;
+  --ink: #0f2a44;
+  --ink-muted: #4b6a88;
+  --cloud-glass: rgba(255, 255, 255, 0.72);
   /* Obelisk's type: Inter, and the system mono (the app never loads a webfont mono). */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: 'Inter', system-ui, -apple-system, sans-serif;
@@ -74,9 +81,9 @@ button { font: inherit; color: inherit; }
 /* ── chrome ──────────────────────────────────────────────── */
 .top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 14px 16px; pointer-events: none; }
 .top > * { pointer-events: auto; }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--white); text-decoration: none; font: 500 15px var(--sans); background: var(--glass); backdrop-filter: blur(10px); padding: 7px 14px 7px 10px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.08); }
-.brand svg { width: 22px; height: 22px; color: var(--green); }
-.brand b { color: var(--green); font-weight: 600; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--ink); text-decoration: none; font: 500 15px var(--sans); background: var(--cloud-glass); backdrop-filter: blur(10px); padding: 5px 14px 5px 8px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.6); box-shadow: 0 4px 14px rgba(15, 42, 68, 0.12); }
+.brand-mark { width: 28px; height: 28px; display: block; }
+.brand b { color: #3f7f12; font-weight: 700; }
 .status { display: flex; align-items: center; gap: 8px; background: var(--glass); backdrop-filter: blur(10px); padding: 7px 8px 7px 12px; border-radius: 999px; font: 500 11.5px var(--mono); letter-spacing: 0.04em; border: 1px solid rgba(255, 255, 255, 0.08); min-height: 34px; }
 .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .status[data-mode='live'] .dot { background: #ff4b4b; animation: blink 1.4s infinite; }
@@ -131,18 +138,51 @@ button { font: inherit; color: inherit; }
 .controls button.on { border-color: rgba(180, 249, 83, 0.7); color: var(--green); }
 .controls svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* The app's RehydratingScreen: black, a faint 60px grid, the lime spinner. */
-.loading { position: absolute; inset: 0; display: grid; place-items: center; z-index: 10; transition: opacity 0.8s;
-  background-color: var(--black);
-  background-image: linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 60px 60px; }
+/* Loading: sky, drifting clouds, the island seen from above (ui/loading.ts),
+   then the real island behind the same view as it builds. */
+.loading { position: absolute; inset: 0; z-index: 10; overflow: hidden; transition: opacity 0.8s, background-color 0.9s;
+  background: linear-gradient(180deg, var(--sky-top), var(--sky) 70%, #eef8ff); }
+.loading.world { background: transparent; }
+/* The village's own UI waits for the island, then fades in. */
+#app > .top, #app > .bottom, #app > .gate, #app > .feed, #app > #overlay { transition: opacity 0.8s; }
+#app.booting > .top, #app.booting > .bottom, #app.booting > .gate, #app.booting > .feed, #app.booting > #overlay { opacity: 0; pointer-events: none; }
 .loading.done { opacity: 0; pointer-events: none; }
-.loading-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.lc-spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: lc-spin 0.8s linear infinite; }
-@keyframes lc-spin { to { transform: rotate(360deg); } }
-.loading-title { font: 400 14px var(--sans); color: var(--muted); }
-.loading-bar { width: 160px; height: 2px; border-radius: 2px; background: var(--border); overflow: hidden; }
-#loading-fill { height: 100%; width: 0; background: var(--green); transition: width 0.2s; }
+.loading-map { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity 0.9s; }
+.loading.world .loading-map { opacity: 0; }
+.lm-shadow { fill: rgba(15, 42, 68, 0.14); }
+.lm-ground { fill: #8ccf6c; stroke: #c9b07a; stroke-width: 0.35; }
+.lm-mountain { fill: #6f9a5a; }
+.lm-river { fill: none; stroke: #4fb6e8; stroke-linecap: round; stroke-linejoin: round; }
+.lm-pond { fill: #4fb6e8; }
+.lm-plaza { fill: #e9e1cc; }
+.lm-obelisk { fill: var(--green); }
+.lm-icons > * { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.lm-trees { fill: #3f8a4a; }
+.lm-houses { fill: #f6efe2; stroke: #b5543c; stroke-width: 0.25; }
+.lm-people { fill: var(--ink); }
+.loading[data-stage="1"] .lm-trees > *, .loading[data-stage="2"] .lm-trees > *, .loading[data-stage="3"] .lm-trees > *,
+.loading[data-stage="2"] .lm-houses > *, .loading[data-stage="3"] .lm-houses > *,
+.loading[data-stage="3"] .lm-people > * { animation: lm-pop 0.45s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--i) * 45ms); }
+@keyframes lm-pop { from { opacity: 0; transform: scale(0.2); } to { opacity: 1; transform: none; } }
+.loading-clouds i { position: absolute; width: 180px; height: 60px; border-radius: 60px; background: rgba(255, 255, 255, 0.85); filter: blur(2px); animation: drift 28s linear infinite; }
+.loading-clouds i::before, .loading-clouds i::after { content: ''; position: absolute; background: inherit; border-radius: 50%; }
+.loading-clouds i::before { width: 80px; height: 80px; left: 26px; top: -40px; }
+.loading-clouds i::after { width: 100px; height: 100px; left: 70px; top: -56px; }
+.loading-clouds i:nth-child(1) { top: 14%; animation-duration: 34s; animation-delay: -6s; }
+.loading-clouds i:nth-child(2) { top: 38%; transform: scale(0.7); animation-duration: 26s; animation-delay: -18s; opacity: 0.8; }
+.loading-clouds i:nth-child(3) { top: 66%; animation-duration: 40s; animation-delay: -30s; }
+.loading-clouds i:nth-child(4) { top: 84%; animation-duration: 30s; animation-delay: -12s; opacity: 0.7; }
+@keyframes drift { from { left: -240px; } to { left: 100%; } }
+.loading.world .loading-clouds { opacity: 0.55; transition: opacity 0.9s; }
+.loading-inner { position: absolute; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px 10px 12px; border-radius: 999px; background: var(--cloud-glass); backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(15, 42, 68, 0.16); white-space: nowrap; }
+.loading-mark { width: 34px; height: 34px; animation: bob 2.4s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-3px); } }
+.loading-title { font: 600 14px var(--sans); color: var(--ink); min-width: 190px; }
+.loading-bar { width: 110px; height: 4px; border-radius: 4px; background: rgba(63, 127, 18, 0.18); overflow: hidden; }
+#loading-fill { height: 100%; width: 0; border-radius: 4px; background: var(--green); transition: width 0.3s; }
+@media (max-width: 480px) { .loading-title { min-width: 0; font-size: 13px; } .loading-bar { width: 70px; } }
+@media (prefers-reduced-motion: reduce) { .loading-clouds i, .loading-mark, .lm-icons > * { animation: none !important; opacity: 1; } }
 @keyframes float { 50% { transform: translateY(-8px); } }
 
 .wipe { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity 0.35s; }
@@ -171,10 +211,11 @@ button { font: inherit; color: inherit; }
 .account-name { font: 600 12.5px var(--sans); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gate { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 5; }
 .gate[hidden] { display: none; }
-.gate-card { pointer-events: auto; text-align: center; background: rgba(16, 16, 20, 0.82); backdrop-filter: blur(14px); border: 1px solid var(--border); border-radius: 18px; padding: 26px 30px; max-width: min(380px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); }
-.gate-mark { width: 54px; height: 54px; color: var(--green); }
+.gate-card { pointer-events: auto; text-align: center; color: var(--ink); background: rgba(255, 255, 255, 0.84); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 22px; padding: 26px 30px; max-width: min(380px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(15, 42, 68, 0.28); }
+.gate-mark { width: 72px; height: 72px; }
 .gate-title { font: 800 22px var(--sans); letter-spacing: -0.01em; margin: 6px 0 8px; }
-.gate-text { font-size: 14px; line-height: 1.5; color: var(--white); opacity: 0.9; }
+.gate-text { font-size: 14px; line-height: 1.5; color: var(--ink-muted); }
+.gate-card .account-btn.primary { color: var(--ink); }
 .login-host { position: relative; z-index: 20; }
 @media (max-width: 720px) { .account-name { max-width: 90px; } }
 

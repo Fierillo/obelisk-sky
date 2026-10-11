@@ -12,7 +12,7 @@
     "assets": "node scripts/copy-assets.mjs",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "vendor": "bash scripts/vendor-obelisk.sh && node scripts/copy-brand.mjs"
+    "vendor": "bash scripts/vendor-obelisk.sh && node scripts/copy-brand.mjs && node scripts/make-icons.mjs"
   },
   "dependencies": {
     "@nostr-wot/blossom": "^0.2.0",

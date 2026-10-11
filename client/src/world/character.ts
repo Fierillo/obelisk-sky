@@ -164,6 +164,9 @@ export class Character {
   private lookKey = '';
   /** Height of your feet (viewer-driven only): a jump, or standing on a bench. */
   jumpY = 0;
+  /** Raised ground under someone the world walks (stairs, a floor up a
+   *  storey); the viewer's comes with jumpY instead. Set by world.ts. */
+  groundY = 0;
   /** In the air (viewer-driven): standing on a bench isn't. */
   private driveAirborne = false;
   private airborne = false;
@@ -461,7 +464,7 @@ export class Character {
 
     // Lift (balloon arrivals) eases down.
     if (this.lift > 0) this.lift = Math.max(0, this.lift - dt * 1.6);
-    this.root.position.y = this.lift + this.seatY + this.jumpY;
+    this.root.position.y = this.lift + this.seatY + this.jumpY + this.groundY;
 
     // Ground speed, measured (works for paths and for the viewer's controller).
     const flat = this.tmp.set(this.root.position.x - this.lastPos.x, 0, this.root.position.z - this.lastPos.z);

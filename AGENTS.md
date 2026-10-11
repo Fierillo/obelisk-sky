@@ -9,7 +9,7 @@ This is the one instruction file for every agent here; `CLAUDE.md` only imports 
 - **Three.js 0.180 + Vite 7 + TypeScript**, no framework for the world UI (plain DOM in `client/src/ui/`). React only for islands that re-host obelisk-dex components (login modal, chat message bodies).
 - **Relays:** `@nostr-wot/relay/hub` RelayHub, set up like obelisk-dex's page hub. Signers from `@nostr-wot/signers`, profiles from `@nostr-wot/data`, login widget `@nostr-wot/ui`.
 - **Vitest** (+ jsdom and Testing Library for the React islands).
-- **Server:** `server/index.ts` is a tiny Node HTTP server. It serves `dist/client`, `/healthz`, and `/api/link-preview` (the vendored obelisk-dex OpenGraph unfurler, with its SSRF guards). Nothing else; never add relay access or keys to it.
+- **Server:** `server/index.ts` is a tiny Node HTTP server. It serves `dist/client` (the landing page at `/`, the village at `/app`; old `/?relay=` and `/?time=` links get a 302 to `/app`), `/healthz`, and `/api/link-preview` (the vendored obelisk-dex OpenGraph unfurler, with its SSRF guards). Nothing else; never add relay access or keys to it.
 
 ## Commands
 
@@ -20,20 +20,23 @@ npx tsc -p tsconfig.json                        # typecheck (vite build does NOT
 npm test                                        # vitest run
 npm run build                                   # client to dist/client, server to dist/server.js
 pm2 restart obelisk-sky                         # deploy: the live site serves this directory's dist on :3024
-npm run vendor                                  # re-snapshot obelisk-dex src (see below), then copy-brand
+npm run vendor                                  # re-snapshot obelisk-dex src (see below), then copy-brand and make-icons
+node scripts/make-icons.mjs                     # favicon.ico, icon-192/512, maskable, apple-touch from brand/sky-mark-flat.svg
 node scripts/build-people.mjs                   # rebuild character assets from _dl/quaternius
 node scripts/make-og.mjs <1200x630.png>         # redraw the link-preview card client/public/og.jpg
 ```
 
-Deploy = `npm run build && pm2 restart obelisk-sky`, then check through the tunnel: `/`, `/healthz`, the main `assets/index-*.js`, and any new asset you added (`curl -I https://sky.obelisk.ar/...`). Run typecheck and the full test suite before every deploy.
+Deploy = `npm run build && pm2 restart obelisk-sky`, then check through the tunnel: `/`, `/app`, `/healthz`, the village's `assets/app-*.js`, and any new asset you added (`curl -I https://sky.obelisk.ar/...`). Run typecheck and the full test suite before every deploy.
 
 ## Layout
 
 ```
 client/
-  index.html            page, OG/Twitter tags, icons
-  public/               served as-is: models/ (Kenney town+nature, pets, people/), brand/, og.jpg, icons
-  src/main.ts           wiring: session, feed, world, chat, voice, games, prefs, keyboard
+  index.html            the landing page at / (English inline; src/landing/ swaps to Spanish)
+  app/index.html        the village at /app: OG/Twitter tags, header, gate, loading screen
+  public/               served as-is: models/ (Kenney town+nature, pets, people/), brand/ (sky-mark.svg, sky-mark-flat.svg), landing/, og.jpg, icons
+  src/main.ts           wiring: session, feed, world, chat, voice, games, prefs, keyboard, boot order
+  src/landing/          the landing page: copy.ts (en/es words), landing.ts (language switch), landing.css
   src/world/            the 3D world
     world.ts              the World: island, buildings, people, seats, stations, landmarks, frame loop
     layout.ts             pure planning: island plan, slots, NavGrid (CELL 0.5), river, millSite, bridges
@@ -42,16 +45,16 @@ client/
     landmarks/            La Crypta, nostr-wot HQ, café, parrilla (registry in index.ts)
     anim/exercises.ts     calisthenics clips built from poses at runtime (hands posed for each grip)
     districts.ts          track, calisthenics park + stations, arcade, mate/cup/choripán/laptop props
-    mill.ts, obelisk.ts, lacrypta.ts, pet.ts, post.ts (post-processing), cameraman.ts, overlay.ts
+    mill.ts, obelisk.ts, lacrypta.ts (+ lacryptaInterior.ts, its living room), pet.ts, post.ts (post-processing), cameraman.ts, overlay.ts
   src/people/people.ts  Quaternius humanoids: bodies, outfits, hair, recolouring, defaultLook/parseLook
   src/player/           PlayerController (walk/run/jump, solids, interiors), input (double-tap run)
   src/nostr/            hub, session, feed/state, publish, readstate, avatars, profileStore, themes,
                         activity (live sitting/training), motion (live movement)
   src/chat/             React island rendering obelisk-dex's message components
-  src/ui/               chat panel, creator (+ lookPreview, its 3D stage), settings, relay modal, controls guide, content (bubbles)
+  src/ui/               chat panel, creator (+ lookPreview, its 3D stage), settings, relay modal, controls guide, content (bubbles), loading (top-down map)
   src/shims/            replacements for obelisk-dex modules (the seam, see below)
 server/                 static server + link preview
-scripts/                vendor, copy-brand, copy-assets, build-people, make-og
+scripts/                vendor, copy-brand, make-icons, copy-assets, build-people, make-og
 vendor/obelisk/         pinned snapshot of obelisk-dex src (COMMIT file says which), aliased as @/
 _dl/                    downloaded source packs (Kenney, Quaternius zips), not served
 ```
@@ -61,7 +64,8 @@ _dl/                    downloaded source packs (Kenney, Quaternius zips), not s
 Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and tsconfig `paths`). Modules that would reach the app's bridge, next-intl or Next routing are swapped by `SHIMS` in `client/vite.config.ts`, mirrored in `tsconfig.json` `paths` (`next-intl`, `@/i18n/navigation`, `@/hooks/session/useSession`, clipboard, blossom, `@/services/nostr-bridge`, `@/services/wot/engine`, the media library modal). `vitest.config.ts` uses the same `SHIMS`.
 
 - Re-vendor deliberately (`npm run vendor`), never by editing files under `vendor/`. After re-vendoring, re-run typecheck and tests: shims may need new exports.
-- `scripts/copy-brand.mjs` generates `client/src/obelisk.generated.css` from the vendored `globals.css` (Tailwind v4 `@source` globs for the components sky renders). Do not edit the generated file.
+- Sky has its own mark (a white cloud with the Obelisk rising out of it, `client/public/brand/sky-mark*.svg`) and palette (`--sky`, `--cloud`, `--ink` in `styles.css`; the landing page and the loading screen, gate and brand pill use it, the in-app panels stay dark). `copy-brand.mjs` no longer copies obelisk-dex's icons; `make-icons.mjs` draws sky's.
+- `scripts/copy-brand.mjs` copies `obelisk.stl`, writes the manifest (`start_url: /app`) and generates `client/src/obelisk.generated.css` from the vendored `globals.css` (Tailwind v4 `@source` globs for the components sky renders). Do not edit the generated file.
 - Wire formats must match obelisk-dex exactly (kind 9 tags, reactions, deletions, read-state kind 30078 `obelisk:readstate:v1`, games kind 2390).
 - Sky-only events:
   - kind 30078 `obelisk:avatar3d:v1`: your look (avatar v2 `{look,...}`; v1 still parses).
@@ -72,8 +76,10 @@ Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and ts
 
 ## World rules that are easy to break
 
+- **Boot and intro** (`main.ts` boot block). `world.buildGround()` (procedural island, no models) and `cam.holdTopDown()` come first, and a preview loop renders that straight-down view behind `ui/loading.ts`'s SVG map (same framing: `topDownHeight` / `mapViewBox`, world −z up). Then the models load and `setGroups([])` builds the props, then the people. At `ready` the loading screen fades and `cam.playIntro()` swings down to your character or the home view. While the intro runs the camera bypasses OrbitControls and ignores director cuts. Any input or a `flyTo` finishes it quickly, and `Post.holdLevel` keeps "auto" quality from dropping during loading. Tilt-shift follows `cam.introProgress`.
 - **Walking.** The NavGrid (0.5 cells) is for residents' pathfinding and coarse blocking. Fine collision is `world.solids` (axis-aligned boxes with a top): furniture you bump into but can jump onto (`top` low), posts you can't (`top` high). Don't use `blockAround` for small props; it blocks whole cells and makes invisible walls.
-- **Buildings you can enter** (HQ, café) keep their footprint blocked on the grid; the player may additionally walk their `interior.rooms` (`world.insideWalkable`). Doors open by distance; the follow camera gets a cutaway (roof hidden, walls see-through), first person does not.
+- **Raised ground** (La Crypta's steps, mound and floor a storey up) is a landmark's `groundAt` (local, a smooth ramp with no ledges), read through `world.groundAt`. The player controller stands on it (`floorAt`, a step down sticks to the slope); everyone else the world walks gets it as `Character.groundY` each frame (not while seated: seat heights are absolute; not the viewer: their `jumpY` already has it). Motion events carry no height: every screen derives it from the position.
+- **Buildings you can enter** (HQ, café, La Crypta up its steps) keep their footprint blocked on the grid; the player may additionally walk their `interior.rooms` (`world.insideWalkable`). Doors open by distance to the player or a live mover; a mover inside has no grid path and walks straight. The follow camera gets a cutaway (roof hidden, walls see-through), first person does not. Indoor seats (`LandmarkSeat.indoor`, La Crypta's sofas) are for players only, offered from inside; NPCs never pick them (`nearestFreeSeat(…, npc)`), a live claim still can.
 - **Landmarks** reserve slots before channels are assigned (`landmarks/index.ts` `LANDMARKS`, `reserveLandmarkSlots`). Each declares its real `footprint` and an optional `lawn` kept free of plaza lamps.
 - **Characters.** When the world places someone (seat, station), call `resetDrive()` so a stale run or jump state doesn't override the pose. Seats put the person `SIT_SEAT_HEIGHT` below the seat. The badge and speech bubbles follow the head bone.
 - **Live activities and movement.** People steered from another browser are *pinned* (`World.pinned`): `idleLife` and the Director's walks, conversations and despawns leave them alone.

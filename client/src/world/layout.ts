@@ -143,6 +143,16 @@ export function planIsland(seed = 7): IslandPlan {
   };
 }
 
+/** The island's rim as a closed polygon (seen from above), from the same
+ *  radius function the ground is built with. */
+export function islandOutline(plan: IslandPlan, steps = 96): Vec2[] {
+  return Array.from({ length: steps }, (_, i) => {
+    const th = (i / steps) * Math.PI * 2;
+    const r = plan.radiusAt(th);
+    return { x: Math.cos(th) * r, z: Math.sin(th) * r };
+  });
+}
+
 /** Busiest channel gets slot 0 (nearest the plaza). Ties by id for stability. */
 export function assignSlots(groupIds: string[], activity: Map<string, number>, slotCount: number): Map<string, number> {
   const order = [...groupIds].sort((a, b) => (activity.get(b) ?? 0) - (activity.get(a) ?? 0) || a.localeCompare(b));

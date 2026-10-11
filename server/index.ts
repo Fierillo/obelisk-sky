@@ -3,7 +3,8 @@
 // v2 has no relay connection and no keys on the server: the browser logs in
 // with the user's own signer and talks to the relay itself.
 //
-//   GET /                  built client (dist/client)
+//   GET /                  landing page (dist/client/index.html)
+//   GET /app               the village (dist/client/app/index.html); old /?relay= links redirect here
 //   GET /healthz           JSON status
 //   GET /api/link-preview  OpenGraph unfurl for chat links (server/linkPreview.ts)
 
@@ -58,10 +59,20 @@ export function resolveStatic(pathname: string): { file: string; rel: string } |
     return null;
   }
   if (rel === '/' || rel === '') rel = '/index.html';
+  if (rel === '/app' || rel === '/app/') rel = '/app/index.html';
   let file = join(STATIC_DIR, rel);
   if (!file.startsWith(STATIC_DIR)) return null;
-  if (!existsSync(file) || statSync(file).isDirectory()) file = join(STATIC_DIR, 'index.html');
+  // Unknown paths: the village under /app, the landing page elsewhere.
+  if (!existsSync(file) || statSync(file).isDirectory()) file = join(STATIC_DIR, rel.startsWith('/app/') ? 'app/index.html' : 'index.html');
   return { file, rel };
+}
+
+/** Links shared before the landing page existed (`/?relay=…`, `/?time=…`)
+ *  opened the village: send them to /app with the same query. */
+export function redirectFor(pathname: string, search: string): string | null {
+  if (pathname !== '/' || !search) return null;
+  const q = new URLSearchParams(search);
+  return q.has('relay') || q.has('time') ? `/app${search}` : null;
 }
 
 function serveStatic(req: IncomingMessage, res: ServerResponse, pathname: string): void {
@@ -82,7 +93,7 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, pathname: string
 const server = createServer((req, res) => {
   const url = new URL(req.url || '/', 'http://x');
   if (url.pathname === '/healthz') {
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, built: existsSync(join(STATIC_DIR, 'index.html')) }));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, built: existsSync(join(STATIC_DIR, 'index.html')) && existsSync(join(STATIC_DIR, 'app', 'index.html')) }));
     return;
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
@@ -90,6 +101,8 @@ const server = createServer((req, res) => {
     handleLinkPreview(req, res, url).catch(() => { if (!res.headersSent) res.writeHead(500).end(); });
     return;
   }
+  const to = redirectFor(url.pathname, url.search);
+  if (to) { res.writeHead(302, { location: to, 'cache-control': 'no-cache' }).end(); return; }
   serveStatic(req, res, url.pathname);
 });
 

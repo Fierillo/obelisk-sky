@@ -20,9 +20,7 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   group.name = 'island';
   const water: THREE.ShaderMaterial[] = [];
 
-  // Smooth the river polyline once; everything else samples this.
-  const curve = new THREE.CatmullRomCurve3(plan.river.map((p) => new THREE.Vector3(p.x, 0, p.z)), false, 'catmullrom', 0.4);
-  const riverPts = curve.getSpacedPoints(120).map((v) => ({ x: v.x, z: v.z }));
+  const riverPts = smoothRiver(plan);
 
   group.add(buildTop(plan, riverPts, footprints));
   group.add(buildSkirt(plan));
@@ -51,6 +49,13 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   group.add(buildWaterfall(fallTop, dir, plan.riverWidth, fmat));
 
   return { group, water, riverPts, fallTop, fallDir: dir };
+}
+
+/** The river polyline, smoothed once; the ground, the water and the loading
+ *  screen's map all sample this. */
+export function smoothRiver(plan: IslandPlan, points = 120): Vec2[] {
+  const curve = new THREE.CatmullRomCurve3(plan.river.map((p) => new THREE.Vector3(p.x, 0, p.z)), false, 'catmullrom', 0.4);
+  return curve.getSpacedPoints(points).map((v) => ({ x: v.x, z: v.z }));
 }
 
 // ── top surface ─────────────────────────────────────────────────────────

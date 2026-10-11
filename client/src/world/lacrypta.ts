@@ -5,17 +5,107 @@
 // tall grey stone base under the left bay; the wooden arched door half a
 // storey up on the right, reached by stone steps that curve down a grassy
 // mound to the street, with a fairy-light rail and a round shrub by the door.
-// La Crypta's arched, striped logo on the stone base is backlit; the orange
-// "{(₿)}" sits on the lawn; red and violet uplights at night. No front fence.
+// La Crypta's arched, striped logo high on the stone base is backlit; a
+// white glowing ball with the gold ₿ sits on the lawn; red and violet
+// uplights at night. No front fence.
+//
+// On the left, set back behind the front, the older wing on flat ground: a
+// wooden arched garage door in stone, a band of leaded windows that glow
+// orange at night, a wooden balcony under a tiled hip roof.
+//
+// You can walk up the steps and in: the door swings open on the living
+// room (lacryptaInterior.ts), the fireplace under the neon ₿.
 //
 // Local space: the facade is the plane z = 0 facing +z; the house is behind
 // it, the mound and stairs in front of it.
 
 import * as THREE from 'three';
 import { grassDetailTexture } from './island';
+import type { LandmarkBuild, LocalRect } from './landmarks';
+import type { Vec2 } from './layout';
+import { buildLivingRoom } from './lacryptaInterior';
 
 const flat = (color: number, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
   new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9, ...extra });
+
+// The house's measures (also used by the walkable ground below).
+const W = 2.9;            // facade width: two bays
+const bay = W / 2;
+const D = 2.1;            // depth behind the facade
+const T = 0.07;           // wall thickness
+const lift = 0.7;         // the raised ground floor (top of the stone base)
+const eaves = lift + 2.0; // where the gables start
+const rise = 1.15;        // gable height
+const ceil = lift + 1.25; // the living room's ceiling
+const L = -bay / 2, R = bay / 2; // bay centres
+const doorX = R - 0.25;
+const DOOR_W = 0.48, DOOR_H = 0.85;
+const moundDepth = 2.0;
+const moundX0 = -W / 2, moundX1 = W / 2 + 0.3;
+/** The older wing on the left: flush with nothing, set back from the front. */
+const WING_W = 1.05, WING_Z = -0.35;
+
+/** The living room, inside the walls. */
+const ROOM: LocalRect = { minX: -W / 2 + T, maxX: W / 2 - T, minZ: -D + T, maxZ: -T };
+/** The landing in front of the door and the doorway through the front wall. */
+const LANDING: LocalRect = { minX: doorX - 0.35, maxX: doorX + 0.35, minZ: -T - 0.02, maxZ: 0.42 };
+
+/** The grassy mound: highest under the door, falling to the street and to the
+ *  left, both side edges down to the ground. */
+function moundHeight(x: number, z: number): number {
+  if (x < moundX0 || x > moundX1 || z < 0 || z > moundDepth) return 0;
+  const across = THREE.MathUtils.clamp((x - (L - 0.2)) / (doorX - (L - 0.2)), 0, 1);
+  const out = 1 - z / moundDepth;
+  const edge = Math.min(1, (x - moundX0) / 0.45, (moundX1 - x) / 0.45);
+  const e = edge * edge * (3 - 2 * edge);
+  return Math.max(0, lift * Math.pow(out, 1.15) * (0.25 + 0.75 * across) * e);
+}
+
+/** Curved stone steps, as seen from the street: down from the door with a
+ *  slight bow to the right, then sweeping to the left at the bottom. */
+const stairPath = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(doorX, 0, 0.3),
+  new THREE.Vector3(doorX + 0.1, 0, 0.7),
+  new THREE.Vector3(doorX + 0.06, 0, 1.15),
+  new THREE.Vector3(doorX - 0.2, 0, 1.6),
+  new THREE.Vector3(doorX - 0.55, 0, moundDepth + 0.05),
+]);
+const STAIR_SAMPLES = stairPath.getSpacedPoints(80);
+const STAIR_HALF = 0.23;
+const STAIR_EDGE = 0.12;
+const STEPS = 11;
+
+const inRect = (r: LocalRect, p: Vec2) => p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ;
+
+/** How high the ground is at p (local): the mound, the stairs as a smooth
+ *  ramp from the street up to the door, the landing and the floor inside. */
+export function laCryptaGround(p: Vec2): number {
+  if (inRect(ROOM, p) || inRect(LANDING, p)) return lift;
+  // Far from the mound and steps (most of the island): flat.
+  if (p.z < -0.1 || p.z > moundDepth + 0.4 || p.x < moundX0 - 0.4 || p.x > moundX1 + 0.4) return 0;
+  const h = moundHeight(p.x, p.z);
+  let best = STAIR_HALF + STAIR_EDGE, bi = -1;
+  for (let i = 0; i < STAIR_SAMPLES.length; i++) {
+    const d = Math.hypot(STAIR_SAMPLES[i].x - p.x, STAIR_SAMPLES[i].z - p.z);
+    if (d < best) { best = d; bi = i; }
+  }
+  if (bi < 0) return h;
+  // Off the side of the steps the ground eases down to the grass (a slope
+  // you walk down, not a ledge).
+  const stair = lift * (1 - bi / (STAIR_SAMPLES.length - 1));
+  const off = THREE.MathUtils.clamp((best - STAIR_HALF + STAIR_EDGE) / (2 * STAIR_EDGE), 0, 1);
+  return Math.max(h, stair + (h - stair) * off);
+}
+
+/** Where the street meets the steps, and the top step by the door (local). */
+export const LA_CRYPTA_STAIRS = {
+  foot: { x: STAIR_SAMPLES[80].x, z: STAIR_SAMPLES[80].z },
+  top: { x: doorX, z: 0.3 },
+  /** From the door down to the street. */
+  path: STAIR_SAMPLES.map((v) => ({ x: v.x, z: v.z })),
+  lift,
+};
+export const LA_CRYPTA_ROOM = ROOM;
 
 let brickCanvas: HTMLCanvasElement | null = null;
 
@@ -52,9 +142,66 @@ function drawBricks(): HTMLCanvasElement {
   return c;
 }
 
+/** Leaded glass: small diamond panes in lead cames. */
+function leadedTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#e8a050';
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = '#2a1c14';
+  g.lineWidth = 4;
+  for (let k = -128; k <= 256; k += 32) {
+    g.beginPath(); g.moveTo(k, 0); g.lineTo(k + 128, 128); g.stroke();
+    g.beginPath(); g.moveTo(k, 128); g.lineTo(k + 128, 0); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/** The white ball's skin: an equirectangular canvas with the gold ₿ disc
+ *  where the sphere faces +z (u = 0.25 on three's SphereGeometry). */
+function ballTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 512;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#fbfaf6';
+  g.fillRect(0, 0, 1024, 512);
+  const cx = 256, cy = 262, r = 118;
+  g.fillStyle = '#c8964a';
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#fbfaf6';
+  g.font = '800 170px Inter, system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.save();
+  g.translate(cx, cy + 6);
+  g.rotate(0.24);
+  g.fillText('B', 0, 0);
+  // The two bars through the top and the bottom.
+  for (const dx of [-14, 18]) {
+    g.fillRect(dx - 7, -84, 14, 26);
+    g.fillRect(dx - 7, 58, 14, 26);
+  }
+  g.restore();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** A pointed (gothic) arch outline of width w and total height h. */
 function lancet(w: number, h: number): THREE.Shape {
   const s = new THREE.Shape();
+  lancetPath(s, w, h);
+  return s;
+}
+
+function lancetPath(s: THREE.Path, w: number, h: number): void {
   const r = w; // equilateral arch
   const spring = h - w * 0.87;
   s.moveTo(-w / 2, 0);
@@ -63,18 +210,13 @@ function lancet(w: number, h: number): THREE.Shape {
   s.absarc(-w / 2, spring, r, 0, Math.PI / 3, false);
   s.absarc(w / 2, spring, r, (Math.PI * 2) / 3, Math.PI, false);
   s.lineTo(-w / 2, 0);
-  return s;
 }
 
-export interface LaCryptaHouse {
-  group: THREE.Group;
-  /** 0 day … 1 night. */
-  setNight(night: number, t: number): void;
-  doorLocal: THREE.Vector3;
-}
-
-export function buildLaCryptaHouse(): LaCryptaHouse {
+export function buildLaCryptaHouse(): LandmarkBuild {
   const g = new THREE.Group();
+  /** The house's walls and everything on them: see-through from inside. */
+  const shell = new THREE.Group();
+  g.add(shell);
   const stone = flat(0xd8d2c7, { roughness: 0.8 });
   const baseStone = flat(0xb9b4ab, { roughness: 0.95 });
   const slate = flat(0x4a4038, { roughness: 0.75 });
@@ -82,19 +224,17 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
   const step = flat(0x7d776f, { roughness: 0.9 });
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x1e1a1c, emissive: 0xff7a40, emissiveIntensity: 0.08, roughness: 0.25, metalness: 0.2, side: THREE.DoubleSide });
   const woodDoor = new THREE.MeshStandardMaterial({ color: 0x7a4a2c, emissive: 0xffb060, emissiveIntensity: 0, roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+  const darkWood = flat(0x4a2e1c, { roughness: 0.8 });
 
-  const W = 2.9;            // facade width: two bays
-  const bay = W / 2;
-  const D = 2.1;            // depth behind the facade
-  const lift = 0.7;         // the raised ground floor (top of the stone base)
-  const eaves = lift + 2.0; // where the gables start
-  const rise = 1.15;        // gable height
-  const L = -bay / 2, R = bay / 2; // bay centres
+  /** Parts hidden while you're inside (roofs, gables, the floor above). */
+  const overhead: THREE.Object3D[] = [];
 
-  const brickBox = (w: number, h: number, d: number) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: brickTexture(w, h), roughness: 0.95 }));
+  const brickWall = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: brickTexture(Math.max(w, d), h), roughness: 0.95 }));
+    m.position.set(x, y, z);
     m.castShadow = true;
     m.receiveShadow = true;
+    shell.add(m);
     return m;
   };
   const gableRoof = (w: number, depth: number) => {
@@ -113,6 +253,7 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
     m.castShadow = true;
     return m;
   };
+  /** A brick gable triangle, at the front (and the back) of a bay. */
   const gableWall = (w: number) => {
     const sh = new THREE.Shape();
     sh.moveTo(-w / 2, 0);
@@ -136,41 +277,57 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(fw + 0.06, h + 0.08, 0.06), stone);
     frame.position.set(x, y + h / 2, 0.02);
     frame.castShadow = true;
-    g.add(frame);
+    shell.add(frame);
     for (let i = 0; i < n; i++) {
       const cx = x - fw / 2 + gap + lightW / 2 + i * (lightW + gap);
       const glass = new THREE.Mesh(new THREE.ShapeGeometry(lancet(lightW, h - 0.06), 6), glassMat);
       glass.position.set(cx, y + 0.03, 0.055);
-      g.add(glass);
+      shell.add(glass);
     }
     const transom = new THREE.Mesh(new THREE.BoxGeometry(fw, 0.035, 0.04), stone);
     transom.position.set(x, y + h * 0.66, 0.065);
-    g.add(transom);
+    shell.add(transom);
     const hood = new THREE.Mesh(new THREE.BoxGeometry(fw + 0.16, 0.05, 0.1), stone);
     hood.position.set(x, y + h + 0.07, 0.04);
-    g.add(hood);
+    shell.add(hood);
   };
 
-  // The house: two brick bays with a gable each, side by side.
+  // The house: hollow brick walls, a gable over each bay.
+  const d0 = doorX - DOOR_W / 2, d1 = doorX + DOOR_W / 2;
+  brickWall(d0 + W / 2, eaves, T, (-W / 2 + d0) / 2, eaves / 2, -T / 2);            // front, left of the door
+  brickWall(W / 2 - d1, eaves, T, (d1 + W / 2) / 2, eaves / 2, -T / 2);             // front, right of the door
+  brickWall(DOOR_W, eaves - lift - DOOR_H, T, doorX, (eaves + lift + DOOR_H) / 2, -T / 2); // over the door
+  brickWall(DOOR_W, lift, T, doorX, lift / 2, -T / 2);                              // under the door
+  brickWall(W, eaves, T, 0, eaves / 2, -D + T / 2);                                 // back
+  brickWall(T, eaves, D - 2 * T, -W / 2 + T / 2, eaves / 2, -D / 2);               // left side
+  brickWall(T, eaves, D - 2 * T, W / 2 - T / 2, eaves / 2, -D / 2);                // right side
+  // The ground floor's floor (what you walk on) and the floor above.
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(W - 2 * T, 0.05, D - 2 * T), darkWood);
+  floor.position.set(0, lift - 0.025, -D / 2);
+  floor.receiveShadow = true;
+  g.add(floor);
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(W - 2 * T, 0.06, D - 2 * T), darkWood);
+  upper.position.set(0, ceil + 0.03, -D / 2);
+  shell.add(upper);
+  overhead.push(upper);
   for (const cx of [L, R]) {
-    const body = brickBox(bay, eaves, D);
-    body.position.set(cx, eaves / 2, -D / 2);
-    g.add(body);
     const roof = gableRoof(bay, D);
     roof.position.set(cx, eaves, 0.02);
-    g.add(roof);
-    const wall = gableWall(bay);
-    wall.position.set(cx, eaves, 0.003);
-    g.add(wall);
+    const front = gableWall(bay);
+    front.position.set(cx, eaves, 0.003);
+    const back = gableWall(bay);
+    back.position.set(cx, eaves, -D - 0.003);
+    shell.add(roof, front, back);
+    overhead.push(roof, front, back);
   }
   // Tall grey stone base under the left bay, a lower band under the right.
   const baseL = new THREE.Mesh(new THREE.BoxGeometry(bay + 0.02, lift, 0.08), baseStone);
   baseL.position.set(L, lift / 2, 0.03);
   baseL.receiveShadow = true;
-  g.add(baseL);
+  shell.add(baseL);
   const sill = new THREE.Mesh(new THREE.BoxGeometry(W + 0.04, 0.06, 0.12), stone);
   sill.position.set(0, lift + 0.03, 0.05);
-  g.add(sill);
+  shell.add(sill);
 
   // Windows as in the photo.
   windowN(L, lift + 0.25, 3, 0.16, 0.7);  // left, ground floor
@@ -178,23 +335,49 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
   windowN(R + 0.12, lift + 1.25, 3, 0.15, 0.62); // right, upper floor
   const vent = new THREE.Mesh(new THREE.ShapeGeometry(lancet(0.08, 0.26), 6), glassMat);
   vent.position.set(R, eaves + 0.45, 0.01);
-  g.add(vent);
-  // Narrow side-bay windows on the left corner.
+  shell.add(vent);
+  overhead.push(vent);
+  // Narrow windows on the left bay's side, where it stands out past the wing.
   for (const y of [lift + 0.25, lift + 1.3]) {
     const side = new THREE.Mesh(new THREE.ShapeGeometry(lancet(0.13, 0.6), 6), glassMat);
-    side.position.set(-W / 2 - 0.003, y, -0.5);
+    side.position.set(-W / 2 - 0.003, y, WING_Z / 2);
     side.rotation.y = -Math.PI / 2;
-    g.add(side);
+    shell.add(side);
   }
 
-  // The wooden arched door, half a storey up, in a stone surround.
-  const doorX = R - 0.25;
-  const surround = new THREE.Mesh(new THREE.ShapeGeometry(lancet(0.56, 0.95), 8), stone);
+  // The wooden arched door, half a storey up, in a stone surround: it
+  // swings in on its left hinge.
+  const surroundShape = lancet(DOOR_W + 0.14, DOOR_H + 0.13);
+  const hole = new THREE.Path();
+  lancetPath(hole, DOOR_W, DOOR_H);
+  surroundShape.holes.push(hole);
+  // Brick fills the corners between the arch and the square opening.
+  const spandrel = new THREE.Shape();
+  spandrel.moveTo(-DOOR_W / 2, 0);
+  spandrel.lineTo(DOOR_W / 2, 0);
+  spandrel.lineTo(DOOR_W / 2, DOOR_H);
+  spandrel.lineTo(-DOOR_W / 2, DOOR_H);
+  spandrel.closePath();
+  const sHole = new THREE.Path();
+  lancetPath(sHole, DOOR_W, DOOR_H);
+  spandrel.holes.push(sHole);
+  const fill = new THREE.Mesh(new THREE.ShapeGeometry(spandrel, 8), new THREE.MeshStandardMaterial({ map: brickTexture(DOOR_W, DOOR_H), roughness: 0.95, side: THREE.DoubleSide }));
+  fill.position.set(doorX, lift, -T / 2);
+  shell.add(fill);
+  const surround = new THREE.Mesh(new THREE.ShapeGeometry(surroundShape, 8), stone);
   surround.position.set(doorX, lift, 0.02);
-  g.add(surround);
-  const door = new THREE.Mesh(new THREE.ShapeGeometry(lancet(0.42, 0.82), 8), woodDoor);
-  door.position.set(doorX, lift, 0.03);
-  g.add(door);
+  shell.add(surround);
+  const doorPivot = new THREE.Group();
+  doorPivot.position.set(d0, lift, -0.02);
+  g.add(doorPivot);
+  const leafGeo = new THREE.ExtrudeGeometry(lancet(DOOR_W - 0.01, DOOR_H - 0.01), { depth: 0.03, bevelEnabled: false, curveSegments: 8 });
+  leafGeo.translate(DOOR_W / 2, 0, -0.015);
+  const leaf = new THREE.Mesh(leafGeo, woodDoor);
+  leaf.castShadow = true;
+  doorPivot.add(leaf);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 4), flat(0x1a1a1a, { metalness: 0.6 }));
+  knob.position.set(DOOR_W - 0.07, DOOR_H * 0.45, 0.02);
+  doorPivot.add(knob);
   const landing = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.4), step);
   landing.position.set(doorX, lift - 0.03, 0.2);
   landing.receiveShadow = true;
@@ -203,28 +386,104 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
   // White downpipe between the bays.
   const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, eaves - 0.2, 6), flat(0xe6e4df));
   pipe.position.set(0.02, (eaves - 0.2) / 2 + 0.1, 0.06);
-  g.add(pipe);
+  shell.add(pipe);
+
+  // The older wing on the left, set back, on flat ground.
+  const leaded = new THREE.MeshStandardMaterial({ color: 0x3a2a20, map: leadedTexture(), emissive: 0xff7a30, emissiveIntensity: 0.05, roughness: 0.3, metalness: 0.1 });
+  {
+    const wx0 = -W / 2 - WING_W, wx1 = -W / 2, wc = (wx0 + wx1) / 2;
+    const wingH = 2.25;
+    // The body behind the balcony, and its front block (garage, windows).
+    brickWall(WING_W, wingH, D + WING_Z - 0.3, wc, wingH / 2, (WING_Z - 0.3 - D) / 2);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(WING_W, 0.74, 0.3), baseStone);
+    base.position.set(wc, 0.37, WING_Z - 0.15);
+    base.castShadow = base.receiveShadow = true;
+    shell.add(base);
+    // Arched studded garage door in a stone surround.
+    const gs = new THREE.Mesh(new THREE.ShapeGeometry(roundArch(0.66, 0.7), 10), stone);
+    gs.position.set(wc + 0.08, 0, WING_Z + 0.005);
+    const gd = new THREE.Mesh(new THREE.ShapeGeometry(roundArch(0.56, 0.64), 10), flat(0x6a4024, { roughness: 0.75 }));
+    gd.position.set(wc + 0.08, 0, WING_Z + 0.01);
+    shell.add(gs, gd);
+    const grille = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.01), flat(0x161616));
+    grille.position.set(wc + 0.08, 0.42, WING_Z + 0.016);
+    shell.add(grille);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.008, 4, 3), flat(0x161616));
+      stud.position.set(wc + 0.08 - 0.18 + i * 0.12, 0.1 + j * 0.12, WING_Z + 0.016);
+      shell.add(stud);
+    }
+    // The wooden frame with its band of leaded windows.
+    const band = new THREE.Mesh(new THREE.BoxGeometry(WING_W, 0.66, 0.3), darkWood);
+    band.position.set(wc, 0.74 + 0.33, WING_Z - 0.15);
+    band.castShadow = true;
+    shell.add(band);
+    const panes = 4, pw = (WING_W - 0.12) / panes;
+    leaded.map!.repeat.set(2, 3);
+    for (let i = 0; i < panes; i++) {
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(pw - 0.04, 0.46), leaded);
+      pane.position.set(wx0 + 0.06 + pw / 2 + i * pw, 1.09, WING_Z + 0.004);
+      shell.add(pane);
+    }
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(WING_W + 0.04, 0.06, 0.06), flat(0x3a2416));
+    trim.position.set(wc, 0.77, WING_Z + 0.02);
+    const trim2 = trim.clone();
+    trim2.position.y = 1.38;
+    shell.add(trim, trim2);
+    // The balcony: a floor on the front block, a railing, timber posts and an
+    // arch under the eaves, glass doors behind.
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(WING_W + 0.04, 0.05, 0.36), darkWood);
+    deck.position.set(wc, 1.425, WING_Z - 0.15);
+    shell.add(deck);
+    const railM = flat(0x5a3820);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(WING_W, 0.03, 0.03), railM);
+    rail.position.set(wc, 1.68, WING_Z - 0.01);
+    shell.add(rail);
+    for (let i = 0; i <= 10; i++) {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 4), railM);
+      b.position.set(wx0 + 0.03 + i * ((WING_W - 0.06) / 10), 1.56, WING_Z - 0.01);
+      shell.add(b);
+    }
+    for (const x of [wx0 + 0.04, wx1 - 0.04]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.06), railM);
+      post.position.set(x, 1.85, WING_Z - 0.02);
+      shell.add(post);
+    }
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(WING_W / 2 - 0.04, 0.025, 4, 16, Math.PI), railM);
+    arch.position.set(wc, 1.95, WING_Z - 0.02);
+    arch.scale.y = 0.55;
+    shell.add(arch);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(WING_W + 0.06, 0.06, 0.08), railM);
+    beam.position.set(wc, 2.24, WING_Z - 0.02);
+    shell.add(beam);
+    const glazing = new THREE.Mesh(new THREE.PlaneGeometry(WING_W * 0.6, 0.65), glassMat);
+    glazing.position.set(wc, 1.8, WING_Z - 0.299);
+    shell.add(glazing);
+    for (const x of [wx0 + 0.2, wc + 0.1, wx1 - 0.15]) {
+      const plant = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), flat(0x3d7a3a));
+      plant.position.set(x, 1.5, WING_Z - 0.08);
+      shell.add(plant);
+    }
+    // Tiled hip roof, lower than the gables.
+    const roofD = D + WING_Z + 0.15, roofW = WING_W + 0.2;
+    const hip = new THREE.Mesh(new THREE.ConeGeometry(1, 0.5, 4), flat(0x4f4a3a, { roughness: 0.85 }));
+    hip.rotation.y = Math.PI / 4;
+    hip.scale.set(roofW / 2 / Math.SQRT1_2, 1, roofD / 2 / Math.SQRT1_2);
+    hip.position.set(wc, 2.25 + 0.25, WING_Z + 0.08 - roofD / 2);
+    hip.castShadow = true;
+    shell.add(hip);
+    overhead.push(hip);
+  }
 
   // The grassy mound: from the door's level down to the street, in front
   // of the right bay and tapering across the left.
-  const moundDepth = 2.0;
   {
     const nx = 14, nz = 10;
     const pos: number[] = [];
     const idx: number[] = [];
-    const x0 = -W / 2, x1 = W / 2 + 0.3;
-    const height = (x: number, z: number) => {
-      // Highest under the door, falling to the street and to the left.
-      const across = THREE.MathUtils.clamp((x - (L - 0.2)) / (doorX - (L - 0.2)), 0, 1);
-      const out = 1 - z / moundDepth;
-      // Both side edges come down to the ground (no lip hanging in the air).
-      const edge = Math.min(1, (x - x0) / 0.45, (x1 - x) / 0.45);
-      const e = edge * edge * (3 - 2 * edge);
-      return Math.max(0, lift * Math.pow(out, 1.15) * (0.25 + 0.75 * across) * e);
-    };
     for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
-      const x = x0 + (x1 - x0) * (i / nx), z = 0.12 + (moundDepth - 0.12) * (j / nz);
-      pos.push(x, height(x, z) + 0.01, z);
+      const x = moundX0 + (moundX1 - moundX0) * (i / nx), z = 0.12 + (moundDepth - 0.12) * (j / nz);
+      pos.push(x, moundHeight(x, z) + 0.01, z);
     }
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
       const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
@@ -241,23 +500,14 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
     g.add(mound);
   }
 
-  // Curved stone steps, as seen from the street: down from the door with a
-  // slight bow to the right, then sweeping to the left at the bottom.
-  const path = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(doorX, 0, 0.3),
-    new THREE.Vector3(doorX + 0.1, 0, 0.7),
-    new THREE.Vector3(doorX + 0.06, 0, 1.15),
-    new THREE.Vector3(doorX - 0.2, 0, 1.6),
-    new THREE.Vector3(doorX - 0.55, 0, moundDepth + 0.05),
-  ]);
-  const N = 11;
+  // The steps up the mound.
   const railPts: THREE.Vector3[] = [];
-  for (let i = 0; i < N; i++) {
-    const t0 = i / N, t1 = (i + 1) / N;
-    const a = path.getPoint(t0), b = path.getPoint(t1);
+  for (let i = 0; i < STEPS; i++) {
+    const t0 = i / STEPS, t1 = (i + 1) / STEPS;
+    const a = stairPath.getPoint(t0), b = stairPath.getPoint(t1);
     const mid = a.clone().lerp(b, 0.5);
-    const yTop = lift * (1 - (i + 0.5) / N);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(0.46, Math.max(0.05, yTop), a.distanceTo(b) + 0.02), step);
+    const yTop = lift * (1 - (i + 0.5) / STEPS);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(STAIR_HALF * 2, Math.max(0.05, yTop), a.distanceTo(b) + 0.02), step);
     st.position.set(mid.x, Math.max(0.05, yTop) / 2, mid.z);
     st.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
     st.castShadow = true;
@@ -269,7 +519,7 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
   }
   const railCurve = new THREE.CatmullRomCurve3(railPts);
   g.add(new THREE.Mesh(new THREE.TubeGeometry(railCurve, 30, 0.011, 5), flat(0x161616)));
-  for (const k of [0, 4, 8, N - 1]) {
+  for (const k of [0, 4, 8, STEPS - 1]) {
     const p = railPts[k];
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.4, 5), flat(0x161616));
     post.position.set(p.x, p.y - 0.2, p.z);
@@ -291,45 +541,39 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
   shrub.castShadow = true;
   g.add(shrub);
 
-  // La Crypta's logo on the stone base, backlit: an arched white plaque
-  // with three black bars.
+  // La Crypta's logo high on the stone base, backlit: an arched white
+  // plaque with three black bars, mounted in front of the sill.
   const logoGlow = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, emissive: 0xfff6e6, emissiveIntensity: 0.25, flatShading: true });
-  const logoX = L - 0.18, logoY = 0.12;
-  const logo = new THREE.Mesh(new THREE.ShapeGeometry(roundArch(0.36, 0.44), 10), logoGlow);
-  logo.position.set(logoX, logoY, 0.075);
-  g.add(logo);
+  const LOGO_W = 0.5, LOGO_H = 0.6;
+  const logoX = L - 0.33, logoY = lift + 0.06 - LOGO_H;
+  const logo = new THREE.Mesh(new THREE.ExtrudeGeometry(roundArch(LOGO_W, LOGO_H), { depth: 0.02, bevelEnabled: false, curveSegments: 10 }), logoGlow);
+  logo.position.set(logoX, logoY, 0.1);
+  shell.add(logo);
+  const kx = LOGO_W / 0.36, ky = LOGO_H / 0.44; // the old plaque's bars, scaled up
   for (let i = 0; i < 3; i++) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.28 - i * 0.02, 0.04, 0.01), flat(0x161616));
-    bar.position.set(logoX + 0.02 + i * 0.01, logoY + 0.07 + i * 0.075, 0.082);
-    g.add(bar);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry((0.28 - i * 0.02) * kx, 0.04 * ky, 0.01), flat(0x161616));
+    bar.position.set(logoX + (0.02 + i * 0.01) * kx, logoY + (0.07 + i * 0.075) * ky, 0.125);
+    shell.add(bar);
   }
-  const logoLight = new THREE.PointLight(0xfff3dc, 0, 1.4, 1.6);
-  logoLight.position.set(logoX, logoY + 0.22, 0.32);
+  const logoLight = new THREE.PointLight(0xfff3dc, 0, 1.8, 1.6);
+  logoLight.position.set(logoX, logoY + LOGO_H * 0.5, 0.45);
   g.add(logoLight);
 
-  // The orange "{(₿)}" on the lawn, right of the steps.
-  const sc = document.createElement('canvas');
-  sc.width = 512;
-  sc.height = 160;
-  const sg = sc.getContext('2d')!;
-  sg.fillStyle = '#ff6a1a';
-  sg.font = '800 128px Inter, system-ui, sans-serif';
-  sg.textAlign = 'center';
-  sg.textBaseline = 'middle';
-  sg.fillText('{(₿)}', 256, 86);
-  const signTex = new THREE.CanvasTexture(sc);
-  signTex.colorSpace = THREE.SRGBColorSpace;
-  const signMat = new THREE.MeshStandardMaterial({ map: signTex, transparent: true, emissive: 0xff5a10, emissiveMap: signTex, emissiveIntensity: 0.6, side: THREE.DoubleSide });
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.25), signMat);
-  sign.position.set(W / 2 + 0.15, 0.95, 0.8);
-  sign.rotation.x = -0.15;
-  g.add(sign);
-  // Two thin posts hold it up off the slope.
-  for (const dx of [-0.13, 0.13]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.85, 5), flat(0x161616));
-    post.position.set(sign.position.x + dx, 0.45, sign.position.z - 0.02);
-    g.add(post);
-  }
+  // The white glowing ball with the gold ₿, on the lawn left of the steps.
+  const BALL_R = 0.36;
+  const ballAt = { x: L + 0.22, z: 1.2 };
+  const ballTex = ballTexture();
+  const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: ballTex, emissive: 0xffffff, emissiveMap: ballTex, emissiveIntensity: 0.35, roughness: 0.5 });
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 32, 20), ballMat);
+  ball.scale.y = 0.94;
+  const ballY = moundHeight(ballAt.x, ballAt.z) + BALL_R * 0.94 - 0.02;
+  ball.position.set(ballAt.x, ballY, ballAt.z);
+  ball.rotation.y = 0.25; // turned a little toward the steps, as in the photo
+  ball.castShadow = true;
+  g.add(ball);
+  const ballLight = new THREE.PointLight(0xfff4e0, 0, 2.6, 1.5);
+  ballLight.position.set(ballAt.x + 0.1, ballY, ballAt.z + 0.45);
+  g.add(ballLight);
 
   // Night: warm windows and door, red by the door, violet wash up the gables.
   const red = new THREE.PointLight(0xff2a3a, 0, 2.4, 1.6);
@@ -337,23 +581,60 @@ export function buildLaCryptaHouse(): LaCryptaHouse {
   const violet = new THREE.SpotLight(0x7a6aff, 0, 7, Math.PI / 4.5, 0.6, 1.2);
   violet.position.set(0, 0.1, 1.6);
   violet.target.position.set(0, eaves, 0);
-  const signLight = new THREE.PointLight(0xff6a1a, 0, 1.6, 1.8);
-  signLight.position.set(W / 2 + 0.15, 1.05, 1.05);
-  g.add(red, violet, violet.target, signLight);
+  g.add(red, violet, violet.target);
+
+  // The living room.
+  const room = buildLivingRoom({ ...ROOM, floor: lift, ceil, door: { x: doorX, w: DOOR_W } });
+  g.add(room.group);
+
+  // From inside, the shell turns see-through (its materials, gathered once).
+  const shellMats = new Set<THREE.MeshStandardMaterial>();
+  shell.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    for (const m of [o.material].flat()) shellMats.add(m as THREE.MeshStandardMaterial);
+  });
+  const walls = shell.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh);
+  let insideNow = false;
 
   return {
     group: g,
     doorLocal: new THREE.Vector3(doorX - 0.6, 0, moundDepth + 0.3),
+    seats: room.seats,
+    solids: [
+      ...room.solids,
+      { x: ballAt.x, z: ballAt.z, hx: BALL_R * 0.8, hz: BALL_R * 0.8, top: ballY + BALL_R * 0.9 },
+    ],
+    groundAt: laCryptaGround,
+    interior: {
+      rooms: [
+        { minX: ROOM.minX + 0.02, maxX: ROOM.maxX - 0.02, minZ: ROOM.minZ + 0.02, maxZ: ROOM.maxZ - 0.02 },
+        { minX: d0 + 0.03, maxX: d1 - 0.03, minZ: -0.3, maxZ: 0.42 },
+      ],
+      door: { x: doorX, z: 0 },
+      setDoor(open) { doorPivot.rotation.y = open * 1.5; },
+      setInside(on) {
+        if (on === insideNow) return;
+        insideNow = on;
+        for (const o of [...overhead, ...room.cutaway]) o.visible = !on;
+        for (const m of shellMats) { m.transparent = on; m.opacity = on ? 0.22 : 1; m.depthWrite = !on; m.needsUpdate = true; }
+        for (const w of walls) w.castShadow = !on;
+      },
+    },
+    update(dt, t) {
+      room.update(dt, t);
+    },
     setNight(night: number, t: number) {
       glassMat.emissiveIntensity = 0.08 + night * 0.9;
+      leaded.emissiveIntensity = 0.05 + night * 0.9;
       woodDoor.emissiveIntensity = night * 0.18;
       bulbMat.emissiveIntensity = 0.4 + night * (1.6 + Math.sin(t * 3) * 0.25);
-      logoGlow.emissiveIntensity = 0.3 + night * 0.5;
-      logoLight.intensity = night * 0.35;
-      signMat.emissiveIntensity = 0.5 + night * 1.1;
+      logoGlow.emissiveIntensity = 0.3 + night * 0.6;
+      logoLight.intensity = night * 0.5;
+      ballMat.emissiveIntensity = 0.35 + night * 0.75;
+      ballLight.intensity = night * 1.6;
       red.intensity = night * 1.1;
       violet.intensity = night * 6;
-      signLight.intensity = night * 0.9;
+      room.setNight(night);
     },
   };
 }

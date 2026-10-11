@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 process.env.NODE_ENV = 'test';
-const { resolveStatic, SECURITY_HEADERS } = await import('./index');
+const { resolveStatic, redirectFor, SECURITY_HEADERS } = await import('./index');
 
 describe('static host', () => {
   it('never resolves outside the client build', () => {
@@ -8,6 +8,20 @@ describe('static host', () => {
       const r = resolveStatic(p);
       expect(r === null || r.file.includes('/dist/client/')).toBe(true);
     }
+  });
+  it('serves the landing page at / and the village under /app', () => {
+    expect(resolveStatic('/')!.file).toMatch(/dist\/client\/index\.html$/);
+    for (const p of ['/app', '/app/', '/app/some/deep/link']) expect(resolveStatic(p)!.file, p).toMatch(/dist\/client\/app\/index\.html$/);
+    expect(resolveStatic('/nowhere')!.file).toMatch(/dist\/client\/index\.html$/);
+    expect(resolveStatic('/application')!.file).toMatch(/dist\/client\/index\.html$/);
+    expect(resolveStatic('/assets/x.js')!.rel).toBe('/assets/x.js');
+  });
+  it('sends old village links (/?relay=, /?time=) to /app', () => {
+    expect(redirectFor('/', '?relay=public.obelisk.ar')).toBe('/app?relay=public.obelisk.ar');
+    expect(redirectFor('/', '?time=night')).toBe('/app?time=night');
+    expect(redirectFor('/', '?lang=es')).toBeNull();
+    expect(redirectFor('/', '')).toBeNull();
+    expect(redirectFor('/app', '?relay=x')).toBeNull();
   });
   it('serves no keys and allows only first-party scripts', () => {
     expect(SECURITY_HEADERS['content-security-policy']).toContain("script-src 'self'");

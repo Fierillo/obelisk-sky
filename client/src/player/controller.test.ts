@@ -125,3 +125,39 @@ describe('solid furniture', () => {
     expect(c.height).toBe(0);
   });
 });
+
+describe('raised ground (stairs, a raised floor)', () => {
+  // A ramp from x 0 to 2 rising to 0.7, then a floor at 0.7.
+  const ramp = (p: { x: number; z: number }) => Math.max(0, Math.min(0.7, p.x * 0.35));
+  const step = (c: PlayerController, n: number, input: { x: number; y: number; run: boolean; jump?: boolean }, yaw = Math.PI / 2) => {
+    for (let i = 0; i < n; i++) c.step(1 / 60, { ...input, jump: input.jump && i === 0 }, yaw);
+  };
+  const fwd = { x: 0, y: 1, run: false };
+  it('walks up it smoothly, never airborne, and stands on top', () => {
+    const c = new PlayerController(() => new NavGrid(10), { x: -0.5, z: 0 }, () => [], () => false, ramp);
+    let last = 0;
+    for (let i = 0; i < 300; i++) {
+      step(c, 1, fwd);
+      expect(c.height).toBeGreaterThanOrEqual(last - 1e-9);
+      expect(c.airborne).toBe(false);
+      last = c.height;
+    }
+    expect(c.pos.x).toBeGreaterThan(2);
+    expect(c.height).toBeCloseTo(0.7, 5);
+  });
+  it('walks down it without falling, even running', () => {
+    const c = new PlayerController(() => new NavGrid(10), { x: 2.5, z: 0 }, () => [], () => false, ramp);
+    step(c, 2, { x: 0, y: 0, run: false });
+    expect(c.height).toBeCloseTo(0.7, 5);
+    for (let i = 0; i < 90; i++) { step(c, 1, { x: 0, y: 1, run: true }, -Math.PI / 2); expect(c.airborne).toBe(false); }
+    expect(c.pos.x).toBeLessThan(0);
+    expect(c.height).toBe(0);
+  });
+  it('still blocks a ledge higher than a step', () => {
+    const ledge = (p: { x: number; z: number }) => (p.x > 1 ? 0.4 : 0);
+    const c = new PlayerController(() => new NavGrid(10), { x: 0, z: 0 }, () => [], () => false, ledge);
+    step(c, 120, fwd);
+    expect(c.pos.x).toBeLessThan(1);
+    expect(c.height).toBe(0);
+  });
+});

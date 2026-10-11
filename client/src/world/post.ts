@@ -86,6 +86,7 @@ export class Post {
   settings: PostSettings = { quality: 'auto', resolution: 1, shadows: true, ambientOcclusion: true, bloom: true, tiltShift: true };
   private frameTimes: number[] = [];
   private cooldown = 5;
+  private held = false;
   private size = new THREE.Vector2(1, 1);
 
   constructor(
@@ -153,6 +154,12 @@ export class Post {
     this.gtao.setSize(Math.max(1, w * px * aoScale), Math.max(1, h * px * aoScale));
   }
 
+  /** Scale the miniature-lens blur (0 = off): the loading view and the intro
+   *  look straight down, where a blurred top and bottom just look smeared. */
+  setTiltAmount(k: number): void {
+    this.tiltH.uniforms.uAmount.value = this.tiltV.uniforms.uAmount.value = k;
+  }
+
   /** Night makes lamps and windows bloom more. */
   setNight(night01: number): void {
     this.bloom.strength = 0.25 + night01 * 0.55;
@@ -166,9 +173,16 @@ export class Post {
     this.adapt(dt);
   }
 
+  /** Hold the "auto" level (while models load, slow frames say nothing about the GPU). */
+  holdLevel(on: boolean): void {
+    this.held = on;
+    this.frameTimes = [];
+    this.cooldown = 5;
+  }
+
   /** "auto": step down a level while frames run slower than ~32 fps. */
   private adapt(dt: number): void {
-    if (this.settings.quality !== 'auto') return;
+    if (this.settings.quality !== 'auto' || this.held) return;
     this.cooldown -= dt;
     this.frameTimes.push(dt);
     if (this.frameTimes.length > 90) this.frameTimes.shift();

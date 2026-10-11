@@ -6,6 +6,38 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const HOME_TARGET = new THREE.Vector3(0, -0.5, 1);
 const HOME_OFFSET = new THREE.Vector3(22, 21, 43);
+/** Margin around the island in the top-down view (the loading screen's map uses the same). */
+export const TOP_DOWN_MARGIN = 1.15;
+/** Where you see your character from: 11 m back, 0.85 rad up (see `played()`). */
+const FOLLOW_DISTANCE = 11;
+const FOLLOW_ELEVATION = 0.85;
+// Player anchors sit 0.5 above the ground the player stands on (World.personAnchor):
+// the eyes are a little above that, the follow target a little above too.
+const EYE_ABOVE_ANCHOR = 0.12;
+const TARGET_ABOVE_ANCHOR = 0.1;
+
+/** Height above the island's centre at which a straight-down camera fits a
+ *  disc of `radius` (plus the margin) in the viewport's shorter side. */
+export function topDownHeight(radius: number, fovDeg: number, aspect: number): number {
+  return (radius * TOP_DOWN_MARGIN) / (Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2) * Math.min(1, aspect));
+}
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+
+interface Pose { target: THREE.Vector3; pos: THREE.Vector3 }
+
+/** The opening shot: straight down on the round island while it loads,
+ *  then a swing down into the 3D view. */
+interface Intro {
+  radius: number;
+  /** null while holding the top-down view. */
+  to: Pose | null;
+  /** The end pose belongs to your character: keep following it afterwards. */
+  toPlayer: boolean;
+  t: number;
+  /** Progress per second. */
+  rate: number;
+}
 
 export class Cameraman {
   readonly controls: OrbitControls;
@@ -25,10 +57,12 @@ export class Cameraman {
   sensitivity = 1;
   invertY = false;
   private dragFrom: { x: number; y: number } | null = null;
+  private intro: Intro | null = null;
 
   /** Enter or leave first person, facing `yaw` (atan2(dx, dz)). */
   setFirstPerson(on: boolean, yaw = 0): void {
     if (on === this.firstPerson) return;
+    if (this.intro) this.endIntro();
     this.firstPerson = on;
     this.controls.enabled = !on;
     if (on) {
@@ -80,7 +114,11 @@ export class Cameraman {
     this.controls.autoRotateSpeed = 0.35;
     this.controls.zoomToCursor = true;
     camera.position.copy(HOME_TARGET).add(HOME_OFFSET);
+    // Any input during the intro's swing finishes it quickly.
+    for (const ev of ['pointerdown', 'wheel'] as const) dom.addEventListener(ev, () => this.skipIntro(), { passive: true });
+    window.addEventListener('keydown', () => this.skipIntro());
     this.controls.addEventListener('start', () => {
+      if (this.intro) return;
       this.userUntil = performance.now() + 20_000;
       this.tween = null;
       this.follow = null;
@@ -104,6 +142,13 @@ export class Cameraman {
     const flat = new THREE.Vector3(d.x, 0, d.z).normalize();
     const elev = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)), 0.45, 1.1);
     const nd = flat.multiplyScalar(Math.cos(elev)).setY(Math.sin(elev));
+    if (this.intro) {
+      // Mid-intro the swing lands there instead (quickly, if it's already flying).
+      this.intro.to = { target: target.clone(), pos: target.clone().addScaledVector(nd, distance) };
+      this.intro.toPlayer = false;
+      this.skipIntro();
+      return;
+    }
     this.tween = {
       fromT: this.controls.target.clone(), toT: target.clone(),
       fromP: this.camera.position.clone(), toP: target.clone().addScaledVector(nd, distance),
@@ -123,6 +168,96 @@ export class Cameraman {
   /** Follow your character; a step from the keyboard calls `played()`. */
   followPlayer(get: (() => THREE.Vector3 | null) | null): void {
     this.player = get;
+    // Arriving while the intro runs: it lands behind you.
+    const p = get?.();
+    if (this.intro?.to && p) {
+      this.intro.to = this.followPose(p);
+      this.intro.toPlayer = true;
+    }
+  }
+
+  private followPose(p: THREE.Vector3): Pose {
+    const target = p.clone().setY(p.y + TARGET_ABOVE_ANCHOR);
+    const d = HOME_OFFSET.clone().setY(0).normalize().multiplyScalar(Math.cos(FOLLOW_ELEVATION)).setY(Math.sin(FOLLOW_ELEVATION));
+    return { target, pos: target.clone().addScaledVector(d, FOLLOW_DISTANCE) };
+  }
+
+  // ── intro ─────────────────────────────────────────────────────────────
+
+  /** Look straight down on the island (radius `radius`) until `playIntro`. */
+  holdTopDown(radius: number): void {
+    this.tween = null;
+    this.follow = null;
+    this.intro = { radius, to: null, toPlayer: false, t: 0, rate: 0 };
+    this.applyIntro();
+  }
+
+  /** Swing from the top-down view to your character (if you're on the
+   *  island) or the whole-island view, over `dur` seconds. */
+  playIntro(dur = 2.8): void {
+    if (!this.intro) return;
+    const p = this.player?.();
+    this.intro.to ??= p ? this.followPose(p) : { target: HOME_TARGET.clone(), pos: HOME_TARGET.clone().add(HOME_OFFSET) };
+    this.intro.toPlayer ||= !!p;
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.intro.rate = reduce ? 1e3 : 1 / dur;
+  }
+
+  /** 0 → 1 over the intro; 1 when there is none. */
+  get introProgress(): number {
+    return this.intro ? easeInOut(this.intro.t) : 1;
+  }
+
+  get inIntro(): boolean {
+    return this.intro !== null;
+  }
+
+  private skipIntro(): void {
+    const it = this.intro;
+    if (!it || !it.rate) return;
+    it.rate = Math.max(it.rate, (1 - it.t) / 0.4);
+  }
+
+  /** Place the camera along the swing: target, distance, elevation and
+   *  bearing all ease from straight down to the end pose. */
+  private applyIntro(): void {
+    const it = this.intro!;
+    const h = topDownHeight(it.radius, this.camera.fov, this.camera.aspect);
+    const k = easeInOut(it.t);
+    const to = it.to;
+    const target = new THREE.Vector3();
+    let dist = h, polar = 0, bearing = 0;
+    if (to) {
+      const off = to.pos.clone().sub(to.target);
+      const d1 = off.length();
+      const polar1 = Math.acos(THREE.MathUtils.clamp(off.y / d1, -1, 1));
+      const bearing1 = Math.atan2(off.x, off.z);
+      target.lerp(to.target, k);
+      dist = THREE.MathUtils.lerp(h, d1, k);
+      polar = polar1 * k;
+      bearing = bearing1 * k;
+    }
+    const sp = Math.sin(polar), cp = Math.cos(polar);
+    this.camera.position.set(Math.sin(bearing) * sp, cp, Math.cos(bearing) * sp).multiplyScalar(dist).add(target);
+    // Up is the way the view tilts: at the top it points to -z (north up), so
+    // there's no spin when the camera passes over the pole.
+    this.camera.up.set(-Math.sin(bearing) * cp, sp, -Math.cos(bearing) * cp);
+    this.camera.lookAt(target);
+    this.controls.target.copy(target);
+  }
+
+  private endIntro(): void {
+    const it = this.intro!;
+    this.intro = null;
+    this.camera.up.set(0, 1, 0);
+    if (it.to) {
+      this.controls.target.copy(it.to.target);
+      this.camera.position.copy(it.to.pos);
+    }
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+    this.lastCut = performance.now();
+    if (it.toPlayer) this.playingUntil = performance.now() + 30_000;
   }
 
   /** You moved: keep the camera on you and hold off director cuts. */
@@ -134,8 +269,8 @@ export class Cameraman {
       const p = this.player();
       // Steep enough to see over the roofs next to you.
       const d = this.camera.position.clone().sub(this.controls.target).setY(0).normalize();
-      d.multiplyScalar(Math.cos(0.85)).setY(Math.sin(0.85));
-      if (p) this.flyTo(p, 11, d, 0.9);
+      d.multiplyScalar(Math.cos(FOLLOW_ELEVATION)).setY(Math.sin(FOLLOW_ELEVATION));
+      if (p) this.flyTo(p, FOLLOW_DISTANCE, d, 0.9);
     }
   }
 
@@ -145,7 +280,7 @@ export class Cameraman {
 
   /** Something happened between these points — maybe cut to it. */
   interest(points: THREE.Vector3[], force = false): void {
-    if (!this.auto || this.userActive || this.follow || this.playing || this.firstPerson) return;
+    if (this.intro || !this.auto || this.userActive || this.follow || this.playing || this.firstPerson) return;
     const now = performance.now();
     if (!force && now - this.lastCut < 4500) return;
     this.lastCut = now;
@@ -162,10 +297,16 @@ export class Cameraman {
   }
 
   update(dt: number): void {
+    if (this.intro) {
+      this.intro.t = Math.min(1, this.intro.t + dt * this.intro.rate);
+      this.applyIntro();
+      if (this.intro.t >= 1) this.endIntro();
+      return;
+    }
     if (this.firstPerson) {
       const p = this.player?.();
       if (p) {
-        const eye = p.clone().setY(0.62);
+        const eye = p.clone().setY(p.y + EYE_ABOVE_ANCHOR);
         this.camera.position.copy(eye);
         const dir = new THREE.Vector3(Math.sin(this.fpYaw) * Math.cos(this.fpPitch), Math.sin(this.fpPitch), Math.cos(this.fpYaw) * Math.cos(this.fpPitch));
         this.camera.lookAt(eye.add(dir));
@@ -183,7 +324,7 @@ export class Cameraman {
     } else if (this.playing && this.player) {
       const p = this.player();
       if (p) {
-        const delta = p.setY(0.6).sub(this.controls.target).multiplyScalar(Math.min(1, dt * 6));
+        const delta = p.setY(p.y + TARGET_ABOVE_ANCHOR).sub(this.controls.target).multiplyScalar(Math.min(1, dt * 6));
         this.controls.target.add(delta);
         this.camera.position.add(delta);
       }

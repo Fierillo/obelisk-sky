@@ -25,8 +25,9 @@ import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/control
 import { PrefsStore, type Prefs } from './prefs';
 import { openSettings } from './ui/settings';
 import { openRelayModal } from './ui/relayModal';
+import { LoadingScreen } from './ui/loading';
 import { installVoiceBridge } from './shims/bridge';
-import { hashStr } from './world/layout';
+import { hashStr, ISLAND_R } from './world/layout';
 import { readBoard } from '@/utils/games/chain-reaction/board-view';
 import { activeRelay, DEFAULT_GROUP_RELAY, normalizeRelay, setActiveRelay, SUGGESTED_RELAYS } from './nostr/hub';
 import { pageHub } from './nostr/hub';
@@ -180,18 +181,33 @@ if (import.meta.env.DEV) {
 // ── boot ─────────────────────────────────────────────────────────────────
 
 void (async () => {
-  // The town and nature kits, then the people (bodies, outfits, hair, animations).
-  await preload(ALL_MODELS, (d, t) => { $('loading-fill').style.width = `${(d / t) * 70}%`; });
-  await preloadPeople((d, t) => { $('loading-fill').style.width = `${70 + (d / t) * 30}%`; });
-  ready = true;
+  // The island from straight above: a map from the plan at once, then the
+  // real ground (no models needed) behind the same view while the town and
+  // nature kits load, then the people (bodies, outfits, hair, animations).
+  const loading = new LoadingScreen($('loading'), world.plan);
   renderRelayName();
   applyPrefs(prefs.get());
+  world.post.holdLevel(true);
+  world.buildGround();
+  world.cam.holdTopDown(ISLAND_R);
+  const preview = (): void => {
+    if (ready) return;
+    world.frame();
+    requestAnimationFrame(preview);
+  };
+  requestAnimationFrame(() => { preview(); loading.showWorld(); });
+  await preload(ALL_MODELS, (d, t) => loading.setProgress((d / t) * 0.7));
   world.setGroups([], new Map()); // the empty island, before any relay data
   applyPrefs(prefs.get()); // again: grass needs the island built
+  await preloadPeople((d, t) => loading.setProgress(0.7 + (d / t) * 0.3));
+  ready = true;
+  world.post.holdLevel(false);
   for (const m of pending) handle(m);
   pending = [];
   requestAnimationFrame(loop);
-  setTimeout(() => $('loading').classList.add('done'), 300);
+  loading.done();
+  $('app').classList.remove('booting');
+  world.cam.playIntro();
 })();
 
 // ── session + feed ───────────────────────────────────────────────────────
@@ -437,7 +453,7 @@ function enterAsPlayer(): void {
   const s = session.current;
   if (!s) return;
   world.setPlayer(s.pubkey);
-  controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids, (p) => world.insideWalkable(p));
+  controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids, (p) => world.insideWalkable(p), (p) => world.groundAt(p));
   world.cam.followPlayer(world.personAnchor(s.pubkey));
 }
 
@@ -523,7 +539,7 @@ function standPlayer(): void {
   world.stand(pk);
   const out = world.exitSpot(controller.pos, face);
   controller.pos = { ...out };
-  controller.height = 0;
+  controller.height = world.groundAt(out);
   controller.vy = 0;
   world.people.get(pk)?.place(out);
 }
@@ -533,7 +549,7 @@ function toggleSeat(): void {
   if (toggleTraining()) return;
   if (world.isSeated(world.playerPk)) { standPlayer(); return; }
   const seat = world.nearestFreeSeat(controller.pos, 1.8);
-  if (seat) { world.sit(world.playerPk, seat); controller.pos = { ...seat.pos }; controller.path = []; controller.height = 0; controller.vy = 0; }
+  if (seat) { world.sit(world.playerPk, seat); controller.pos = { ...seat.pos }; controller.path = []; controller.height = world.groundAt(seat.pos); controller.vy = 0; }
   else toast('No free seat nearby. Benches are around the plaza, by the pond and at the campfire.');
 }
 
@@ -930,7 +946,7 @@ world.hooks.onGameClick = (id) => openGame(id);
 const LANDMARK_CARDS: Record<Exclude<LandmarkId, 'nostrwot'>, { title: string; sub: string; about: string; link?: [string, string] }> = {
   lacrypta: {
     title: 'La Crypta', sub: 'Bitcoin and Nostr hub · Buenos Aires',
-    about: 'The house where Obelisk is built. The orange {(₿)} on the lawn means you found it.',
+    about: 'The house where Obelisk is built. The glowing ₿ ball on the lawn means you found it: walk up the steps, the living room is open.',
     link: ['Visit lacrypta.ar', 'https://lacrypta.ar'],
   },
   coffee: {

@@ -56,15 +56,24 @@ export class PlayerController {
   landed = false;
 
   get airborne(): boolean {
-    return this.height > surfaceAt(this.solids(), this.pos, 0.02) + 1e-4 || this.vy > 0;
+    // Just stepped down a stair (snapped on the next step): still on your feet.
+    const slack = this.sinceGrounded === 0 ? STEP_UP : 1e-4;
+    return this.height > this.floorAt(this.pos, 0.02) + slack || this.vy > 0;
   }
 
   constructor(
     private grid: () => NavGrid, start: Vec2, private solids: () => readonly Solid[] = () => [],
     /** Extra walkable ground the grid doesn't know (inside buildings you can enter). */
     private extraWalkable: (p: Vec2) => boolean = () => false,
+    /** Raised ground that isn't furniture (stairs, a raised floor): smooth, so you walk up it. */
+    private ground: (p: Vec2) => number = () => 0,
   ) {
     this.pos = { ...start };
+  }
+
+  /** What your feet stand on at p: the highest solid or the raised ground. */
+  floorAt(p: Vec2, pad = 0): number {
+    return Math.max(surfaceAt(this.solids(), p, pad), this.ground(p));
   }
 
   walkTo(target: Vec2): boolean {
@@ -118,7 +127,9 @@ export class PlayerController {
     if (jump) this.jumpBuffered = JUMP_BUFFER;
     else this.jumpBuffered = Math.max(0, this.jumpBuffered - dt);
     // `height` is your feet's height: the ground is 0, a bench its seat.
-    const floor = surfaceAt(this.solids(), this.pos, 0.02);
+    const floor = this.floorAt(this.pos, 0.02);
+    // Walking down a slope or stairs keeps your feet on it (no little falls).
+    if (this.sinceGrounded === 0 && this.vy <= 0 && this.height > floor && this.height - floor <= STEP_UP) this.height = floor;
     const grounded = this.height <= floor + 1e-4 && this.vy <= 0;
     this.sinceGrounded = grounded ? 0 : this.sinceGrounded + dt;
     if (this.jumpBuffered > 0 && this.sinceGrounded <= COYOTE_TIME && this.vy <= 0) {
@@ -144,10 +155,10 @@ export class PlayerController {
     const g = this.grid();
     const pad = 0.18;
     // Furniture is solid below your feet: walk around it, or jump onto it.
-    const solids = this.solids();
     // (Inside one already, say after a teleport, you can always walk out.)
-    const here = surfaceAt(solids, this.pos, 0.12);
-    const tooHigh = (p: Vec2) => { const t = surfaceAt(solids, p, 0.12); return t > this.height + STEP_UP && t > here; };
+    // Raised ground is a ramp: each step rises a little, well under STEP_UP.
+    const here = this.floorAt(this.pos, 0.12);
+    const tooHigh = (p: Vec2) => { const t = this.floorAt(p, 0.12); return t > this.height + STEP_UP && t > here; };
     const walk = (p: Vec2) => g.isWalkable(p) || this.extraWalkable(p);
     const ok = (p: Vec2) => walk(p)
       && walk({ x: p.x + Math.sign(dx) * pad, z: p.z })

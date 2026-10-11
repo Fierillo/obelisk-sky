@@ -56,6 +56,8 @@ export default defineConfig({
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
+      // The landing page at /, the village at /app (server/index.ts routes them).
+      input: { landing: here('index.html'), app: here('app/index.html') },
       // Next's "use client" directives mean nothing outside Next.
       onwarn(w, warn) {
         if (w.code === 'MODULE_LEVEL_DIRECTIVE' || w.code === 'SOURCEMAP_ERROR') return;

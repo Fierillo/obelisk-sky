@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planIsland, buildNavGrid, assignSlots, inFootprint, dist } from './layout';
+import { planIsland, buildNavGrid, assignSlots, inFootprint, dist, islandOutline, ISLAND_R } from './layout';
 
 describe('island plan', () => {
   const plan = planIsland();
@@ -69,5 +69,22 @@ describe('bridges', () => {
     for (let s = -1.6; s <= 1.6; s += 0.1) {
       expect(grid.isWalkable({ x: b.x + n.x * s, z: b.z + n.z * s })).toBe(true);
     }
+  });
+});
+
+describe('island outline (the loading screen map)', () => {
+  const plan = planIsland();
+  it('traces the rim the ground is built with, all the way round', () => {
+    const rim = islandOutline(plan, 64);
+    expect(rim).toHaveLength(64);
+    for (const p of rim) {
+      const r = Math.hypot(p.x, p.z);
+      expect(r).toBeGreaterThan(ISLAND_R * 0.88);
+      expect(r).toBeLessThan(ISLAND_R * 1.12);
+      expect(r).toBeCloseTo(plan.radiusAt(Math.atan2(p.z, p.x)), 6);
+    }
+  });
+  it('has the river inside the island until it falls off the edge', () => {
+    for (const p of plan.river.slice(0, -1)) expect(Math.hypot(p.x, p.z)).toBeLessThan(plan.radiusAt(Math.atan2(p.z, p.x)));
   });
 });
