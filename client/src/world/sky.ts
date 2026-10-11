@@ -14,9 +14,13 @@ const P = (top: number, horizon: number, bottom: number, sun: number, sunI: numb
   sun: new THREE.Color(sun), sunI, hemiSky: new THREE.Color(hemiSky), hemiGround: new THREE.Color(hemiGround), hemiI,
 });
 
-const NIGHT = P(0x070b24, 0x283063, 0x141a3a, 0x9fb4ff, 0.55, 0x3a4a86, 0x1b1830, 0.55);
-const DUSK = P(0x6c74c4, 0xf7b694, 0xf1a2a0, 0xffa66b, 1.6, 0xc9a7d8, 0x6b4a4a, 0.8);
-const DAY = P(0x4f9fe0, 0xd3ecf7, 0xb3daf0, 0xfff1d6, 2.0, 0xcfe6ff, 0x6a7a4a, 0.75);
+// Night keeps a cool moonlit fill: faces turned from the moon (people,
+// building sides) must stay readable, not go black under the tone mapping.
+export const NIGHT = P(0x070b24, 0x283063, 0x141a3a, 0x9fb4ff, 0.8, 0x7080c0, 0x433e62, 1.15);
+// The fill (hemisphere) light is what faces turned from the sun get: faces,
+// pets' bellies, building sides. Kept bright enough that they read.
+export const DUSK = P(0x6c74c4, 0xf7b694, 0xf1a2a0, 0xffa66b, 1.5, 0xc9a7d8, 0x8a6a66, 1.1);
+export const DAY = P(0x4f9fe0, 0xd3ecf7, 0xb3daf0, 0xfff1d6, 1.8, 0xcfe6ff, 0x8f9474, 1.25);
 
 function mix(a: Palette, b: Palette, t: number): Palette {
   const c = (x: THREE.Color, y: THREE.Color) => x.clone().lerp(y, t);

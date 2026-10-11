@@ -17,6 +17,8 @@ import { openThemeEditor } from './ui/themeEditor';
 import { GameBook, createTable, joinTable, startTable, moveOnTable, resignTable, cancelTable, timeoutOnTable, claimableTimeout, gameMarker, type CRSizeKey } from './games/book';
 import { GamePanel } from './ui/gamePanel';
 import { AvatarStore, DEFAULT_AVATAR, avatarTemplate, type Avatar } from './nostr/avatars';
+import { ActivityBeacon, ActivityStore, activityTemplate, type Activity } from './nostr/activity';
+import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
 import { openCreator } from './ui/creator';
 import { CallRoom } from './voice/callRoom';
 import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/controlsGuide';
@@ -164,7 +166,7 @@ world.hooks = {
 };
 
 // Handy for poking at the scene from the console.
-(window as unknown as { __sky: unknown }).__sky = { world: () => world, player: () => player, director: () => director, session: () => session, chat: () => chat, groups: () => groups, controller: () => controller };
+(window as unknown as { __sky: unknown }).__sky = { world: () => world, player: () => player, director: () => director, session: () => session, chat: () => chat, groups: () => groups, controller: () => controller, activity: () => activity, motion: () => motion };
 if (import.meta.env.DEV) {
   // Dev server only (never in a production build): log in with a hex key
   // so headless checks can exercise the signed-in path.
@@ -226,6 +228,7 @@ function startFeed(): void {
   resetVillage();
   avatars = new AvatarStore(hub);
   avatars.onChange((pk, a) => world.setAvatar(pk, a));
+  startActivity();
   book = new GameBook();
   book.onChange((id) => { gamePanel.refresh(id); scheduleTables(); });
   feed = new Feed(hub, {
@@ -277,7 +280,7 @@ session.onChange((s) => {
   chat.close();
   void call.leave();
   if (s) startFeed();
-  else { feed?.stop(); feed = null; resetVillage(); renderAccess('logged-out'); }
+  else { feed?.stop(); feed = null; activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); }
 });
 
 void session.restore().then((ok) => { if (!ok) { renderAccount(null); renderAccess('logged-out'); } });
@@ -556,8 +559,14 @@ function renderSeatHint(): void {
   }
   const seated = world.isSeated(pk);
   const seat = seated ? null : world.nearestFreeSeat(controller.pos, 1.8);
-  hint.hidden = !seated && !seat;
-  if (hint.hidden) return;
+  if (!seated && !seat) {
+    // Someone online is using it.
+    const who = world.claimedNear(controller.pos, 1.8);
+    hint.hidden = !who;
+    if (who) hint.textContent = `${world.nameOf(who)} is using this spot`;
+    return;
+  }
+  hint.hidden = false;
   if (seat?.prop && seat.prop !== 'mate') {
     const what = seat.prop === 'coffee' ? 'work with a coffee' : seat.prop === 'asado' ? 'eat asado' : 'join the table';
     hint.textContent = touch ? `Sit and ${what}` : `Press E to sit and ${what}`;
@@ -740,6 +749,109 @@ $('account-look').addEventListener('click', () => openLook());
 
 // Ask for the avatars of everyone in the village, a batch at a time.
 setInterval(() => { if (session.current) avatars.want([...world.people.keys()]); }, 3000);
+
+// ── live activities (kind 30078 obelisk-sky:activity:v1) ─────────────────
+// What you're doing (a bench, dips at the bars) goes to the relay, and what
+// everyone else is doing comes back: they run over and hold the spot.
+
+let activity = new ActivityStore(hub);
+const beacon = new ActivityBeacon();
+let activitySend: Promise<void> = Promise.resolve();
+let claimsDirty = true;
+let claimsAt = 0;
+
+// Live movement (ephemeral kind 20390, nostr/motion.ts): where you walk.
+let motion = new MotionStore(hub);
+const motionBeacon = new MotionBeacon();
+let motionBusy = false;
+
+/** Send your movement when the beacon says so (one publish in flight at a time). */
+function tickMotion(): void {
+  const s = session.current;
+  const pk = world.playerPk;
+  // A remote signer (bunker) can't sign this often; it still shares activities.
+  if (!s || !pk || !controller || motionBusy || s.method === 'nip46' || !prefs.get().shareMotion) return;
+  const path = controller.path;
+  const send = motionBeacon.update({
+    p: controller.pos,
+    moving: controller.moving,
+    run: controller.running,
+    dest: path.length ? path[path.length - 1] : null,
+    heading: controller.heading,
+  }, Date.now());
+  if (!send) return;
+  motionBusy = true;
+  publishToGroup(hub, (t) => session.sign(t), motionTemplate(send))
+    .then((out) => (out.ok ? motionBeacon.ok() : motionBeacon.fail()))
+    .catch(() => motionBeacon.fail())
+    .finally(() => { motionBusy = false; });
+}
+
+function startActivity(): void {
+  activity.stop();
+  activity = new ActivityStore(hub);
+  activity.onChange(() => { claimsDirty = true; });
+  activity.start();
+  motion.stop();
+  motion = new MotionStore(hub);
+  motion.onChange((pk) => {
+    const r = motion.get(pk);
+    if (r) world.applyMotion(pk, r.m, r.ageMs / 1000);
+  });
+  motion.start();
+  motionBeacon.reset();
+  // A start on the old relay expires by itself.
+  beacon.reset();
+  world.syncClaims([]);
+  claimsDirty = true;
+}
+
+function publishActivity(a: Activity | null, since: number): void {
+  activitySend = activitySend.then(async () => {
+    const pk = session.current?.pubkey;
+    if (!pk) return;
+    const out = await publishToGroup(hub, (t) => session.sign(t), activityTemplate(a, since, activity.createdAt(pk)));
+    if (out.ok) activity.ingest(out.event);
+  }).catch(() => {});
+}
+
+/** Someone claimed your spot before you did: get up and let them have it. */
+function yieldSpot(to: string): void {
+  const pk = world.playerPk;
+  if (!pk || !controller) return;
+  if (world.isSeated(pk)) standPlayer();
+  if (world.isTraining(pk)) { world.stopTraining(pk); controller.pos = { ...world.people.get(pk)!.pos }; }
+  toast(`${world.nameOf(to)} got there first.`);
+}
+
+function tickActivity(): void {
+  if (!session.current) return;
+  const pk = world.playerPk;
+  let mine = pk ? world.activityOf(pk) : null;
+  if (pk) {
+    const send = beacon.update(mine, Date.now());
+    if (send) publishActivity(send.activity, send.since);
+  }
+  tickMotion();
+  const now = performance.now();
+  if (!claimsDirty && now - claimsAt < 1000) return;
+  claimsDirty = false;
+  claimsAt = now;
+  world.expireMotion();
+  const local = pk ? { pk, activity: mine, since: beacon.since } : null;
+  let claims = activity.live(nowSec(), local);
+  const lost = pk && claims.find((c) => c.pk === pk && !c.held);
+  if (lost && pk) {
+    const winner = claims.find((c) => c.held && c.spot === lost.spot);
+    yieldSpot(winner?.pk ?? '');
+    mine = world.activityOf(pk);
+    claims = activity.live(nowSec(), { pk, activity: mine, since: beacon.since });
+  }
+  world.syncClaims(claims);
+}
+
+// Best effort: tell the others you left (the expiration covers a lost one).
+window.addEventListener('pagehide', () => { if (beacon.published) publishActivity(null, 0); });
 
 /** First visit with no saved look: offer the creator once. */
 function maybeWelcome(): void {
@@ -1059,6 +1171,7 @@ let placeDwell = 0;
 function loop(): void {
   const dt = world.frame();
   stepPlayer(dt);
+  tickActivity();
   renderSeatHint();
   if (call.state.channelId && controller) {
     call.updatePositions({ x: controller.pos.x, z: controller.pos.z, yaw: world.cameraYaw() }, (pk) => world.people.get(pk)?.pos ?? null);

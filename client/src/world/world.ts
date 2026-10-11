@@ -11,7 +11,6 @@ import { Cameraman } from './cameraman';
 import { Character, pubkeyColor, CHAR_HEIGHT, PERSON_SCALE, SIT_SEAT_HEIGHT, registerClip } from './character';
 import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises';
 import { buildPerson } from '../people/people';
-import type { Solid } from '../player/controller';
 import type { Command } from './director';
 import { buildIsland, type IslandMeshes } from './island';
 import {
@@ -27,6 +26,9 @@ import { Pet, buildHat } from './pet';
 import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type SeatProp } from './landmarks';
 import { buildMill, type Mill } from './mill';
 import type { Avatar } from '../nostr/avatars';
+import { parseSpot, seatSpotId, stationSpotId, type Activity, type Claim } from '../nostr/activity';
+import { extrapolate, type Motion } from '../nostr/motion';
+import { RUN_SPEED as PLAYER_RUN, WALK_SPEED as PLAYER_WALK, type Solid } from '../player/controller';
 import { Post } from './post';
 import { PropBatch } from './props';
 import { Sky, type TimeOverride } from './sky';
@@ -52,6 +54,15 @@ export interface WorldHooks {
   onLandmarkClick?: (id: LandmarkId) => void;
   onBubbleClick?: (msgId: string) => void;
 }
+
+/** Farther than this (or with no path) a claimed person fades across instead of running. */
+const CLAIM_RUN_RANGE = 30;
+/** Live movement: seconds without an update before someone stops being live. */
+const MOVER_STALE_S = 75;
+/** How far past a key-walker's last update to keep them walking (s). */
+const MOVER_LEAD_S = 2.5;
+/** Farther than this from where they really are: fade across. */
+const MOVER_BLINK_M = 4;
 
 const TREE_MODELS = ['nature/tree_default', 'nature/tree_oak', 'nature/tree_fat', 'nature/tree_detailed', 'nature/tree_cone',
   'nature/tree_pineDefaultA', 'nature/tree_pineRoundA', 'nature/tree_pineTallA', 'nature/tree_default', 'nature/tree_oak',
@@ -992,14 +1003,8 @@ export class World {
       c.targetOpacity = 1;
       return;
     }
-    if (c) return;
-    const prof = this.profiles.get(pk);
-    c = new Character(pk, prof?.name ?? 'someone');
-    c.setProfile(prof?.name ?? shortNpub(pk), prof?.avatar ?? null);
-    this.people.set(pk, c);
-    this.applyAvatar(c);
-    this.scene.add(c.root);
-    c.idleFor = this.wanderRng() * 8;
+    if (c) { this.claimSpawned.delete(pk); return; }
+    c = this.makePerson(pk);
     if (arrival === 'door') {
       c.place(this.doorOf(groupId));
       this.walkTo(c, this.yardSpot(groupId));
@@ -1011,6 +1016,17 @@ export class World {
       c.place(this.yardSpot(groupId, 2.2));
       c.body.rotation.y = this.wanderRng() * 6.28;
     }
+  }
+
+  private makePerson(pk: string): Character {
+    const prof = this.profiles.get(pk);
+    const c = new Character(pk, prof?.name ?? 'someone');
+    c.setProfile(prof?.name ?? shortNpub(pk), prof?.avatar ?? null);
+    this.people.set(pk, c);
+    this.applyAvatar(c);
+    this.scene.add(c.root);
+    c.idleFor = this.wanderRng() * 8;
+    return c;
   }
 
   /** People who live at a landmark: they stay put and never leave. */
@@ -1035,8 +1051,11 @@ export class World {
 
   private despawn(pk: string): void {
     if (this.residents.has(pk)) return;
+    if (this.pinned(pk)) { this.despawnLater.add(pk); return; }
     const c = this.people.get(pk);
     if (!c) return;
+    this.stopTraining(pk);
+    this.stand(pk);
     this.people.delete(pk);
     this.pets.get(pk)?.dispose();
     this.pets.delete(pk);
@@ -1052,8 +1071,9 @@ export class World {
         case 'despawn': if (cmd.pk !== this.playerPk) this.despawn(cmd.pk); break;
         case 'goto-yard': {
           const c = this.people.get(cmd.pk);
-          if (!c || cmd.pk === this.playerPk) break;
+          if (!c || cmd.pk === this.playerPk || this.pinned(cmd.pk)) break;
           this.stand(cmd.pk);
+          this.stopTraining(cmd.pk);
           this.leaveConvoSpot(cmd.pk);
           c.stand();
           this.homeward.delete(cmd.pk);
@@ -1065,7 +1085,9 @@ export class World {
           const c = this.people.get(cmd.pk);
           if (!c) break;
           if (cmd.pk === this.playerPk) { this.convoOf.set(cmd.pk, cmd.convoId); break; }
+          if (this.pinned(cmd.pk)) break;
           this.stand(cmd.pk);
+          this.stopTraining(cmd.pk);
           this.homeward.delete(cmd.pk);
           c.targetOpacity = 1;
           const spot = this.convoSpot(cmd.convoId, cmd.groupId);
@@ -1104,7 +1126,7 @@ export class World {
           // Spread out a little to make room for the fire.
           cmd.members.forEach((pk, i) => {
             const c = this.people.get(pk);
-            if (!c) return;
+            if (!c || this.pinned(pk)) return;
             const spots = circleSpots(spot.center, cmd.members.length, 0.75);
             this.walkTo(c, spots[i], { instant: cmd.instant, then: () => { c.faceToward(spot.center); c.sit(); } });
           });
@@ -1117,7 +1139,7 @@ export class World {
           for (const pk of cmd.members) {
             if (this.convoOf.get(pk) === cmd.convoId) this.convoOf.delete(pk);
             const c = this.people.get(pk);
-            if (c) { c.stand(); c.idleFor = 2 + this.wanderRng() * 6; }
+            if (c && !this.pinned(pk)) { c.stand(); c.idleFor = 2 + this.wanderRng() * 6; }
           }
           break;
         }
@@ -1319,7 +1341,7 @@ export class World {
   // ── idle life ─────────────────────────────────────────────────────────
 
   private idleLife(c: Character, dt: number): void {
-    if (c.pk === this.playerPk) return;
+    if (c.pk === this.playerPk || this.pinned(c.pk)) return;
     const inside = this.homeward.get(c.pk);
     if (inside !== undefined) {
       const left = inside - dt;
@@ -1351,10 +1373,10 @@ export class World {
     if (1 - this.sky.day < 0.3 && roll >= 0.6 && roll < 0.68) {
       const seat = this.seats.find((x) => x.landmark === 'coffee' && !x.taken);
       if (seat) {
-        seat.taken = `pending:${c.pk}`;
+        this.reserve(c.pk, seat);
         this.walkTo(c, seat.pos, {
           then: () => {
-            seat.taken = null;
+            this.releasePending(c.pk);
             this.sit(c.pk, seat);
             this.seatedUntil.set(c.pk, this.elapsed + 25 + this.wanderRng() * 35);
           },
@@ -1366,10 +1388,10 @@ export class World {
     if (1 - this.sky.day > 0.3 && roll >= 0.35 && roll < 0.55) {
       const seat = this.seats.find((x) => x.landmark === 'parrilla' && !x.taken);
       if (seat) {
-        seat.taken = `pending:${c.pk}`;
+        this.reserve(c.pk, seat);
         this.walkTo(c, seat.pos, {
           then: () => {
-            seat.taken = null;
+            this.releasePending(c.pk);
             this.sit(c.pk, seat);
             this.seatedUntil.set(c.pk, this.elapsed + 40 + this.wanderRng() * 60);
           },
@@ -1397,11 +1419,11 @@ export class World {
     if (home && this.districtFor(home) === 'sports' && roll >= 0.4 && roll < 0.6) {
       const st = this.stations.find((x) => !x.taken);
       if (st) {
-        st.taken = `pending:${c.pk}`;
+        this.reserve(c.pk, st);
         const kind = st.kinds[Math.floor(this.wanderRng() * st.kinds.length)];
         this.walkTo(c, this.stationApproach(st), {
           then: () => {
-            st.taken = null;
+            this.releasePending(c.pk);
             if (this.train(c.pk, st, kind)) this.trainUntil.set(c.pk, this.elapsed + 10 + this.wanderRng() * 14);
           },
         });
@@ -1412,10 +1434,10 @@ export class World {
     if (roll > 0.88) {
       const seat = this.nearestFreeSeat(c.pos, 9);
       if (seat) {
-        seat.taken = `pending:${c.pk}`;
+        this.reserve(c.pk, seat);
         this.walkTo(c, seat.pos, {
           then: () => {
-            seat.taken = null;
+            this.releasePending(c.pk);
             this.sit(c.pk, seat);
             this.seatedUntil.set(c.pk, this.elapsed + 25 + this.wanderRng() * 40);
           },
@@ -1500,7 +1522,7 @@ export class World {
   gatherForCall(channelId: string, pks: string[]): void {
     const slot = this.slotFor(channelId);
     if (!slot) return;
-    const others = pks.filter((pk) => pk !== this.playerPk && this.people.has(pk));
+    const others = pks.filter((pk) => pk !== this.playerPk && this.people.has(pk) && !this.pinned(pk));
     const spots = circleSpots(slot.pos, Math.max(2, others.length), 0.7);
     others.forEach((pk, i) => {
       const c = this.people.get(pk)!;
@@ -1687,6 +1709,7 @@ export class World {
   private builtClips = new Set<string>();
 
   stand(pk: string): void {
+    this.releasePending(pk);
     const seat = this.seatOf.get(pk);
     if (seat) seat.taken = null;
     this.seatOf.delete(pk);
@@ -1698,6 +1721,251 @@ export class World {
     if (c.mate) { c.mate.removeFromParent(); c.mate = null; }
     this.laptops.get(pk)?.removeFromParent();
     this.laptops.delete(pk);
+  }
+
+  // ── live activities (nostr/activity.ts) ───────────────────────────────
+
+  /** Spots held for someone on their way to them (an NPC's coffee, a claim). */
+  private pendingOf = new Map<string, Seat | Station>();
+
+  private reserve(pk: string, place: Seat | Station): void {
+    this.releasePending(pk);
+    place.taken = `pending:${pk}`;
+    this.pendingOf.set(pk, place);
+  }
+
+  private releasePending(pk: string): void {
+    const place = this.pendingOf.get(pk);
+    this.pendingOf.delete(pk);
+    if (place?.taken === `pending:${pk}`) place.taken = null;
+  }
+
+  /** People placed by a live activity event rather than by their local life. */
+  private claims = new Map<string, Claim & { place: Seat | Station | null }>();
+  /** Spawned only for a claim (they haven't posted): they leave when it ends. */
+  private claimSpawned = new Set<string>();
+  /** The Director let them go while they were pinned. */
+  private despawnLater = new Set<string>();
+  /** Fading out to reappear elsewhere: runs once the character is invisible. */
+  private blinks = new Map<string, () => void>();
+
+  /** Steered from elsewhere (a live claim or live movement): local life and the Director leave them be. */
+  private pinned(pk: string): boolean {
+    return !!this.claims.get(pk)?.place || this.movers.has(pk);
+  }
+
+  /** What `pk` is doing, named the way it is published. */
+  activityOf(pk: string): Activity | null {
+    const seat = this.seatOf.get(pk);
+    if (seat) return { spot: seatSpotId(seat.pos), kind: 'sit' };
+    const t = this.trainingAt.get(pk);
+    if (t) return { spot: stationSpotId(this.stations.indexOf(t.station)), kind: t.kind };
+    return null;
+  }
+
+  /** The seat or station a spot id names in this village, if any. */
+  spotPlace(id: string): Seat | Station | null {
+    const s = parseSpot(id);
+    if (!s) return null;
+    if (s.type === 'station') return this.stations[s.index] ?? null;
+    let best: Seat | null = null, bd = 0.5;
+    for (const seat of this.seats) {
+      if (seatSpotId(seat.pos) === id) return seat;
+      const d = dist(seat.pos, s.pos);
+      if (d < bd) { bd = d; best = seat; }
+    }
+    return best;
+  }
+
+  /** Whoever holds a live claim on a seat or station near `p`. */
+  claimedNear(p: Vec2, within: number): string | null {
+    for (const [pk, c] of this.claims) if (c.held && c.place && dist(c.place.pos, p) <= within) return pk;
+    return null;
+  }
+
+  /**
+   * Everyone's live activities (ActivityStore.live): each person runs, or
+   * fades across, to their spot and stays there; whoever drops out goes back
+   * to their own life.
+   */
+  syncClaims(list: Claim[]): void {
+    const next = new Map(list.filter((c) => c.pk !== this.playerPk && !this.residents.has(c.pk)).map((c) => [c.pk, c]));
+    for (const pk of [...this.claims.keys()]) if (!next.has(pk)) this.releaseClaim(pk);
+    for (const c of next.values()) {
+      const cur = this.claims.get(c.pk);
+      if (cur && cur.spot === c.spot && cur.kind === c.kind && cur.held === c.held) continue;
+      this.applyClaim(c);
+    }
+  }
+
+  private applyClaim(cl: Claim): void {
+    const pk = cl.pk;
+    if (this.claims.has(pk)) this.releaseClaim(pk, true);
+    const place = this.spotPlace(cl.spot);
+    const station = place && 'kinds' in place ? place : null;
+    const seat = place && !station ? (place as Seat) : null;
+    if (!place || (station && !station.kinds.includes(cl.kind as ExerciseKind)) || (seat && cl.kind !== 'sit')) {
+      // A spot this village doesn't have (a yard stool of another channel set).
+      this.claims.set(pk, { ...cl, place: null });
+      if (this.claimSpawned.delete(pk)) this.despawn(pk);
+      return;
+    }
+    this.claims.set(pk, { ...cl, place });
+    let c = this.people.get(pk);
+    const fresh = !c;
+    if (!c) { c = this.makePerson(pk); this.claimSpawned.add(pk); }
+    this.stand(pk);
+    this.stopTraining(pk);
+    this.leaveConvoSpot(pk);
+    this.convoOf.delete(pk);
+    this.homeward.delete(pk);
+    if (cl.held) {
+      if (place.taken && place.taken !== pk) this.evict(place.taken);
+      this.reserve(pk, place);
+    }
+    // The winner goes to the equipment; someone who lost the race waits beside it.
+    const dest = station ? this.stationApproach(station) : cl.held ? seat!.pos : this.exitSpot(seat!.pos, seat!.face);
+    const arrive = () => {
+      const ch = this.people.get(pk);
+      if (!ch || this.claims.get(pk)?.place !== place) return;
+      if (!cl.held) { ch.faceToward(place.pos); return; }
+      this.releasePending(pk);
+      if (seat) this.sit(pk, seat);
+      // No clip yet (the body is still loading): the next sync tries again.
+      else if (!this.train(pk, station!, cl.kind as ExerciseKind)) this.claims.delete(pk);
+    };
+    if (fresh) {
+      // New in the village: fade in right there.
+      c.place(this.grid.nearestWalkable(dest) ?? dest);
+      arrive();
+      return;
+    }
+    const path = c.opacity > 0.5 && dist(c.pos, dest) < CLAIM_RUN_RANGE ? this.grid.findPath(c.pos, dest) : null;
+    if (path) { c.targetOpacity = 1; c.walk(path, true, arrive); }
+    else this.blink(c, dest, arrive);
+  }
+
+  /** Fade out, reappear at `to`, fade back in: a soft teleport. */
+  private blink(c: Character, to: Vec2, then: () => void): void {
+    c.halt();
+    c.targetOpacity = 0;
+    this.blinks.set(c.pk, () => {
+      c.place(this.grid.nearestWalkable(to) ?? to);
+      c.targetOpacity = 1;
+      then();
+    });
+  }
+
+  /** Move a villager off a seat or station (or out of its reservation) for a live claim. */
+  private evict(holder: string): void {
+    const pending = holder.startsWith('pending:');
+    const pk = pending ? holder.slice('pending:'.length) : holder;
+    if (pk === this.playerPk) return;
+    const c = this.people.get(pk);
+    if (pending) { this.releasePending(pk); c?.halt(); }
+    else {
+      const seat = this.seatOf.get(pk);
+      this.stand(pk);
+      this.stopTraining(pk);
+      if (c && seat) c.place(this.exitSpot(seat.pos, seat.face));
+    }
+    // Off they go, somewhere else.
+    if (c) c.idleFor = 99;
+  }
+
+  private releaseClaim(pk: string, reapply = false): void {
+    const cl = this.claims.get(pk);
+    this.claims.delete(pk);
+    this.blinks.delete(pk);
+    if (!cl?.place || pk === this.playerPk) return;
+    const c = this.people.get(pk);
+    const seat = this.seatOf.get(pk);
+    this.stand(pk);
+    this.stopTraining(pk);
+    if (c) {
+      c.halt();
+      c.targetOpacity = 1;
+      if (seat) c.place(this.exitSpot(seat.pos, seat.face));
+      c.idleFor = 0;
+    }
+    if (reapply || this.movers.has(pk)) return;
+    const spawned = this.claimSpawned.delete(pk);
+    if (this.despawnLater.delete(pk) || spawned) this.despawn(pk);
+  }
+
+  // ── live movement (nostr/motion.ts) ───────────────────────────────────
+
+  /** People walking live in another browser → when their motion goes stale (elapsed s). */
+  private movers = new Map<string, number>();
+
+  /**
+   * Someone's latest movement, `ageS` seconds old: walk them where they are
+   * going at their own pace, or fade them across when this screen has them
+   * far from where they really are. A live claim (sitting, training) wins.
+   */
+  applyMotion(pk: string, m: Motion, ageS: number): void {
+    if (pk === this.playerPk || this.residents.has(pk)) return;
+    this.movers.set(pk, this.elapsed + MOVER_STALE_S);
+    if (this.claims.get(pk)?.place) return;
+    const age = THREE.MathUtils.clamp(ageS, 0, 1.5);
+    const speeds = { walk: PLAYER_WALK, run: PLAYER_RUN };
+    const now = this.walkable(extrapolate(m, age, speeds));
+    // Keys: keep walking a little past the next correction; a click: its destination.
+    const target = m.moving ? this.walkable(m.dest ?? this.straightAhead(m.p, extrapolate(m, age + MOVER_LEAD_S, speeds))) : now;
+    let c = this.people.get(pk);
+    if (!c) {
+      c = this.makePerson(pk);
+      this.claimSpawned.add(pk);
+      c.place(now);
+    }
+    c.pace = speeds;
+    if (this.seatOf.has(pk)) this.stand(pk);
+    this.stopTraining(pk);
+    this.releasePending(pk);
+    this.leaveConvoSpot(pk);
+    this.convoOf.delete(pk);
+    this.homeward.delete(pk);
+    this.blinks.delete(pk);
+    const go = () => {
+      const ch = this.people.get(pk);
+      if (!ch) return;
+      const path = dist(ch.pos, target) > 0.05 ? this.grid.findPath(ch.pos, target) : null;
+      if (path) ch.walk(path, m.run);
+      else ch.halt();
+    };
+    if (c.opacity < 0.5 && c.targetOpacity === 1) { go(); return; }
+    if (dist(c.pos, now) > MOVER_BLINK_M) this.blink(c, now, go);
+    else { c.targetOpacity = 1; go(); }
+  }
+
+  /** Forget movers whose movement went quiet: back to local life, or gone if they only came to move. */
+  expireMotion(): void {
+    for (const [pk, until] of this.movers) {
+      if (until > this.elapsed) continue;
+      this.movers.delete(pk);
+      const c = this.people.get(pk);
+      if (c) { c.pace = null; c.idleFor = 0; }
+      if (this.claims.get(pk)?.place) continue;
+      const spawned = this.claimSpawned.delete(pk);
+      if (this.despawnLater.delete(pk) || spawned) this.despawn(pk);
+    }
+  }
+
+  private walkable(p: Vec2): Vec2 {
+    return this.grid.isWalkable(p) || this.insideWalkable(p) ? p : this.grid.nearestWalkable(p) ?? p;
+  }
+
+  /** As far towards `to` as the ground allows in a straight line (keys don't walk through walls). */
+  private straightAhead(from: Vec2, to: Vec2): Vec2 {
+    const d = dist(from, to);
+    const steps = Math.ceil(d / 0.25);
+    let last = from;
+    for (let i = 1; i <= steps; i++) {
+      const p = { x: from.x + ((to.x - from.x) * i) / steps, z: from.z + ((to.z - from.z) * i) / steps };
+      if (!this.grid.isWalkable(p) && !this.insideWalkable(p)) break;
+      last = p;
+    }
+    return last;
   }
 
   // ── picking ───────────────────────────────────────────────────────────
@@ -1741,6 +2009,8 @@ export class World {
   setPlayer(pk: string | null): void {
     const prev = this.playerPk ? this.people.get(this.playerPk) : null;
     if (prev) prev.external = null;
+    // Your own activity from another tab doesn't steer you here.
+    if (pk) this.releaseClaim(pk);
     this.playerPk = pk;
     if (!pk) return;
     if (!this.people.has(pk)) this.spawn(pk, '', 'instant');
@@ -1817,6 +2087,11 @@ export class World {
     this.post.setNight(night01);
 
     for (const p of this.pets.values()) p.update(dt);
+    for (const [pk, then] of [...this.blinks]) {
+      const c = this.people.get(pk);
+      if (!c) this.blinks.delete(pk);
+      else if (c.opacity === 0) { this.blinks.delete(pk); then(); }
+    }
     for (const c of this.people.values()) {
       c.update(dt);
       if (!this.residents.has(c.pk)) this.idleLife(c, dt);

@@ -7,6 +7,7 @@ import {
   BOTTOM_COLORS, CLOTH_COLORS, HAIRS, HAIR_COLORS, OUTFITS, SHOE_COLORS, SKIN_TONES, defaultLook,
   type Hair, type Outfit, type PersonLook,
 } from '../people/people';
+import { LookPreview } from './lookPreview';
 
 const HAIR_LABEL: Record<Hair, string> = {
   none: 'None', buzzed: 'Buzzed', simpleparted: 'Parted', long: 'Long', buns: 'Buns', buzzedfemale: 'Short',
@@ -26,11 +27,22 @@ export interface CreatorDeps {
   cancel: () => void;
 }
 
+/** The open panel's close (one at a time: opening again replaces it). */
+let closeOpen: (() => void) | null = null;
+
 export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = false): void {
+  closeOpen?.();
   parent.querySelector('.creator')?.remove();
   const draft: Avatar = JSON.parse(JSON.stringify(deps.current()));
   const el = document.createElement('div');
   el.className = 'creator';
+  const stage = new LookPreview();
+  const close = () => {
+    stage.dispose();
+    el.remove();
+    if (closeOpen === close) closeOpen = null;
+  };
+  closeOpen = close;
 
   const head = document.createElement('div');
   head.className = 'themes-head';
@@ -56,7 +68,7 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
     body.append(g);
     return g;
   };
-  const refresh = () => { deps.preview(draft); paint(); };
+  const refresh = () => { deps.preview(draft); stage.set(draft); paint(); };
 
   draft.v = 2;
   draft.look ??= defaultLook(0);
@@ -187,7 +199,7 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   cancel.type = 'button';
   cancel.className = 'account-btn';
   cancel.textContent = first ? 'Later' : 'Cancel';
-  cancel.addEventListener('click', () => { deps.cancel(); el.remove(); });
+  cancel.addEventListener('click', () => { deps.cancel(); close(); });
   const save = document.createElement('button');
   save.type = 'button';
   save.className = 'account-btn primary';
@@ -198,11 +210,12 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
     const err = await deps.save(draft);
     save.disabled = false;
     if (err) status.textContent = `Not saved: ${err}`;
-    else el.remove();
+    else close();
   });
   foot.append(status, cancel, save);
-  el.append(head, body, foot);
+  el.append(head, stage.canvas, body, foot);
   parent.append(el);
+  stage.set(draft);
 
   function paint() {
     const L = look();

@@ -101,6 +101,7 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   row('Channel signs', toggle('signs'));
   row('Speech bubbles', toggle('bubbles'));
   row('Message feed', toggle('feed'), '(bottom left)');
+  row('Share my movement live', toggle('shareMotion'), '(others see you walk)');
 
   section('Camera and controls');
   row('Auto camera', toggle('autoDirector'), '(follows conversations)');

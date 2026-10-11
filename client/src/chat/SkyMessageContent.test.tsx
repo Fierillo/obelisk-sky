@@ -6,16 +6,19 @@ import SkyMessageContent from './SkyMessageContent';
 import { putProfile, clearProfiles, setProfileRequester } from '../nostr/profileStore';
 import { registerHost } from '../shims/host';
 
+const LAZY_MS = 8000;
+
 registerHost({ login: async () => {}, sign: async () => { throw new Error('no signer'); }, pubkey: () => null });
 
 const pk = 'b'.repeat(64);
 
 afterEach(() => { cleanup(); clearProfiles(); });
 
-describe('SkyMessageContent (obelisk-dex message renderer)', () => {
+describe('SkyMessageContent (obelisk-dex message renderer)', { timeout: 20_000 }, () => {
   it('renders markdown and a code block', async () => {
     render(<SkyMessageContent content={'**bold** text\n\n```\nconst x = 1;\n```'} channelId="g" />);
-    await waitFor(() => expect(screen.getByText('bold').tagName).toBe('STRONG'));
+    // The markdown renderer loads lazily; under a full parallel run that can take over a second.
+    await waitFor(() => expect(screen.getByText('bold').tagName).toBe('STRONG'), { timeout: LAZY_MS });
     expect(screen.getByText('const x = 1;')).toBeTruthy();
   });
 
@@ -23,7 +26,7 @@ describe('SkyMessageContent (obelisk-dex message renderer)', () => {
     const asked: string[] = [];
     setProfileRequester((p) => asked.push(p));
     render(<SkyMessageContent content={`hi nostr:${nip19.npubEncode(pk)}`} channelId="g" />);
-    const chip = await screen.findByTestId('mention-highlight');
+    const chip = await screen.findByTestId('mention-highlight', undefined, { timeout: LAZY_MS });
     expect(chip.textContent).not.toContain('Alice');
     await waitFor(() => expect(asked).toContain(pk));
     act(() => putProfile({ pubkey: pk, name: 'Alice', avatar: null, nip05: null, loaded: true }));

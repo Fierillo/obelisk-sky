@@ -100,7 +100,8 @@ export class Post {
     this.gtao = new GTAOPass(scene, camera, 1, 1);
     this.gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.3, thickness: 1.5, scale: 1.1, samples: 12 });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
-    this.gtao.blendIntensity = 0.85;
+    // Soft: strong AO turns pets' bellies and people's undersides black.
+    this.gtao.blendIntensity = 0.6;
     this.composer.addPass(this.gtao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.32, 0.5, 0.88);
     this.composer.addPass(this.bloom);

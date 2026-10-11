@@ -22,6 +22,8 @@ export interface Prefs {
   signs: boolean;
   bubbles: boolean;
   feed: boolean;
+  /** Publish where you walk so others see you move live (nostr/motion.ts). */
+  shareMotion: boolean;
   // Camera and controls
   autoDirector: boolean;
   fov: number; // first-person field of view, degrees
@@ -50,6 +52,7 @@ export const DEFAULT_PREFS: Prefs = {
   signs: true,
   bubbles: true,
   feed: true,
+  shareMotion: true,
   autoDirector: true,
   fov: 70,
   mouseSensitivity: 1,
@@ -85,6 +88,7 @@ export function normalizePrefs(raw: unknown): Prefs {
     signs: bool(r.signs, d.signs),
     bubbles: bool(r.bubbles, d.bubbles),
     feed: bool(r.feed, d.feed),
+    shareMotion: bool(r.shareMotion, d.shareMotion),
     autoDirector: bool(r.autoDirector, d.autoDirector),
     fov: num(r.fov, d.fov, 50, 100),
     mouseSensitivity: num(r.mouseSensitivity, d.mouseSensitivity, 0.25, 3),

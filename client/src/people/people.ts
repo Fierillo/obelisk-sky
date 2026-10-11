@@ -126,27 +126,80 @@ export function peopleClips(): THREE.AnimationClip[] {
 
 // ── recolouring ─────────────────────────────────────────────────────────
 
+/** sRGB byte → linear light. */
+const toLinear = (b: number) => { const c = b / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+
+/**
+ * Mean linear luminance of the texels at `uvs` (pairs, glTF orientation: v
+ * down) in an RGBA image: how bright a garment's cloth is on average.
+ */
+export function meanLinearLuma(rgba: ArrayLike<number>, width: number, height: number, uvs: ArrayLike<number>): number {
+  let sum = 0, n = 0;
+  for (let i = 0; i + 1 < uvs.length; i += 2) {
+    const u = uvs[i] - Math.floor(uvs[i]), v = uvs[i + 1] - Math.floor(uvs[i + 1]);
+    const x = Math.min(width - 1, Math.floor(u * width)), y = Math.min(height - 1, Math.floor(v * height));
+    const k = (y * width + x) * 4;
+    sum += 0.2126 * toLinear(rgba[k]) + 0.7152 * toLinear(rgba[k + 1]) + 0.0722 * toLinear(rgba[k + 2]);
+    n++;
+  }
+  return n ? sum / n : 0;
+}
+
+/** A mid-grey cloth, for when the texture can't be read back (tests, odd browsers). */
+const FALLBACK_LUMA = 0.2;
+const lumaCache = new Map<string, number>();
+const sampler = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+
+/** How bright this garment's cloth is (cached per file and mesh). */
+function garmentLuma(m: THREE.Mesh, base: THREE.MeshStandardMaterial, key: string): number {
+  const hit = lumaCache.get(key);
+  if (hit !== undefined) return hit;
+  let luma = FALLBACK_LUMA;
+  try {
+    const img = base.map?.image as CanvasImageSource & { width: number; height: number } | undefined;
+    const uv = m.geometry.getAttribute('uv');
+    const ctx = sampler?.getContext('2d', { willReadFrequently: true });
+    if (img && uv && ctx && sampler) {
+      const size = 128;
+      sampler.width = sampler.height = size;
+      ctx.drawImage(img, 0, 0, size, size);
+      const px = ctx.getImageData(0, 0, size, size).data;
+      const uvs = new Float32Array(uv.count * 2);
+      for (let i = 0; i < uv.count; i++) { uvs[i * 2] = uv.getX(i); uvs[i * 2 + 1] = uv.getY(i); }
+      const l = meanLinearLuma(px, size, size, uvs);
+      if (l > 0.002) luma = l;
+    }
+  } catch { /* keep the fallback */ }
+  lumaCache.set(key, luma);
+  return luma;
+}
+
 /**
  * Fabric recolour: `uTintAmt` 0 shows the texture as authored, 1 replaces
  * its colour by `uTint` while keeping its light and dark (folds, seams).
+ * The cloth's brightness is divided by its own average (`uRef`, linear), so
+ * a garment shows the chosen colour itself, not a darker shade of it: dark
+ * trousers and light shirts dye the same.
  */
-function tintable(base: THREE.MeshStandardMaterial, tint: string, amount: number): THREE.MeshStandardMaterial {
+function tintable(base: THREE.MeshStandardMaterial, tint: string, amount: number, ref: number): THREE.MeshStandardMaterial {
   const m = base.clone();
   const uTint = { value: new THREE.Color(tint) };
   const uTintAmt = { value: amount };
+  const uRef = { value: ref };
   m.userData.tint = uTint;
+  m.userData.ref = ref;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uTint = uTint;
     shader.uniforms.uTintAmt = uTintAmt;
+    shader.uniforms.uRef = uRef;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uTint;\nuniform float uTintAmt;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uTint;\nuniform float uTintAmt;\nuniform float uRef;')
       .replace('#include <map_fragment>', `#include <map_fragment>
-        float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-        // Lift the fabric's mid-grey to the tint's own brightness.
-        vec3 dyed = uTint * clamp(lum * 1.9, 0.0, 1.25);
+        float lum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 dyed = uTint * clamp(lum / uRef, 0.0, 1.6);
         diffuseColor.rgb = mix(diffuseColor.rgb, dyed, uTintAmt);`);
   };
-  m.customProgramCacheKey = () => 'tintable';
+  m.customProgramCacheKey = () => 'tintable2';
   return m;
 }
 
@@ -272,13 +325,13 @@ export function buildPerson(look: PersonLook): Person | null {
     if (/regular/i.test(base.name)) {
       // The outfit's own hands and wrists: dyed to the face's skin tone.
       const tone = new THREE.Color(SKIN_BASE[`${look.body}-${look.skin}`]).multiply(new THREE.Color(look.skinTint));
-      m.material = tintable(base, `#${tone.getHexString()}`, 1);
+      m.material = tintable(base, `#${tone.getHexString()}`, 1, garmentLuma(m, base, `${look.body}-${look.outfit}:${m.name}`));
       return;
     }
     if (n.includes('hood') && !look.hood) { m.visible = false; return; }
     const colour = n.includes('legs') ? look.bottom : n.includes('feet') ? look.shoes : look.top;
     const amount = n.includes('belt') || n.includes('bracer') || n.includes('pauldron') ? 0.35 : 0.85;
-    m.material = tintable(base, colour, amount);
+    m.material = tintable(base, colour, amount, garmentLuma(m, base, `${look.body}-${look.outfit}:${m.name}`));
   });
   // Hair, beard, eyebrows: one colour.
   const hairStyle = (m: THREE.Mesh) => {

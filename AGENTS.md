@@ -61,7 +61,7 @@ Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and ts
 
 - Re-vendor deliberately (`npm run vendor`), never by editing files under `vendor/`. After re-vendoring, re-run typecheck and tests: shims may need new exports.
 - `scripts/copy-brand.mjs` generates `client/src/obelisk.generated.css` from the vendored `globals.css` (Tailwind v4 `@source` globs for the components sky renders). Do not edit the generated file.
-- Wire formats must match obelisk-dex exactly (kind 9 tags, reactions, deletions, read-state kind 30078 `obelisk:readstate:v1`, games kind 2390). Sky-only events: kind 30078 `obelisk:avatar3d:v1` (avatar v2 `{look,...}`; v1 still parses) and `obelisk-sky:themes:<relay>` (operator-only districts).
+- Wire formats must match obelisk-dex exactly (kind 9 tags, reactions, deletions, read-state kind 30078 `obelisk:readstate:v1`, games kind 2390). Sky-only events: kind 30078 `obelisk:avatar3d:v1` (avatar v2 `{look,...}`; v1 still parses), `obelisk-sky:themes:<relay>` (operator-only districts) `obelisk-sky:activity:v1` (what you're doing live: `op` start/stop, `spot`, NIP-40 `expiration`, 45 s heartbeat; `nostr/activity.ts`) and ephemeral kind 20390 (live movement: position plus a click's destination or a key heading, at most 1/s with back-off, signed with the player's own key because the relay only accepts whitelisted pubkeys; `nostr/motion.ts`, off with the `shareMotion` pref and for remote signers).
 
 ## World rules that are easy to break
 
@@ -69,13 +69,14 @@ Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and ts
 - **Buildings you can enter** (HQ, café) keep their footprint blocked on the grid; the player may additionally walk their `interior.rooms` (`world.insideWalkable`). Doors open by distance; the follow camera gets a cutaway (roof hidden, walls see-through), first person does not.
 - **Landmarks** reserve slots before channels are assigned (`landmarks/index.ts` `LANDMARKS`, `reserveLandmarkSlots`). Each declares its real `footprint` and an optional `lawn` kept free of plaza lamps.
 - **Characters.** When the world places someone (seat, station), call `resetDrive()` so a stale run or jump state doesn't override the pose. Seats put the person `SIT_SEAT_HEIGHT` below the seat. The badge and speech bubbles follow the head bone.
+- **Live activities and movement.** Someone with a live `obelisk-sky:activity:v1` claim or live movement (`World.applyMotion`, stale after 75 s) is pinned (`World.syncClaims`); a claim beats movement: the Director's walks, convos and despawns and `idleLife` leave them alone until the claim ends or expires; an NPC on the spot is evicted. Spot ids are `station:<index>` and `seat:<x*10>:<z*10>`, so moving a bench or reordering `CALISTHENICS_STATIONS` changes ids between builds. NPC reservations go through `reserve`/`releasePending`, never `taken = 'pending:…'` directly.
 - **Exercise clips** are generated per body and grip height; hands are posed per grip (`OVER_BAR`, `ON_BAR`, `ON_PARALLEL`, `FLAT`) and the grip anchor is inside the curled fingers. Keep `exercises.test.ts` passing when changing poses.
 - **Assets.** Cloudflare caches `/models/*` and `/assets/*` as immutable for a year: a changed file under the same URL keeps serving the old one (add `?v=`). The server's CSP must keep `blob:` in `connect-src` and `'wasm-unsafe-eval'` in `script-src`, or GLB textures and meshopt fail and bodies don't render.
 - **Water shader:** GLSL `smoothstep(a, b, x)` needs a < b.
 
 ## Testing
 
-Every change comes with tests next to the code (`*.test.ts`, `*.test.tsx`), and `npx tsc -p tsconfig.json` plus `npm test` must pass before a deploy. Visual changes also get a headless screenshot check. Use the playwright in `/root/obelisk-dex/node_modules` with `--use-angle=swiftshader`. It is slow, so allow minutes. The dev build exposes `window.__sky` (world, player, chat, controller) and `__skyDevLogin(hex)` for a throwaway key. Never log in with a real key in tests, and never post to a relay from tests.
+Every change comes with tests next to the code (`*.test.ts`, `*.test.tsx`), and `npx tsc -p tsconfig.json` plus `npm test` must pass before a deploy. Visual changes also get a headless screenshot check. Use the playwright in `/root/obelisk-dex/node_modules` with `--use-angle=swiftshader`. It is slow, so allow minutes. The dev build exposes `window.__sky` (world, player, chat, controller, activity, motion) and `__skyDevLogin(hex)` for a throwaway key. Never log in with a real key in tests, and never post to a relay from tests. A logged-in test page shares movement by default: set `shareMotion: false` in the `obelisk-sky/prefs` localStorage entry first.
 
 ## Secrets and hygiene
 

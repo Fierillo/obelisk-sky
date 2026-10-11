@@ -291,6 +291,16 @@ export class Character {
     if (!path.length) { const cb = this.onArrive; this.onArrive = null; cb?.(); }
   }
 
+  /** Walking and running speeds when someone real steers this character
+   *  from another browser (their controller's, so both screens keep pace). */
+  pace: { walk: number; run: number } | null = null;
+
+  /** Stop where you are and forget where you were going (and why). */
+  halt(): void {
+    this.path = [];
+    this.onArrive = null;
+  }
+
   /** Set while the viewer steers this character (it ignores paths). */
   external: { moving: boolean; running: boolean } | null = null;
 
@@ -424,7 +434,7 @@ export class Character {
       const p = this.root.position;
       const dx = target.x - p.x, dz = target.z - p.z;
       const d = Math.hypot(dx, dz);
-      const speed = this.running ? RUN_SPEED : WALK_SPEED;
+      const speed = this.running ? (this.pace?.run ?? RUN_SPEED) : (this.pace?.walk ?? WALK_SPEED);
       if (d < 0.04) {
         this.path.shift();
         if (!this.path.length) {
