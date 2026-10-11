@@ -42,9 +42,13 @@
         <img src="/brand/sky-mark.svg" class="brand-mark" alt="" />
         <span>Obelisk <b>Sky</b></span>
       </a>
-      <button id="relay-btn" class="relay-btn" title="Relays and channels" aria-label="Relays and channels">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 7.5v4M12 11.5 6.5 16M12 11.5l5.5 4.5"/></svg>
-        <span id="relay-name">public.obelisk.ar</span>
+      <button id="relay-btn" class="relay-btn" data-state="connecting" title="Switch relay" aria-label="Switch relay" aria-haspopup="dialog">
+        <span class="relay-ico">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 7.5v4M12 11.5 6.5 16M12 11.5l5.5 4.5"/></svg>
+          <span class="relay-dot"></span>
+        </span>
+        <span class="relay-txt"><small>Relay</small><span id="relay-name">public.obelisk.ar</span></span>
+        <svg class="relay-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <div id="status" class="status" data-mode="connecting">
         <span class="dot"></span><span class="status-text">Connecting…</span>
@@ -53,7 +57,16 @@
           <button id="mode-history" aria-pressed="false" title="Browse and replay the busiest moments">History</button>
         </span>
       </div>
-      <div id="stats" class="stats"></div>
+      <div class="hud-tabs">
+        <button id="tab-channels" class="hud-tab" title="Channels on this relay">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
+          <span id="tab-channels-n">0</span><span class="hud-tab-label">Channels</span>
+        </button>
+        <button id="tab-members" class="hud-tab" title="Members: who's online, away and offline">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.6.2 4.4 1.9 5 5"/></svg>
+          <span class="hud-online"></span><span id="tab-members-n">0</span><span class="hud-tab-label">Online</span>
+        </button>
+      </div>
       <div class="bell-wrap">
         <button id="bell" class="bell" hidden aria-label="Mentions and replies" title="Mentions and replies">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -67,7 +80,8 @@
       <button id="login" class="account-btn primary">Log in</button>
       <div id="account" class="account" hidden>
         <button id="account-look" class="account-look" title="Your look">
-          <span id="account-name" class="account-name"></span>
+          <span id="account-avatar" class="account-avatar"></span>
+          <span class="account-who"><span id="account-name" class="account-name"></span><span id="account-nip" class="account-nip"></span></span>
         </button>
         <button id="logout" class="account-btn" title="Log out">Log out</button>
       </div>
@@ -99,7 +113,7 @@
         <button data-act="director" class="on" title="Auto-director: follow conversations">
           <svg viewBox="0 0 24 24"><path d="M4 7h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><path d="m16 11 6-3v8l-6-3"/></svg>
         </button>
-        <button data-act="story" title="Replay the latest conversation">
+        <button data-act="story" title="History: replay the latest conversation (again to go live)">
           <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>
         </button>
         <button data-act="time" title="Time of day: Buenos Aires">
@@ -162,6 +176,17 @@
     </div>
     <button id="seat-hint" class="seat-hint" hidden></button>
     <button id="chat-hint" class="seat-hint chat-hint" hidden></button>
+    <div id="near-hint" class="near-hint" hidden>
+      <span id="near-name" class="near-name"></span>
+      <button id="near-dm" class="account-btn" title="Private message (M)">💬 Message</button>
+      <button id="near-call" class="account-btn" title="Private voice call">📞 Call</button>
+    </div>
+    <div id="pcall" class="callbar pcall" hidden>
+      <div class="callbar-info"><span class="callbar-dot"></span><span id="pcall-title"></span><span id="pcall-sub" class="callbar-who"></span></div>
+      <button id="pcall-accept" class="account-btn primary" hidden>Accept</button>
+      <button id="pcall-mic" class="account-btn" hidden>Mute</button>
+      <button id="pcall-end" class="account-btn danger">Hang up</button>
+    </div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
     <div id="wipe" class="wipe"></div>
   </div>

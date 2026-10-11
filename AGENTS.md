@@ -56,7 +56,7 @@ client/
   src/nostr/            hub, session, feed/state, publish, readstate, avatars, profileStore, themes,
                         activity (live sitting/training), motion (live movement)
   src/chat/             React island rendering obelisk-dex's message components
-  src/ui/               chat panel, creator (+ lookPreview, its 3D stage), settings, relay modal, controls guide, content (bubbles), loading (top-down map)
+  src/ui/               chat panel, side panel (channels and members, left), DM panel, creator (+ lookPreview, its 3D stage), settings, relay modal, controls guide, content (bubbles), loading (top-down map)
   src/shims/            replacements for obelisk-dex modules (the seam, see below)
 server/                 static server + link preview
 scripts/                vendor, copy-brand, make-icons, copy-assets, build-people, make-og
@@ -71,7 +71,13 @@ Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and ts
 - Re-vendor deliberately (`npm run vendor`), never by editing files under `vendor/`. After re-vendoring, re-run typecheck and tests: shims may need new exports.
 - Sky has its own mark (a white cloud with the Obelisk rising out of it, `client/public/brand/sky-mark*.svg`) and palette (`--sky`, `--cloud`, `--ink` in `styles.css`; the landing page and the loading screen, gate and brand pill use it, the in-app panels stay dark). `copy-brand.mjs` no longer copies obelisk-dex's icons; `make-icons.mjs` draws sky's.
 - `scripts/copy-brand.mjs` copies `obelisk.stl`, writes the manifest (`start_url: /app`) and generates `client/src/obelisk.generated.css` from the vendored `globals.css` (Tailwind v4 `@source` globs for the components sky renders). Do not edit the generated file.
-- Wire formats must match obelisk-dex exactly (kind 9 tags, reactions, deletions, read-state kind 30078 `obelisk:readstate:v1`, games kind 2390).
+- Wire formats must match obelisk-dex exactly (kind 9 tags, reactions, deletions, read-state kind 30078 `obelisk:readstate:v1`, games kind 2390, private messages and calls below).
+- **Private messages and calls** (`nostr/dm.ts`, `voice/privateCall.ts`, `ui/dmPanel.ts`) speak obelisk-dex's protocols:
+  - Chat is NIP-17: a kind 14 rumor gift-wrapped by `@nostr-wot/dm` to the recipient's inbox (10050, else 10002 read relays, else the group relay), plus a self-copy. The rumor id is the message id.
+  - Calls are its 1:1 calls: kind 25055 control rumors (`services/call/protocol`) in expiring wraps, and the audio is its own `DmCallSession` (`services/call/session`, lazy, after `voice/node-globals`) on its default call relays.
+  - Wraps are published with `authMode: 'never'`.
+  - Near a connected person you're offered Message (M) / Call; the person card has both.
+- **Members and presence.** `nostr/members.ts` reads a channel's 39001/39002 and the relay's ranks (obelisk-dex's operator-published `obelisk:roles:` catalog and holders, parsed by its `relay-roles-model`); `ui/memberGroups.ts` sections them like its member list. Presence (`nostr/presence.ts`): online = live in the village and active within 5 min, or posted within 15 min (obelisk-dex's window); AFK = live but idle; offline otherwise. Characters show it (a green dot, a 💤 AFK tag).
 - Sky-only events:
   - kind 30078 `obelisk:avatar3d:v1`: your look (avatar v2 `{look,...}`; v1 still parses). Your own signed event is cached in localStorage (`obelisk-sky/avatar/<pk>`); on login or a relay switch `AvatarStore.syncOwn` shows it at once and publishes the same signed event to a relay that lacks it or has an older one.
   - kind 30078 `obelisk-sky:themes:<relay>`: operator-only districts.

@@ -2470,6 +2470,11 @@ export class World {
     });
   }
 
+  /** Online / AFK / offline marks over the characters (main.ts decides who is which). */
+  setPresence(pk: string, p: 'online' | 'afk' | 'offline'): void {
+    this.people.get(pk)?.setPresence(p);
+  }
+
   /** First person, but doing something you'd want to see (training, sitting):
    *  the camera steps out and your body shows; back in when you're done. */
   setSelfView(on: boolean): void {

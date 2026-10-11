@@ -24,6 +24,12 @@ import { openCreator } from './ui/creator';
 import { CallRoom, RECONNECT_DELAYS, awayCountdown } from './voice/callRoom';
 import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/controlsGuide';
 import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
+import { SidePanel } from './ui/sidePanel';
+import { DmPanel } from './ui/dmPanel';
+import { DmStore } from './nostr/dm';
+import { PrivateCall } from './voice/privateCall';
+import { MembersStore } from './nostr/members';
+import { PresenceTracker, type Presence } from './nostr/presence';
 import { SPANS, binCounts, dragRange, peakLabel, spanSeconds, timeToX, topPeaks, type SpanId } from './ui/history';
 import { PrefsStore, type Prefs } from './prefs';
 import { openSettings } from './ui/settings';
@@ -173,6 +179,7 @@ world.hooks = {
 // Handy for poking at the scene from the console.
 (window as unknown as { __sky: unknown }).__sky = {
   world: () => world, player: () => player, director: () => director, session: () => session, chat: () => chat, groups: () => groups, controller: () => controller, activity: () => activity, motion: () => motion,
+  dm: () => ({ open: openDm, panel: dmPanel, store: dms, call: pcall }),
   /** What the last frame cost: draw calls, triangles, lights in the scene, the quality level, recent fps. */
   perf: async () => {
     // Count one whole frame (every pass of the post chain), not just the last draw.
@@ -290,6 +297,8 @@ function startFeed(): void {
   const f = feed;
   clearProfiles();
   setProfileRequester((pk) => f.state.watch(pk));
+  // Your own picture and name, from the profile relays, even before you post.
+  if (session.current) f.state.watch(session.current.pubkey);
 }
 
 function resetVillage(): void {
@@ -330,7 +339,10 @@ session.onChange((s) => {
   chat.close();
   void call.leave();
   if (s) startFeed();
-  else { feed?.stop(); feed = null; activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); }
+  startDms();
+  if (!s) pcall.hangup();
+  if (!s) { dmPanel.close(); }
+  if (!s) { feed?.stop(); feed = null; activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); }
 });
 
 void session.restore().then((ok) => { if (!ok) { renderAccount(null); renderAccess('logged-out'); } });
@@ -355,6 +367,25 @@ function renderAccount(s: Session | null): void {
   if (!s) return;
   const prof = world.profiles.get(s.pubkey);
   ($('account-name') as HTMLElement).textContent = prof?.name ?? shortKey(s.pubkey);
+  ($('account-nip') as HTMLElement).textContent = prof?.nip05?.replace(/^_@/, '') ?? '';
+  // Your picture, else your initial on your colour.
+  const av = $('account-avatar');
+  const src = prof?.avatar ?? null;
+  if (av.dataset.src !== (src ?? '')) {
+    av.dataset.src = src ?? '';
+    av.replaceChildren();
+    if (src) {
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      av.append(img);
+      av.style.background = '';
+    } else {
+      av.textContent = ([...(prof?.name ?? '?')][0] ?? '?').toUpperCase();
+      av.style.background = pubkeyColor(s.pubkey);
+    }
+  }
 }
 
 /** Keys are never labels: a short npub, as obelisk-dex's shortNpubLabel. */
@@ -364,6 +395,7 @@ function shortKey(pk: string): string {
 }
 
 function renderAccess(a: FeedAccess | 'logged-out', reason?: string): void {
+  $('relay-btn').dataset.state = a;
   const gate = $('gate');
   gate.dataset.state = a;
   gate.hidden = a === 'open' || a === 'connecting';
@@ -425,6 +457,7 @@ function handle(m: ServerMsg): void {
       break;
     }
     case 'msg': {
+      notePost(m.msg.pubkey, m.msg.createdAt * 1000);
       const me = session.current?.pubkey;
       const why = me ? pingReason(m.msg, me) : null;
       if (why && nowSec() - m.msg.createdAt < 120) {
@@ -530,6 +563,7 @@ function stepPlayer(dt: number): void {
     strafe: Math.max(-1, Math.min(1, mvNow.x)),
   });
   if (controller.moving && performance.now() - input.lastInput < 200) world.cam.played();
+  if (controller.moving && pk) presence.activity(pk, Date.now());
   // Enter a channel when you stop in its yard or linger there; walking past
   // a yard doesn't count. What the chat does then is ui/chatAuto.ts.
   const here = placeAt(controller.pos, world.yards());
@@ -704,9 +738,161 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '?' || (e.key === '/' && e.shiftKey)) openControlsGuide($('app'));
   if (e.key.toLowerCase() === 'v' && world.playerPk) toggleFirstPerson();
   if (e.key.toLowerCase() === 'c' && chatHint) openHintedChat();
+  if (e.key.toLowerCase() === 'm' && nearPk) { e.preventDefault(); openDm(nearPk); }
   // Esc releases the mouse first (the browser does that); a second Esc leaves first person.
   if (e.key === 'Escape' && world.cam.firstPerson && !document.pointerLockElement) toggleFirstPerson();
 });
+
+// ── presence, channels and members (the left drawer) ─────────────────────
+
+/** Online (live and active, or posting lately), AFK (live but idle), offline. */
+const presence = new PresenceTracker();
+/** When each pubkey last posted (ms): obelisk-dex counts 15 minutes as online. */
+const lastPost = new Map<string, number>();
+let liveClaimers = new Set<string>();
+const POSTED_ONLINE_MS = 15 * 60_000;
+function notePost(pk: string, at: number): void {
+  if (at > (lastPost.get(pk) ?? 0)) lastPost.set(pk, at);
+  presence.activity(pk, Math.min(Date.now(), at));
+}
+function presenceOf(pk: string): Presence {
+  const now = Date.now();
+  const posted = now - (lastPost.get(pk) ?? 0) < POSTED_ONLINE_MS;
+  const live = pk === session.current?.pubkey || !!motion.get(pk) || liveClaimers.has(pk);
+  if (!live) return posted ? 'online' : 'offline';
+  const p = presence.of(pk, true, now);
+  return p === 'afk' && posted ? 'online' : p;
+}
+
+const members = new MembersStore(hub, () => themes?.operator ?? null);
+const side = new SidePanel($('app'), {
+  channels: () => groups.map((g) => {
+    const me = session.current?.pubkey ?? null;
+    const msgs = msgsOf(g.id);
+    const cursor = readState?.cursorFor(g.id) ?? 0;
+    const here = [...world.people.values()].filter((c) => { const s = world.slotFor(g.id); return s && Math.hypot(c.pos.x - s.yard.x, c.pos.z - s.yard.z) < 2.6; }).length;
+    return {
+      id: g.id, name: g.name, kind: g.kind, here,
+      unread: me && readState ? countUnread(msgs, cursor, me) : 0,
+      mention: pinged.has(g.id),
+    };
+  }),
+  defaultChannel: () => place ?? chat.groupId ?? groups[0]?.id ?? null,
+  loadMembers: (id) => members.load(id),
+  posters: (id) => [...new Set(msgsOf(id).map((m) => m.pubkey))],
+  loadRanks: () => members.loadRoles(),
+  presenceOf,
+  profile: (pk) => { const p = world.profiles.get(pk); return { name: p?.name ?? world.nameOf(pk), avatar: p?.avatar ?? null, nip05: p?.nip05 ?? null }; },
+  colorOf: (pk) => pubkeyColor(pk),
+  me: () => session.current?.pubkey ?? null,
+  onChannel: (id) => { showGroup(id); const slot = world.slotFor(id); if (controller && slot) { controller.walkTo(slot.yard); world.cam.played(); } },
+  onMember: (pk) => showPerson(pk),
+});
+const renderTabs = (): void => {
+  $('tab-channels').classList.toggle('on', side.tab === 'channels');
+  $('tab-members').classList.toggle('on', side.tab === 'members');
+};
+$('tab-channels').addEventListener('click', () => { side.toggle('channels'); renderTabs(); });
+$('tab-members').addEventListener('click', () => { side.toggle('members'); renderTabs(); });
+side.el.querySelector('.chat-min')?.addEventListener('click', renderTabs);
+
+// ── private messages and calls (obelisk-dex's NIP-17 DMs and 1:1 calls) ──
+
+let dms: DmStore | null = null;
+const pcall = new PrivateCall(() => dms, () => session.current?.pubkey ?? null, async () => { await call.leave(); });
+const dmPanel = new DmPanel($('app'), {
+  me: () => session.current?.pubkey ?? null,
+  thread: (peer) => dms?.thread(peer) ?? [],
+  send: async (peer, text) => (dms ? dms.send(peer, text) : 'Log in to send private messages.'),
+  profile: (pk) => { const p = world.profiles.get(pk); return { name: p?.name ?? world.nameOf(pk), avatar: p?.avatar ?? null, nip05: p?.nip05 ?? null }; },
+  colorOf: (pk) => pubkeyColor(pk),
+  call: (peer) => void pcall.start(peer),
+  presence: (pk) => { const p = presenceOf(pk); return p === 'online' ? 'online' : p === 'afk' ? 'away (AFK)' : 'offline'; },
+});
+dmPanel.onClose = () => { if (!chat.groupId) document.body.classList.remove('chat-open'); else chat.el.hidden = false; };
+
+/** Open a private conversation with `pk` (it takes the chat panel's place). */
+function openDm(pk: string): void {
+  if (!session.current || pk === session.current.pubkey) return;
+  if (chat.groupId) chat.el.hidden = true;
+  dmPanel.open(pk);
+}
+
+function startDms(): void {
+  dms?.stop();
+  dms = null;
+  const s = session.current;
+  if (!s) return;
+  const store = new DmStore(hub, s.pubkey, s.signer);
+  dms = store;
+  store.onMessage((peer, m, fresh) => {
+    dmPanel.refresh(peer);
+    if (fresh && m.from !== s.pubkey && dmPanel.peer !== peer) {
+      toast(`💬 ${world.nameOf(peer)}: ${m.text.slice(0, 80)}`, () => openDm(peer));
+    }
+  });
+  store.onCall((m) => pcall.handle(m));
+  void store.start();
+}
+
+/** The private call bar: ringing, connecting, the call's timer, its end. */
+function renderPCall(): void {
+  const st = pcall.state;
+  const bar = $('pcall');
+  bar.hidden = st.status === 'idle';
+  bar.dataset.status = st.status;
+  if (bar.hidden) return;
+  const name = st.peer ? world.nameOf(st.peer) : '';
+  $('pcall-title').textContent = st.status === 'incoming' ? `📞 ${name} is calling` : `📞 ${name}`;
+  const secs = st.connectedAt ? Math.floor((Date.now() - st.connectedAt) / 1000) : 0;
+  const END: Record<string, string> = {
+    'local-hangup': 'Call ended', 'remote-hangup': 'They hung up', declined: 'Declined', busy: 'Busy on another call',
+    'no-answer': 'No answer', missed: 'Missed call', cancelled: 'Cancelled', 'answered-elsewhere': 'Answered on another device',
+    'connect-failed': "Couldn't connect", 'connection-lost': 'Connection lost', error: st.error ?? 'Call failed',
+  };
+  $('pcall-sub').textContent = st.status === 'outgoing' ? 'Ringing…'
+    : st.status === 'incoming' ? 'Private voice call'
+    : st.status === 'connecting' ? 'Connecting…'
+    : st.status === 'reconnecting' ? 'Reconnecting…'
+    : st.status === 'active' ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${st.micOn ? '' : ' · muted'}`
+    : END[st.endReason ?? 'error'] ?? 'Call ended';
+  $('pcall-accept').hidden = st.status !== 'incoming';
+  $('pcall-mic').hidden = !(st.status === 'active' || st.status === 'reconnecting' || st.status === 'connecting');
+  $('pcall-mic').textContent = st.micOn ? 'Mute' : 'Unmute';
+  $('pcall-end').hidden = st.status === 'ended';
+  $('pcall-end').textContent = st.status === 'incoming' ? 'Decline' : st.status === 'outgoing' ? 'Cancel' : 'Hang up';
+}
+pcall.onChange(renderPCall);
+$('pcall-accept').addEventListener('click', () => void pcall.accept());
+$('pcall-end').addEventListener('click', () => pcall.hangup());
+$('pcall-mic').addEventListener('click', () => pcall.setMic(!pcall.state.micOn));
+setInterval(() => { if (pcall.state.status === 'active') renderPCall(); }, 1000);
+
+/** Someone connected right next to you: offer a private message or call. */
+let nearPk: string | null = null;
+function renderNearHint(): void {
+  const el = $('near-hint');
+  const me = world.playerPk;
+  let best: string | null = null, bd = 2.2;
+  if (me && controller && session.current) {
+    for (const c of world.people.values()) {
+      if (c.pk === me) continue;
+      const d = Math.hypot(c.pos.x - controller.pos.x, c.pos.z - controller.pos.z);
+      if (d >= bd) continue;
+      // Connected: live in the village (moving or sitting), online or AFK.
+      if (!motion.get(c.pk) && !liveClaimers.has(c.pk)) continue;
+      if (presenceOf(c.pk) === 'offline') continue;
+      bd = d;
+      best = c.pk;
+    }
+  }
+  if (best === nearPk) return;
+  nearPk = best;
+  el.hidden = !best;
+  if (best) $('near-name').textContent = `${presenceOf(best) === 'afk' ? '💤 ' : '🟢 '}${world.nameOf(best)}`;
+}
+$('near-dm').addEventListener('click', () => { if (nearPk) openDm(nearPk); });
+$('near-call').addEventListener('click', () => { if (nearPk) void pcall.start(nearPk); });
 
 // ── the chat panel and publishing ────────────────────────────────────────
 
@@ -918,6 +1104,7 @@ function startActivity(): void {
   motion.onChange((pk) => {
     const r = motion.get(pk);
     if (r) world.applyMotion(pk, r.m, r.ageMs / 1000);
+    if (r?.m.moving) presence.activity(pk, Date.now());
   });
   motion.start();
   motionBeacon.reset();
@@ -961,6 +1148,7 @@ function tickActivity(): void {
   world.expireMotion();
   const local = pk ? { pk, activity: mine, since: beacon.since } : null;
   let claims = activity.live(nowSec(), local);
+  liveClaimers = new Set(claims.map((c) => c.pk));
   const lost = pk && claims.find((c) => c.pk === pk && !c.held);
   if (lost && pk) {
     const winner = claims.find((c) => c.held && c.spot === lost.spot);
@@ -1048,8 +1236,22 @@ function openGame(id: string): void {
 
 world.hooks.onGameClick = (id) => openGame(id);
 
-const LANDMARK_CARDS: Record<Exclude<LandmarkId, 'nostrwot'>, { title: string; sub: string; about: string; link?: [string, string] }> = {
+/** nostrwot.com's own link preview (its og:image). */
+const NOSTR_WOT_BANNER = 'https://nostrwot.com/social-preview.png?title=Nostr+WoT+Extension+-+Identity%2C+Signer+%26+Lightning+Wallet&description=The+Nostr+browser+extension+with+a+NIP-07+signer%2C+encrypted+key+vault%2C+Lightning+wallet%2C+and+profile%2C+relay+and+mute-list+management.+Find+out+more.&locale=en&art=home';
+
+/** A wide picture across the top of a card. */
+function cardBanner(src: string, alt: string): HTMLImageElement {
+  const img = el('img', 'card-banner') as HTMLImageElement;
+  img.src = src;
+  img.alt = alt;
+  img.referrerPolicy = 'no-referrer';
+  img.addEventListener('error', () => img.remove());
+  return img;
+}
+
+const LANDMARK_CARDS: Record<Exclude<LandmarkId, 'nostrwot'>, { title: string; sub: string; about: string; link?: [string, string]; banner?: string }> = {
   lacrypta: {
+    banner: 'https://r2a.primal.net/uploads2/5/9e/25/59e25f02b7cf6e54394b3f1a39d6182c345cb3eb3b63c44a80e41988c536a09c.png',
     title: 'La Crypta', sub: 'Bitcoin and Nostr hub · Buenos Aires',
     about: 'The house where Obelisk is built. The glowing ₿ ball on the lawn means you found it: walk up the steps, the living room is open.',
     link: ['Visit lacrypta.ar', 'https://lacrypta.ar'],
@@ -1068,6 +1270,7 @@ world.hooks.onLandmarkClick = (id) => {
   if (id === 'nostrwot') { showOfficial(); return; }
   const c = LANDMARK_CARDS[id];
   openCard((body) => {
+    if (c.banner) body.append(cardBanner(c.banner, c.title));
     body.append(el('h2', '', c.title));
     body.append(el('div', 'sub', c.sub));
     body.append(el('div', 'about', c.about));
@@ -1121,6 +1324,7 @@ function showOfficial(): void {
   const prof = world.profiles.get(pk);
   const npub = nip19.npubEncode(pk);
   openCard((body) => {
+    body.append(cardBanner(NOSTR_WOT_BANNER, 'Nostr WoT'));
     if (prof?.avatar) {
       const img = el('img', 'avatar') as HTMLImageElement;
       img.src = prof.avatar;
@@ -1330,6 +1534,7 @@ function loop(): void {
   tickActivity();
   renderSeatHint();
   renderChatHint();
+  renderNearHint();
   if (call.state.channelId && controller) {
     call.updatePositions({ x: controller.pos.x, z: controller.pos.z, yaw: world.cameraYaw() }, (pk) => world.people.get(pk)?.pos ?? null);
   }
@@ -1379,8 +1584,15 @@ function refreshSigns(): void {
     if (ping) pinged.add(g.id);
     world.overlay.setSignUnread(g.id, countUnread(msgs, cursor, me), ping);
   }
-  const people = director.people.size;
-  $('stats').textContent = `${groups.length} channels · ${people} resident${people === 1 ? '' : 's'}`;
+  $('tab-channels-n').textContent = String(groups.length);
+  // Online now: live in the village or active in the last minutes (AFK not counted).
+  const online = new Set<string>([...motion.livePks(), ...liveClaimers, ...[...lastPost.keys()].filter((pk) => presenceOf(pk) === 'online')]);
+  if (session.current) online.add(session.current.pubkey);
+  let n = 0;
+  for (const pk of online) if (presenceOf(pk) === 'online') n++;
+  $('tab-members-n').textContent = String(n);
+  for (const c of world.people.values()) world.setPresence(c.pk, presenceOf(c.pk));
+  side.refresh();
   if (historyOn) {
     const span = spanSeconds(historySpan);
     $('timeline-cursor').style.left = `calc(8px + (100% - 16px) * ${Math.max(0, 1 - (nowSec() - at) / span)})`;
@@ -1409,6 +1621,7 @@ function setHistory(on: boolean): void {
   historyOn = on;
   player.history = on;
   $('timeline-panel').hidden = !on;
+  document.querySelector('.controls [data-act="story"]')?.classList.toggle('on', on);
   for (const [id, want] of [['mode-live', false], ['mode-history', true]] as const) {
     $(id).classList.toggle('on', on === want);
     $(id).setAttribute('aria-pressed', String(on === want));
@@ -1574,10 +1787,20 @@ function showPerson(pk: string): void {
       body.append(a);
     }
     body.append(el('h2', '', prof?.name ?? 'someone'));
-    body.append(el('div', 'sub', prof?.nip05 ?? `${msgs.length} message${msgs.length === 1 ? '' : 's'} in 30 days`));
+    // Their NIP-05 (e.g. name@domain), whether they're here, and how much they wrote.
+    if (prof?.nip05) body.append(el('div', 'sub nip', `✓ ${prof.nip05.replace(/^_@/, '')}`));
+    const pres = presenceOf(pk);
+    body.append(el('div', 'sub', `${pres === 'online' ? '🟢 Online' : pres === 'afk' ? '💤 Away (AFK)' : '⚪ Offline'} · ${msgs.length} message${msgs.length === 1 ? '' : 's'} in 30 days`));
     body.append(messageList(msgs, false));
     const actions = el('div', 'actions');
-    const follow = el('button', 'pill primary', 'Follow with camera');
+    if (session.current && pk !== session.current.pubkey) {
+      const msg = el('button', 'pill primary', '💬 Message');
+      msg.addEventListener('click', () => { $('card').hidden = true; openDm(pk); });
+      const ring = el('button', 'pill', '📞 Call');
+      ring.addEventListener('click', () => { $('card').hidden = true; void pcall.start(pk); });
+      actions.append(msg, ring);
+    }
+    const follow = el('button', 'pill', 'Follow with camera');
     follow.addEventListener('click', () => world.cam.focus(world.personAnchor(pk), 6));
     actions.append(follow);
     body.append(actions);
@@ -1616,9 +1839,10 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
         prefs.set({ autoDirector: !prefs.get().autoDirector });
         break;
       case 'story':
-        // The latest conversation, in history mode so it isn't cut short.
-        if (!historyOn) setHistory(true);
-        player.playStory(nowSec());
+        // A toggle: on, the latest conversation plays in history mode (so it
+        // isn't cut short); off, back to live and the panel closes.
+        if (historyOn) setHistory(false);
+        else { setHistory(true); player.playStory(nowSec()); }
         break;
       case 'time': {
         const order = ['auto', 'day', 'sunset', 'night'] as const;

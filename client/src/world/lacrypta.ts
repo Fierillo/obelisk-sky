@@ -9,9 +9,10 @@
 // white glowing ball with the gold ₿ sits on the lawn; red and violet
 // uplights at night. No front fence.
 //
-// On the left, set back behind the front, the older wing on flat ground: a
+// On the left, flush with the front, the older wing on flat ground: a
 // wooden arched garage door in stone, a band of leaded windows that glow
-// orange at night, a wooden balcony under a tiled hip roof.
+// orange at night, a wooden balcony under a tiled lean-to roof that runs
+// along the street, its high edge tucked under the main roof's eaves.
 //
 // You can walk up the steps and in: the door swings open on the living
 // room (lacryptaInterior.ts), the fireplace under the neon ₿.
@@ -42,8 +43,8 @@ const doorX = R - 0.25;
 const DOOR_W = 0.48, DOOR_H = 0.85;
 const moundDepth = 2.0;
 const moundX0 = -W / 2, moundX1 = W / 2 + 0.3;
-/** The older wing on the left: flush with nothing, set back from the front. */
-const WING_W = 1.05, WING_Z = -0.35;
+/** The older wing on the left, flush with the front of the house. */
+const WING_W = 1.05, WING_Z = 0;
 
 /** The living room, inside the walls. */
 const ROOM: LocalRect = { minX: -W / 2 + T, maxX: W / 2 - T, minZ: -D + T, maxZ: -T };
@@ -337,13 +338,6 @@ export function buildLaCryptaHouse(): LandmarkBuild {
   vent.position.set(R, eaves + 0.45, 0.01);
   shell.add(vent);
   overhead.push(vent);
-  // Narrow windows on the left bay's side, where it stands out past the wing.
-  for (const y of [lift + 0.25, lift + 1.3]) {
-    const side = new THREE.Mesh(new THREE.ShapeGeometry(lancet(0.13, 0.6), 6), glassMat);
-    side.position.set(-W / 2 - 0.003, y, WING_Z / 2);
-    side.rotation.y = -Math.PI / 2;
-    shell.add(side);
-  }
 
   // The wooden arched door, half a storey up, in a stone surround: it
   // swings in on its left hinge.
@@ -388,7 +382,7 @@ export function buildLaCryptaHouse(): LandmarkBuild {
   pipe.position.set(0.02, (eaves - 0.2) / 2 + 0.1, 0.06);
   shell.add(pipe);
 
-  // The older wing on the left, set back, on flat ground.
+  // The older wing on the left, flush with the front, on flat ground.
   const leaded = new THREE.MeshStandardMaterial({ color: 0x3a2a20, map: leadedTexture(), emissive: 0xff7a30, emissiveIntensity: 0.05, roughness: 0.3, metalness: 0.1 });
   {
     const wx0 = -W / 2 - WING_W, wx1 = -W / 2, wc = (wx0 + wx1) / 2;
@@ -464,15 +458,43 @@ export function buildLaCryptaHouse(): LandmarkBuild {
       plant.position.set(x, 1.5, WING_Z - 0.08);
       shell.add(plant);
     }
-    // Tiled hip roof, lower than the gables.
-    const roofD = D + WING_Z + 0.15, roofW = WING_W + 0.2;
-    const hip = new THREE.Mesh(new THREE.ConeGeometry(1, 0.5, 4), flat(0x4f4a3a, { roughness: 0.85 }));
-    hip.rotation.y = Math.PI / 4;
-    hip.scale.set(roofW / 2 / Math.SQRT1_2, 1, roofD / 2 / Math.SQRT1_2);
-    hip.position.set(wc, 2.25 + 0.25, WING_Z + 0.08 - roofD / 2);
-    hip.castShadow = true;
-    shell.add(hip);
-    overhead.push(hip);
+    // A tiled lean-to roof running along the street (across the gables'
+    // ridges): low over the balcony, rising to the back, where its high edge
+    // tucks under the main roof's eaves against the house's side wall, so
+    // the two roofs never meet.
+    const hiY = eaves - 0.13;
+    const z0 = WING_Z + 0.14, z1 = -D - 0.04;
+    const rx0 = wx0 - 0.1, rx1 = wx1 - 0.004;
+    const dy = hiY - wingH, dz = z0 - z1;
+    const lean = new THREE.Mesh(new THREE.BoxGeometry(rx1 - rx0, 0.05, Math.hypot(dy, dz)), flat(0x4f4a3a, { roughness: 0.85 }));
+    lean.position.set((rx0 + rx1) / 2, (wingH + hiY) / 2 + 0.03, (z0 + z1) / 2);
+    lean.rotation.x = Math.atan2(dy, dz);
+    lean.castShadow = lean.receiveShadow = true;
+    shell.add(lean);
+    overhead.push(lean);
+    // Tile courses: thin battens across the slope.
+    for (let i = 1; i < 6; i++) {
+      const k = i / 6;
+      const batten = new THREE.Mesh(new THREE.BoxGeometry(rx1 - rx0, 0.018, 0.03), flat(0x3f3a2e));
+      batten.position.set((rx0 + rx1) / 2, wingH + dy * k + 0.065, z0 - dz * k);
+      batten.rotation.x = lean.rotation.x;
+      shell.add(batten);
+      overhead.push(batten);
+    }
+    // Brick fills the wing's side and back up to the sloping roof.
+    const infill = new THREE.Shape();
+    infill.moveTo(0, 0);
+    // Local +x runs to the back once turned (rotation.y = π/2 maps x to −z).
+    infill.lineTo(WING_Z - z1 - 0.04, 0);
+    infill.lineTo(WING_Z - z1 - 0.04, hiY - wingH - 0.01);
+    infill.closePath();
+    const side = new THREE.Mesh(new THREE.ShapeGeometry(infill), new THREE.MeshStandardMaterial({ map: brickTexture(D, 0.5), roughness: 0.95, side: THREE.DoubleSide }));
+    side.rotation.y = Math.PI / 2;
+    side.position.set(wx0, wingH, WING_Z);
+    side.castShadow = true;
+    shell.add(side);
+    overhead.push(side);
+    brickWall(WING_W, hiY - wingH, T, wc, (wingH + hiY) / 2, -D + T / 2);
   }
 
   // The grassy mound: from the door's level down to the street, in front

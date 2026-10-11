@@ -141,6 +141,9 @@ export class Character {
   private lowerKey = '';
   private upperKey = '';
   readonly badge: THREE.Sprite;
+  /** Online (a green dot) or away (an AFK tag) beside the badge; none when offline. */
+  private presenceMark: THREE.Sprite | null = null;
+  private presenceNow: 'online' | 'afk' | 'offline' = 'offline';
   private badgeKey = '';
   path: Vec2[] = [];
   running = false;
@@ -528,6 +531,7 @@ export class Character {
       if (h) {
         this.root.worldToLocal(h);
         this.badge.position.set(h.x, h.y + BADGE_ABOVE_HEAD + (this.hat ? 0.06 : 0), h.z);
+        if (this.presenceMark) this.presenceMark.position.set(h.x, this.badge.position.y + (this.presenceNow === 'afk' ? 0.21 : 0.19), h.z);
       }
     }
 
@@ -635,8 +639,55 @@ export class Character {
     aim(lo, new THREE.Vector3().subVectors(v(hand), v(lo)), new THREE.Vector3().subVectors(T, v(lo)));
   }
 
+  /** Show whether the person behind this character is here right now. */
+  setPresence(p: 'online' | 'afk' | 'offline'): void {
+    if (p === this.presenceNow) return;
+    this.presenceNow = p;
+    this.presenceMark?.removeFromParent();
+    this.presenceMark = null;
+    (this.badge.material as THREE.SpriteMaterial).opacity = p === 'afk' ? 0.55 : 1;
+    if (p === 'offline') return;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: presenceTexture(p), depthWrite: false, transparent: true }));
+    s.scale.set(p === 'afk' ? 0.16 : 0.045, p === 'afk' ? 0.06 : 0.045, 1);
+    s.renderOrder = 6;
+    s.position.copy(this.badge.position).setY(this.badge.position.y + 0.2);
+    this.root.add(s);
+    this.presenceMark = s;
+  }
+
   dispose(): void {
     this.mixer?.stopAllAction();
     this.root.removeFromParent();
   }
+}
+
+const presenceTextures = new Map<string, THREE.Texture>();
+/** A green dot (online) or a small amber AFK tag, drawn once and shared. */
+function presenceTexture(p: 'online' | 'afk'): THREE.Texture {
+  let t = presenceTextures.get(p);
+  if (t) return t;
+  const c = document.createElement('canvas');
+  c.width = p === 'afk' ? 128 : 48;
+  c.height = 48;
+  const g = c.getContext('2d');
+  if (g) {
+    if (p === 'online') {
+      g.fillStyle = '#171717';
+      g.beginPath(); g.arc(24, 24, 22, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#b4f953';
+      g.beginPath(); g.arc(24, 24, 15, 0, Math.PI * 2); g.fill();
+    } else {
+      g.fillStyle = 'rgba(23,23,23,0.9)';
+      g.beginPath(); g.roundRect(2, 4, 124, 40, 20); g.fill();
+      g.strokeStyle = '#ffc83d'; g.lineWidth = 3; g.stroke();
+      g.fillStyle = '#ffc83d';
+      g.font = '700 26px ui-monospace, monospace';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('💤 AFK', 64, 26);
+    }
+  }
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  presenceTextures.set(p, t);
+  return t;
 }
