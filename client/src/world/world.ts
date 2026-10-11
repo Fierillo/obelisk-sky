@@ -48,6 +48,10 @@ export interface Seat {
   pos: Vec2; face: number; y: number; taken: string | null; dynamic?: boolean; prop?: SeatProp; landmark?: LandmarkId; laptop?: boolean; indoor?: boolean;
   /** Seats on one bench or sofa share one mate when two or more sit there (mateRound.ts). */
   bench?: string;
+  /** A chair under a voice channel's tree (that channel's id). */
+  tree?: string;
+  /** Its solid is kept with the furniture (moved benches, tree chairs), not added per seat. */
+  managed?: boolean;
 }
 
 /** What a station offers: an exercise, or running laps (a track lane). */
@@ -262,11 +266,13 @@ export class World {
       // A house is dozens of little pieces: draw them as a handful (the roof
       // lights up for mentions and the windows at night, so they stay apart).
       else this.meshesMerged += mergeStatic(b.group, (m) => m.name === 'roof' || b.windows.includes(m));
+      this.setTreeSeats(g.id, slot, b.tree ?? null);
       b.group.userData = { groupId: g.id, tier, kind: g.kind, district, gym };
       this.buildingRoot.add(b.group);
       this.buildings.set(g.id, b);
       this.setSign(g);
     }
+    this.placeBenches();
     this.rebuildGrid();
     this.syncSlotDecor();
     this.buildDistrictProps();
@@ -333,9 +339,11 @@ export class World {
 
   private removeGroup(id: string): void {
     if (id === this.gymId) this.setGym(null);
+    this.setTreeSeats(id, null, null);
     this.groups.delete(id);
     this.buildings.get(id)?.group.removeFromParent();
     this.buildings.delete(id);
+    if (this.built) this.placeBenches();
     this.overlay.removeSign(id);
     // The slot stays reserved so other buildings don't shuffle.
   }
@@ -353,7 +361,13 @@ export class World {
   /** Channel slots only: landmarks block their real buildings, not the whole slot. */
   private gridSlots(): Slot[] {
     const held = new Set([...this.landmarkSlots.values()].map((s) => s.index));
-    return this.usedSlots().filter((s) => !held.has(s.index));
+    // A voice tree's plot is open ground: only its trunk is in the way (rebuildGrid).
+    return this.usedSlots().filter((s) => !held.has(s.index) && !this.treeAt(s.index));
+  }
+
+  private treeAt(slotIndex: number): Building['tree'] | null {
+    const id = this.groupAtSlot(slotIndex);
+    return (id && this.buildings.get(id)?.tree) || null;
   }
 
   private markLandmarks(grid: NavGrid): void {
@@ -378,6 +392,13 @@ export class World {
     for (const k of this.pathCells) if (!this.grid.blocked[k]) this.grid.cost[k] = 6;
     // Trees and props are obstacles too.
     for (const k of this.obstacles) this.grid.blocked[k] = 1;
+    // Voice trees: just the trunk.
+    for (const [id, b] of this.buildings) {
+      const slot = this.slotFor(id);
+      if (!b.tree || !slot) continue;
+      const tr = b.tree.trunkR;
+      this.grid.mark((p) => dist(p, slot.pos) < tr + 0.2, 1);
+    }
   }
 
   private obstacles: number[] = [];
@@ -446,7 +467,7 @@ export class World {
     this.buildLandmarks();
     // Every seat (bench, stool, log, chair) is solid up to its seat height.
     for (const seat of this.seats) {
-      if (seat.dynamic) continue;
+      if (seat.dynamic || seat.managed) continue;
       const r = 0.13;
       this.solids.push({ minX: seat.pos.x - r, maxX: seat.pos.x + r, minZ: seat.pos.z - r, maxZ: seat.pos.z + r, top: seat.y });
     }
@@ -885,23 +906,84 @@ export class World {
       if (this.onLandmarkLawn(p)) continue; // a landmark's stairs or terrace come down here
       this.lantern(p, i % 2 === 0);
     }
-    // Benches on the plaza (the market has its own square, see buildMarket):
-    // long enough for three, who share a mate.
+    // Three long benches, three places each, sharing a mate. They stand
+    // round the voice tree nearest the plaza (placeBenches), or here when
+    // there's none.
     for (let i = 0; i < 3; i++) {
       const a = 0.9 + i * 0.55;
       const b = model('town/stall-bench');
-      b.position.set(c.x + Math.cos(a) * (this.plan.plaza.r - 0.55), 0.03, c.z + Math.sin(a) * (this.plan.plaza.r - 0.55));
-      b.rotation.y = -a;
       b.scale.set(1, 1, 1.35);
       this.staticRoot.add(b);
-      this.addSolidObject(b);
-      const mid = { x: b.position.x, z: b.position.z };
-      const face = Math.atan2(c.x - mid.x, c.z - mid.z) + Math.PI;
-      const along = { x: -Math.sin(a), z: Math.cos(a) }; // the bench's long axis
-      for (const o of [-0.4, 0, 0.4]) {
-        this.seats.push({ pos: { x: mid.x + along.x * o, z: mid.z + along.z * o }, face, y: 0.22, taken: null, bench: `plaza:${i}` });
-      }
+      const home = { x: c.x + Math.cos(a) * (this.plan.plaza.r - 0.55), z: c.z + Math.sin(a) * (this.plan.plaza.r - 0.55) };
+      const seats = [0, 1, 2].map((): Seat => ({ pos: { ...home }, face: 0, y: 0.22, taken: null, bench: `plaza:${i}`, managed: true }));
+      this.seats.push(...seats);
+      this.benches.push({ model: b, seats, solid: null, home, homeFace: Math.atan2(home.x - c.x, home.z - c.z) });
     }
+    this.placeBenches();
+  }
+
+  /** The plaza's benches: where they stand now, their seats and solid. */
+  private benches: { model: THREE.Object3D; seats: Seat[]; solid: Solid | null; home: Vec2; homeFace: number }[] = [];
+
+  /** Benches round the voice tree nearest the plaza, else back at the plaza. */
+  private placeBenches(): void {
+    let best: { slot: Slot; b: Building } | null = null;
+    for (const [id, b] of this.buildings) {
+      const slot = this.slotFor(id);
+      if (!b.tree || !slot) continue;
+      if (!best || dist(slot.pos, this.plan.plaza.c) < dist(best.slot.pos, this.plan.plaza.c)) best = { slot, b };
+    }
+    this.benches.forEach((bench, i) => {
+      const spot = best?.b.tree?.benchSpots[i];
+      const mid = spot && best ? this.buildingToWorld(best.slot, spot.pos) : bench.home;
+      const face = spot && best ? spot.face + best.slot.rot : bench.homeFace;
+      const same = bench.seats[1] && dist(bench.seats[1].pos, mid) < 1e-6 && bench.seats[1].face === face;
+      if (same) return;
+      // Anyone on it gets up first.
+      for (const s of bench.seats) {
+        if (!s.taken) continue;
+        if (s.taken.startsWith('pending:')) this.releasePending(s.taken.slice('pending:'.length));
+        else this.stand(s.taken);
+      }
+      bench.model.position.set(mid.x, 0.03, mid.z);
+      bench.model.rotation.y = face - Math.PI / 2;
+      const along = { x: Math.sin(face - Math.PI / 2), z: Math.cos(face - Math.PI / 2) }; // its long axis
+      bench.seats.forEach((s, k) => {
+        const o = [-0.4, 0, 0.4][k];
+        s.pos = { x: mid.x + along.x * o, z: mid.z + along.z * o };
+        s.face = face;
+      });
+      if (bench.solid) { const j = this.solids.indexOf(bench.solid); if (j >= 0) this.solids.splice(j, 1); }
+      bench.model.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(bench.model);
+      bench.solid = box.isEmpty() ? null : { minX: box.min.x + 0.04, maxX: box.max.x - 0.04, minZ: box.min.z + 0.04, maxZ: box.max.z - 0.04, top: box.max.y };
+      if (bench.solid) this.solids.push(bench.solid);
+    });
+  }
+
+  /** A voice tree's chairs: seats sharing a mate round the trunk, each a little solid. */
+  private treeSolids = new Map<string, Solid[]>();
+  private setTreeSeats(id: string, slot: Slot | null, tree: Building['tree'] | null): void {
+    for (let i = this.seats.length - 1; i >= 0; i--) {
+      const s = this.seats[i];
+      if (s.tree !== id) continue;
+      if (s.taken?.startsWith('pending:')) this.releasePending(s.taken.slice('pending:'.length));
+      else if (s.taken) this.stand(s.taken);
+      this.seats.splice(i, 1);
+    }
+    for (const so of this.treeSolids.get(id) ?? []) { const j = this.solids.indexOf(so); if (j >= 0) this.solids.splice(j, 1); }
+    this.treeSolids.delete(id);
+    if (!tree || !slot) return;
+    const solids: Solid[] = [];
+    for (const ch of tree.seats) {
+      const pos = this.buildingToWorld(slot, ch.pos);
+      this.seats.push({ pos, face: ch.face + slot.rot, y: ch.y, taken: null, prop: 'mate', bench: `tree:${id}`, tree: id, managed: true });
+      const r = 0.1;
+      const so = { minX: pos.x - r, maxX: pos.x + r, minZ: pos.z - r, maxZ: pos.z + r, top: ch.y };
+      this.solids.push(so);
+      solids.push(so);
+    }
+    this.treeSolids.set(id, solids);
   }
 
   private lantern(p: Vec2, light: boolean): void {
@@ -1753,8 +1835,20 @@ export class World {
     if (!slot) return;
     const others = pks.filter((pk) => pk !== this.playerPk && this.people.has(pk) && !this.pinned(pk));
     const spots = circleSpots(slot.pos, Math.max(2, others.length), 0.7);
+    const chairs = this.seats.filter((s) => s.tree === channelId);
     others.forEach((pk, i) => {
       const c = this.people.get(pk)!;
+      // Under the tree: take a free chair round the trunk.
+      if (chairs.length) {
+        if (this.seatOf.get(pk)?.tree === channelId || this.pendingOf.get(pk)) return;
+        const seat = chairs.find((s) => !s.taken);
+        if (seat) {
+          this.stand(pk);
+          this.reserve(pk, seat);
+          this.walkTo(c, seat.pos, { then: () => { this.releasePending(pk); this.sit(pk, seat); } });
+          return;
+        }
+      }
       if (dist(c.pos, slot.pos) < 1.2) return;
       this.stand(pk);
       this.walkTo(c, spots[i], { then: () => c.faceToward(slot.pos) });
@@ -2364,12 +2458,27 @@ export class World {
     this.cam.setFirstPerson(on, c.body.rotation.y);
     this.cam.eye = on ? () => this.eyeOf(c) : null;
     // Your body stays in the world for its shadow, but draws nothing for you.
+    this.setBodyDrawn(c, !on);
+    c.badge.visible = !on;
+  }
+
+  private setBodyDrawn(c: Character, drawn: boolean): void {
     c.body.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
       if (!m) return;
-      for (const mat of Array.isArray(m) ? m : [m]) { mat.colorWrite = !on; mat.depthWrite = !on; }
+      for (const mat of Array.isArray(m) ? m : [m]) { mat.colorWrite = drawn; mat.depthWrite = drawn; }
     });
-    c.badge.visible = !on;
+  }
+
+  /** First person, but doing something you'd want to see (training, sitting):
+   *  the camera steps out and your body shows; back in when you're done. */
+  setSelfView(on: boolean): void {
+    if (!this.cam.firstPerson || on === this.cam.isWatching) return;
+    const c = this.playerPk ? this.people.get(this.playerPk) : null;
+    if (!c) return;
+    // Three-quarters from the front: you see the exercise, not your back.
+    this.cam.setWatching(on, c.body.rotation.y + Math.PI * 0.8);
+    this.setBodyDrawn(c, on);
   }
 
   /** Eyes: just in front of the head bone (it carries walking, sitting, lifting, jumping). */

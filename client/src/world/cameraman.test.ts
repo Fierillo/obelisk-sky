@@ -166,3 +166,24 @@ describe('first person', () => {
     expect(camera.fov).toBeGreaterThan(cam.fpFov + 3);
   });
 });
+
+describe('first person, watching yourself', () => {
+  it('steps out behind you while you train or sit, and glides back into your eyes', () => {
+    const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.08, 900);
+    const cam = new Cameraman(camera, document.createElement('div'));
+    const me = new THREE.Vector3(2, 0.5, 2);
+    cam.followPlayer(() => me.clone());
+    cam.setFirstPerson(true, 0); // looking along +z
+    for (let i = 0; i < 20; i++) cam.update(1 / 30);
+    cam.setWatching(true);
+    for (let i = 0; i < 60; i++) cam.update(1 / 30);
+    expect(cam.isWatching).toBe(true);
+    const d = camera.position.distanceTo(me);
+    expect(d).toBeGreaterThan(1.5);
+    expect(camera.position.z).toBeLessThan(me.z); // behind you
+    expect(camera.position.y).toBeGreaterThan(me.y);
+    cam.setWatching(false);
+    for (let i = 0; i < 30; i++) cam.update(1 / 30);
+    expect(camera.position.distanceTo(new THREE.Vector3(2, 0.62, 2))).toBeLessThan(1e-6);
+  });
+});

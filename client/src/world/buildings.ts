@@ -1,12 +1,13 @@
 // One building per channel, assembled from Kenney's modular walls with a
-// procedural roof. Size grows with activity; voice channels get an open
-// pavilion, publications a stone hall with banners.
+// procedural roof. Size grows with activity; voice channels get a shade tree
+// with chairs (ombu.ts), publications a stone hall with banners.
 
 import * as THREE from 'three';
 import { model } from './assets';
 import { hashStr, rng, type District, type Slot } from './layout';
 import { neonTrim } from './districts';
 import type { WireGroup } from '../nostr/wire';
+import { buildVoiceTree, type VoiceTree } from './ombu';
 
 export const SPORTS_ROOFS = [0xe0662f, 0x2f9b8f, 0xf2b134, 0x3f6fc4];
 export const GAMING_ROOFS = [0x2a1f4a, 0x3b1d5a, 0x1d2a5a, 0x4a1d3f];
@@ -31,6 +32,8 @@ export interface Building {
   doorLocal: THREE.Vector3;
   height: number;
   roofColor: number;
+  /** Voice channels: a shade tree with chairs instead of a house. */
+  tree?: VoiceTree;
 }
 
 const windowGlow = new THREE.MeshBasicMaterial({ color: 0xffc56b, transparent: true, opacity: 0.95 });
@@ -54,8 +57,10 @@ export function buildBuilding(g: WireGroup, slot: Slot, tier: number, district: 
   const windows: THREE.Mesh[] = [];
 
   if (g.kind === 'voice' || g.kind === 'voice-sfu') {
-    const b = pavilion(group, slot.w, roofColor);
-    return { group, windows, doorLocal: new THREE.Vector3(0, 0, slot.d / 2), height: b, roofColor };
+    // Calls happen under a tree: chairs round the trunk, cushions in the channel's colour.
+    const tree = buildVoiceTree(slot.w, roofColor, h);
+    group.add(tree.group);
+    return { group, windows, doorLocal: new THREE.Vector3(0, 0, slot.d / 2), height: tree.height, roofColor, tree };
   }
 
   const s = slot.w;
@@ -183,32 +188,3 @@ function gableRoof(parent: THREE.Group, s: number, y: number, color: number, alo
 }
 
 /** Voice channels: an open pavilion with a domed roof — people gather here. */
-function pavilion(parent: THREE.Group, s: number, color: number): number {
-  const floor = new THREE.Mesh(
-    new THREE.CylinderGeometry(s * 0.7, s * 0.75, 0.2, 10),
-    new THREE.MeshStandardMaterial({ color: 0xd8c4a4, flatShading: true }),
-  );
-  floor.position.y = 0.05;
-  floor.receiveShadow = true;
-  parent.add(floor);
-  const n = 6;
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    const p = model('town/pillar-wood');
-    p.position.set(Math.cos(a) * s * 0.58, 0.15, Math.sin(a) * s * 0.58);
-    p.scale.set(1, 1.4, 1);
-    parent.add(p);
-  }
-  const dome = new THREE.Mesh(
-    new THREE.ConeGeometry(s * 0.85, 1.0, 10),
-    new THREE.MeshStandardMaterial({ color, flatShading: true }),
-  );
-  dome.position.y = 1.55 + 0.5;
-  dome.castShadow = true;
-  parent.add(dome);
-  const fire = model('nature/campfire_stones');
-  fire.scale.setScalar(1.4);
-  fire.position.y = 0.15;
-  parent.add(fire);
-  return 2.6;
-}

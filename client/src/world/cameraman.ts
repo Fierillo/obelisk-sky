@@ -77,6 +77,10 @@ export class Cameraman {
   fpFov = 70;
   private feel = new FpFeel();
   private feelIn: FeelInput = { speed: 0, running: false, airborne: false, landed: false, strafe: 0, turn: 0 };
+  /** In first person but training or sitting: the camera steps out to watch
+   *  you (you'd see nothing from your own eyes), and back in when you're done. */
+  private watching = false;
+  private watchPos: THREE.Vector3 | null = null;
   /** Easing into first person from wherever the camera was. */
   private fpEnter: { pos: THREE.Vector3; quat: THREE.Quaternion; t: number } | null = null;
   private lastYaw = 0;
@@ -87,6 +91,7 @@ export class Cameraman {
     if (this.intro) this.endIntro();
     this.firstPerson = on;
     this.controls.enabled = !on;
+    this.watching = false;
     if (on) {
       this.fpYaw = this.lastYaw = yaw;
       this.fpPitch = -0.08;
@@ -223,6 +228,23 @@ export class Cameraman {
     this.applyIntro();
   }
 
+  /** First person: watch yourself (training, sitting) or look from your eyes. */
+  setWatching(on: boolean, yaw?: number): void {
+    if (on === this.watching || !this.firstPerson) return;
+    this.watching = on;
+    if (on) {
+      this.watchPos = this.camera.position.clone();
+      // Look at yourself from where it reads best (the caller picks), level-ish.
+      if (yaw !== undefined) { this.fpYaw = yaw; this.fpPitch = -0.08; }
+    }
+    // Back into your eyes: glide from where the watching camera was.
+    else this.fpEnter = { pos: this.camera.position.clone(), quat: this.camera.quaternion.clone(), t: 0 };
+  }
+
+  get isWatching(): boolean {
+    return this.firstPerson && this.watching;
+  }
+
   /** How you're moving, for the first-person bob, dip and lean (main.ts, each frame). */
   setFeel(i: Omit<FeelInput, 'turn'>): void {
     this.feelIn = { ...i, turn: 0 };
@@ -352,6 +374,25 @@ export class Cameraman {
       }
       this.applyIntro();
       if (this.intro.t >= 1) this.endIntro();
+      return;
+    }
+    if (this.firstPerson && this.watching) {
+      const p = this.player?.();
+      if (p) {
+        // Around you, turned with the mouse; aimed at your chest (up at the bar
+        // for pull-ups, down on the bench for a press).
+        const e = this.eye?.();
+        const focus = e ? e.clone().setY(e.y - 0.14) : p.clone().setY(p.y + 0.1);
+        const elev = THREE.MathUtils.clamp(0.42 - this.fpPitch * 0.6, 0.12, 1.2);
+        const want = focus.clone().add(new THREE.Vector3(-Math.sin(this.fpYaw) * Math.cos(elev), Math.sin(elev), -Math.cos(this.fpYaw) * Math.cos(elev)).multiplyScalar(1.9));
+        this.watchPos ??= this.camera.position.clone();
+        this.watchPos.lerp(want, 1 - Math.exp(-dt * 5));
+        this.camera.up.set(0, 1, 0);
+        this.camera.position.copy(this.watchPos);
+        this.camera.lookAt(focus);
+        if (Math.abs(this.camera.fov - this.fpFov) > 0.01) { this.camera.fov = this.fpFov; this.camera.updateProjectionMatrix(); }
+        this.controls.target.copy(p);
+      }
       return;
     }
     if (this.firstPerson) {

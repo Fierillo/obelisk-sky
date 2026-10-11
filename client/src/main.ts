@@ -494,6 +494,8 @@ function stepPlayer(dt: number): void {
   const pk = world.playerPk;
   const c = pk ? world.people.get(pk) : undefined;
   if (!controller || !c) return;
+  // In first person, step out to watch yourself train or sit (running laps stays in your eyes).
+  world.setSelfView((world.isTraining(pk!) && world.laneOf(pk!) === null) || world.isSeated(pk!));
   const mv = input.read();
   // Walking off gets you up from your seat.
   if (world.isSeated(pk!) && (Math.hypot(mv.x, mv.y) > 0.05 || controller.path.length || mv.jump)) {
