@@ -7,6 +7,10 @@
 // are clipped. A person without one wears the look their pubkey picks.
 // v2 carries a full look for the Quaternius people (people/people.ts); v1
 // (a Kenney skin letter) still parses and maps to a stable look.
+//
+// Your own signed event is also kept in localStorage, so your look and pet
+// show at once and follow you to another relay: if that relay has none (or
+// an older one), the same signed event is published there (`syncOwn`).
 
 import type { Event as NostrEvent, EventTemplate } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
@@ -78,13 +82,43 @@ export function avatarTemplate(a: Avatar, prevCreatedAt = 0): EventTemplate {
   };
 }
 
+export const AVATAR_CACHE_PREFIX = 'obelisk-sky/avatar/';
+
+function storage(): Storage | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+}
+
+/** Your latest avatar event as this browser last saw it (checked, or null). */
+export function loadCachedAvatar(pk: string, store: Storage | null = storage()): NostrEvent | null {
+  let ev: NostrEvent;
+  try { ev = JSON.parse(store?.getItem(AVATAR_CACHE_PREFIX + pk) ?? 'null'); } catch { return null; }
+  if (!ev || typeof ev !== 'object' || ev.pubkey !== pk || ev.kind !== 30078 || typeof ev.sig !== 'string' || typeof ev.created_at !== 'number') return null;
+  if (!Array.isArray(ev.tags) || !ev.tags.some((t) => t[0] === 'd' && t[1] === AVATAR_D_TAG)) return null;
+  return parseAvatar(ev.content) ? ev : null;
+}
+
+/** Keep `ev` if it is newer than what's cached for its author. */
+export function cacheAvatar(ev: NostrEvent, store: Storage | null = storage()): void {
+  const prev = loadCachedAvatar(ev.pubkey, store);
+  if (prev && prev.created_at >= ev.created_at) return;
+  const { id, pubkey, kind, tags, content, created_at, sig } = ev;
+  try { store?.setItem(AVATAR_CACHE_PREFIX + ev.pubkey, JSON.stringify({ id, pubkey, kind, tags, content, created_at, sig })); } catch { /* full or private */ }
+}
+
+/** The relay is missing your look, or has an older one than you saved. */
+export function shouldRepublish(cached: NostrEvent | null, relayAt: number): boolean {
+  return !!cached && cached.created_at > relayAt;
+}
+
 /** Avatars for the people in the village, fetched in batches as they appear. */
 export class AvatarStore {
   private byPk = new Map<string, { a: Avatar; at: number }>();
   private asked = new Set<string>();
   private listeners = new Set<(pk: string, a: Avatar) => void>();
+  /** Your pubkey: your events are cached in this browser. */
+  private own: string | null = null;
 
-  constructor(private hub: RelayHub) {}
+  constructor(private hub: RelayHub, private store: Storage | null = storage()) {}
 
   onChange(cb: (pk: string, a: Avatar) => void): () => void {
     this.listeners.add(cb);
@@ -106,7 +140,40 @@ export class AvatarStore {
     const a = parseAvatar(ev.content);
     if (!a) return;
     this.byPk.set(ev.pubkey, { a, at: ev.created_at });
+    if (ev.pubkey === this.own) cacheAvatar(ev, this.store);
     for (const l of this.listeners) l(ev.pubkey, a);
+  }
+
+  /**
+   * Your look on this relay: show the cached one at once, ask the relay for
+   * its copy, and hand the cached event to `republish` when the relay is
+   * missing it or behind. Resolves to what happened.
+   */
+  async syncOwn(pk: string, republish: (ev: NostrEvent) => Promise<boolean>): Promise<'republished' | 'current' | 'none' | 'failed'> {
+    this.own = pk;
+    const cached = loadCachedAvatar(pk, this.store);
+    if (cached) this.ingest(cached);
+    this.asked.add(pk);
+    let relayAt = 0;
+    try {
+      const r = await this.hub.query({
+        relays: [activeRelay()],
+        filters: [{ kinds: [30078], authors: [pk], '#d': [AVATAR_D_TAG] }],
+        maxWaitMs: 5000,
+        label: 'sky-avatar-own',
+      });
+      for (const ev of r.events) {
+        if (ev.pubkey !== pk) continue;
+        this.ingest(ev);
+        relayAt = Math.max(relayAt, ev.created_at);
+      }
+    } catch {
+      return 'failed';
+    }
+    // Re-read: a newer event from the relay replaced the cache.
+    const best = loadCachedAvatar(pk, this.store);
+    if (!shouldRepublish(best, relayAt)) return best || relayAt ? 'current' : 'none';
+    return (await republish(best!)) ? 'republished' : 'failed';
   }
 
   /** Ask the relay for anyone we haven't asked about yet. */

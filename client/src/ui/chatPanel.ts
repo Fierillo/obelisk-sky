@@ -1,6 +1,7 @@
 // The channel you're standing in: recent messages, reactions and a composer.
-// Opens when your character walks into a building's yard, minimises when you
-// walk out. Text is rendered through content.ts (textContent only; images
+// Opens when your character walks into a building's yard (or when asked: see
+// ui/chatAuto.ts for when), closes with × or when you walk out of a yard
+// that opened it. Text is rendered through content.ts (textContent only; images
 // as <img>, never relay HTML).
 
 import type { WireGroup, WireMessage, WireReaction } from '../nostr/wire';
@@ -42,6 +43,10 @@ export class ChatPanel {
   private replyTo: WireMessage | null = null;
   private pickerFor: string | null = null;
   minimised = false;
+  /** Who opened the panel: walking into a yard, or the viewer. */
+  openedBy: 'auto' | 'user' | null = null;
+  /** The viewer closed the panel with ×. */
+  onClose?: () => void;
 
   constructor(parent: HTMLElement, private deps: ChatPanelDeps) {
     this.el = div('chat');
@@ -57,7 +62,10 @@ export class ChatPanel {
     const games = button('chat-min chat-games', 'Start a game here');
     games.textContent = 'Game';
     games.addEventListener('click', () => { if (this.group) this.deps.newGame?.(this.group.id); });
-    head.append(titles, games, min);
+    const x = button('chat-min chat-close', 'Close');
+    x.textContent = '×';
+    x.addEventListener('click', () => { this.close(); this.onClose?.(); });
+    head.append(titles, games, min, x);
     head.addEventListener('dblclick', () => this.setMinimised(!this.minimised));
     this.list = div('chat-list');
     this.replyChip = div('chat-reply');
@@ -85,9 +93,10 @@ export class ChatPanel {
     return this.group?.id ?? null;
   }
 
-  open(g: WireGroup): void {
+  open(g: WireGroup, by: 'auto' | 'user' = 'user'): void {
     const changed = this.group?.id !== g.id;
     this.group = g;
+    if (changed || by === 'user') this.openedBy = by;
     this.el.hidden = false;
     document.body.classList.add('chat-open');
     this.title.textContent = g.name;
@@ -98,6 +107,7 @@ export class ChatPanel {
 
   close(): void {
     this.group = null;
+    this.openedBy = null;
     this.el.hidden = true;
     this.bodies?.pruneBodies(new Set());
     document.body.classList.remove('chat-open');

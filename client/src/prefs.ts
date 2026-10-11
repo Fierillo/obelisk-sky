@@ -6,6 +6,8 @@ export const QUALITIES = ['auto', 'low', 'medium', 'high', 'ultra'] as const;
 export type QualityPref = (typeof QUALITIES)[number];
 export const TIMES = ['auto', 'day', 'sunset', 'night'] as const;
 export type TimePref = (typeof TIMES)[number];
+export { CHAT_OPEN_PREFS, type ChatOpenPref } from './ui/chatAuto';
+import { CHAT_OPEN_PREFS, type ChatOpenPref } from './ui/chatAuto';
 
 export interface Prefs {
   v: 1;
@@ -31,6 +33,8 @@ export interface Prefs {
   invertY: boolean;
   // Chat
   chatOpacity: number; // 0.15 .. 1, the chat panel's background
+  /** Walking into a channel's yard: open its chat, offer a button, or nothing. */
+  chatOpen: ChatOpenPref;
   // Sound
   sound: boolean;
   volume: number; // 0 .. 1
@@ -58,6 +62,7 @@ export const DEFAULT_PREFS: Prefs = {
   mouseSensitivity: 1,
   invertY: false,
   chatOpacity: 0.42,
+  chatOpen: 'ask',
   sound: false,
   volume: 0.6,
   relay: '',
@@ -94,6 +99,7 @@ export function normalizePrefs(raw: unknown): Prefs {
     mouseSensitivity: num(r.mouseSensitivity, d.mouseSensitivity, 0.25, 3),
     invertY: bool(r.invertY, d.invertY),
     chatOpacity: num(r.chatOpacity, d.chatOpacity, 0.15, 1),
+    chatOpen: oneOf(CHAT_OPEN_PREFS, r.chatOpen, d.chatOpen),
     sound: bool(r.sound, d.sound),
     volume: num(r.volume, d.volume, 0, 1),
     relay: typeof r.relay === 'string' && /^wss?:\/\/[^\s]+$/i.test(r.relay) ? r.relay : '',

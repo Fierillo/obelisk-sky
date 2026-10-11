@@ -1,9 +1,9 @@
-import { nip19 } from 'nostr-tools';
+import { nip19, type VerifiedEvent } from 'nostr-tools';
 import { renderContent } from './ui/content';
 import type { ServerMsg, WireGroup, WireMessage } from './nostr/wire';
 import { hexToNpub } from '@nostr-wot/data';
 import { Feed, type FeedAccess } from './nostr/feed';
-import { deletionTemplate, joinTemplate, messageTemplate, publishToGroup, reactionTemplate } from './nostr/publish';
+import { deletionTemplate, joinTemplate, messageTemplate, publishToGroup, publishSigned, reactionTemplate } from './nostr/publish';
 import type { WireReaction } from './nostr/wire';
 import { PlayerController, placeAt } from './player/controller';
 import { InputState, isTyping, mountJoystick } from './player/input';
@@ -22,6 +22,7 @@ import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
 import { openCreator } from './ui/creator';
 import { CallRoom } from './voice/callRoom';
 import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/controlsGuide';
+import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
 import { PrefsStore, type Prefs } from './prefs';
 import { openSettings } from './ui/settings';
 import { openRelayModal } from './ui/relayModal';
@@ -251,6 +252,13 @@ function startFeed(): void {
   resetVillage();
   avatars = new AvatarStore(hub);
   avatars.onChange((pk, a) => world.setAvatar(pk, a));
+  // Your look and pet follow you: the cached copy shows at once, and a relay
+  // that doesn't have it (or has an older one) gets the same signed event.
+  const me = session.current?.pubkey;
+  if (me) {
+    void avatars.syncOwn(me, async (ev) => (await publishSigned(hub, ev as VerifiedEvent)).ok)
+      .then((r) => { if (r === 'republished') console.info('[sky] look copied to', activeRelay()); });
+  }
   startActivity();
   book = new GameBook();
   book.onChange((id) => { gamePanel.refresh(id); scheduleTables(); });
@@ -375,7 +383,6 @@ function handle(m: ServerMsg): void {
       placeOfficial();
       if (session.current) maybeShowControlsGuide($('app'));
       maybeWelcome();
-      $('caption-text').textContent = `Obelisk Village · live from ${relayHost} · drag to orbit, click anyone`;
       break;
     }
     case 'profile':
@@ -485,19 +492,39 @@ function stepPlayer(dt: number): void {
   c.drive(controller.pos.x, controller.pos.z, controller.heading, controller.moving, controller.running, controller.height, controller.airborne);
   if (controller.moving && performance.now() - input.lastInput < 200) world.cam.played();
   // Enter a channel when you stop in its yard or linger there; walking past
-  // a yard doesn't flash its chat open.
+  // a yard doesn't count. What the chat does then is ui/chatAuto.ts.
   const here = placeAt(controller.pos, world.yards());
   if (here !== candidate) { candidate = here; candidateFor = 0; }
   else candidateFor += dt;
-  const settled = !controller.moving || candidateFor > 0.6;
+  const settled = !controller.moving || candidateFor > SETTLE_WALKING;
   if (settled && candidate !== place) {
     place = candidate;
-    const g = place ? groups.find((x) => x.id === place) : null;
-    if (g) chat.open(g);
-    else chat.close();
+    const act = onPlaceChange(place, { open: chat.groupId, openedBy: chat.openedBy }, prefs.get().chatOpen);
+    chatHint = act.kind === 'hint' ? act.id : null;
+    if (act.kind === 'open') { const g = groups.find((x) => x.id === act.id); if (g) chat.open(g, 'auto'); }
+    else if (act.kind === 'close') chat.close();
     renderCall();
   }
 }
+
+/** The channel whose chat the "open chat" button offers (you're in its yard). */
+let chatHint: string | null = null;
+let chatHintShown = '';
+function renderChatHint(): void {
+  const el = $('chat-hint') as HTMLButtonElement;
+  const g = chatHint && chatHint === place && chat.groupId !== chatHint ? groups.find((x) => x.id === chatHint) : null;
+  const text = g ? (isTouch() ? `💬 Open the ${g.name} chat` : `💬 Press C to open the ${g.name} chat`) : '';
+  if (text === chatHintShown) return;
+  chatHintShown = text;
+  el.hidden = !text;
+  el.textContent = text;
+}
+function openHintedChat(): void {
+  const g = chatHint ? groups.find((x) => x.id === chatHint) : null;
+  if (g) chat.open(g, 'user');
+  chatHint = null;
+}
+$('chat-hint').addEventListener('click', () => openHintedChat());
 
 world.hooks.onBubbleClick = (msgId) => {
   const m = player.events.find((e): e is Extract<Ev, { k: 'msg' }> => e.k === 'msg' && e.m.id === msgId)?.m;
@@ -609,6 +636,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === '2' || e.key === '3') && controller && world.playerPk) toggleTraining(Number(e.key) - 1);
   if (e.key === '?' || (e.key === '/' && e.shiftKey)) openControlsGuide($('app'));
   if (e.key.toLowerCase() === 'v' && world.playerPk) toggleFirstPerson();
+  if (e.key.toLowerCase() === 'c' && chatHint) openHintedChat();
   // Esc releases the mouse first (the browser does that); a second Esc leaves first person.
   if (e.key === 'Escape' && world.cam.firstPerson && !document.pointerLockElement) toggleFirstPerson();
 });
@@ -653,6 +681,9 @@ const chat = new ChatPanel($('app'), {
     if (controller && other && m.pubkey !== session.current?.pubkey) controller.walkTo(other.pos);
   },
 });
+// Closed with ×: the button offers it again while you're still in its yard.
+chat.onClose = () => { if (place) chatHint = place; };
+
 
 // ── mentions and replies ─────────────────────────────────────────────────
 // A ping is an explicit @you or a reply to you (obelisk-dex classifyGroupPing);
@@ -1199,6 +1230,7 @@ function loop(): void {
   stepPlayer(dt);
   tickActivity();
   renderSeatHint();
+  renderChatHint();
   if (call.state.channelId && controller) {
     call.updatePositions({ x: controller.pos.x, z: controller.pos.z, yaw: world.cameraYaw() }, (pk) => world.people.get(pk)?.pos ?? null);
   }

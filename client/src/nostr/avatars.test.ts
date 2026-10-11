@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
-import { parseAvatar, avatarTemplate, AvatarStore, AVATAR_D_TAG, DEFAULT_AVATAR } from './avatars';
+import { parseAvatar, avatarTemplate, AvatarStore, AVATAR_D_TAG, DEFAULT_AVATAR, AVATAR_CACHE_PREFIX, cacheAvatar, loadCachedAvatar, shouldRepublish } from './avatars';
 import { defaultLook, parseLook } from '../people/people';
 
 describe('avatar config', () => {
@@ -59,5 +59,69 @@ describe('avatar v2 (a full look)', () => {
   it('gives everyone a stable default look', () => {
     expect(defaultLook(7)).toEqual(defaultLook(7));
     expect(parseLook(defaultLook(7))).toEqual(defaultLook(7));
+  });
+});
+
+describe('your look across relays', () => {
+  const mem = (): Storage => {
+    const m = new Map<string, string>();
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k), clear: () => m.clear(), key: () => null, length: 0 } as Storage;
+  };
+  const sk = generateSecretKey();
+  const pet = { kind: 'dog' as const, name: 'Mate' };
+  const ev = (at: number, hat: 'cap' | 'boina' = 'cap') => finalizeEvent({ ...avatarTemplate({ ...DEFAULT_AVATAR, hat, pet }), created_at: at }, sk);
+  const hubWith = (events: ReturnType<typeof ev>[]) => ({ query: async () => ({ events }) }) as never;
+
+  it('caches the newest only, and rejects junk or another key', () => {
+    const s = mem();
+    cacheAvatar(ev(20), s);
+    cacheAvatar(ev(10, 'boina'), s);
+    const pk = ev(1).pubkey;
+    expect(loadCachedAvatar(pk, s)!.created_at).toBe(20);
+    s.setItem(AVATAR_CACHE_PREFIX + pk, '{oops');
+    expect(loadCachedAvatar(pk, s)).toBeNull();
+    s.setItem(AVATAR_CACHE_PREFIX + 'ab'.repeat(32), JSON.stringify(ev(5)));
+    expect(loadCachedAvatar('ab'.repeat(32), s)).toBeNull();
+  });
+
+  it('republishes only when the relay is missing it or behind', () => {
+    expect(shouldRepublish(null, 0)).toBe(false);
+    expect(shouldRepublish(ev(10), 0)).toBe(true);
+    expect(shouldRepublish(ev(10), 5)).toBe(true);
+    expect(shouldRepublish(ev(10), 10)).toBe(false);
+    expect(shouldRepublish(ev(10), 20)).toBe(false);
+  });
+
+  it('shows the cached look at once and copies it to a relay that lacks it', async () => {
+    const s = mem();
+    const mine = ev(30);
+    cacheAvatar(mine, s);
+    const store = new AvatarStore(hubWith([]), s);
+    const sent: string[] = [];
+    const out = await store.syncOwn(mine.pubkey, async (e) => { sent.push(e.id); return true; });
+    expect(out).toBe('republished');
+    expect(sent).toEqual([mine.id]); // the very same signed event
+    expect(store.get(mine.pubkey)!.pet).toEqual(pet);
+  });
+
+  it('takes a newer look from the relay and caches it instead', async () => {
+    const s = mem();
+    cacheAvatar(ev(30), s);
+    const newer = ev(40, 'boina');
+    const store = new AvatarStore(hubWith([newer]), s);
+    let sent = 0;
+    expect(await store.syncOwn(newer.pubkey, async () => { sent++; return true; })).toBe('current');
+    expect(sent).toBe(0);
+    expect(store.get(newer.pubkey)!.hat).toBe('boina');
+    expect(loadCachedAvatar(newer.pubkey, s)!.id).toBe(newer.id);
+  });
+
+  it('caches the look you save', async () => {
+    const s = mem();
+    const store = new AvatarStore(hubWith([]), s);
+    const pk = ev(1).pubkey;
+    expect(await store.syncOwn(pk, async () => true)).toBe('none');
+    store.ingest(ev(50));
+    expect(loadCachedAvatar(pk, s)!.created_at).toBe(50);
   });
 });

@@ -63,12 +63,18 @@ export async function publishToGroup(hub: RelayHub, sign: (t: EventTemplate) => 
   } catch (e) {
     return { ok: false, event: null, reason: e instanceof Error ? e.message : 'signing failed', needsJoin: false };
   }
+  return publishSigned(hub, event);
+}
+
+/** Publish an event that is already signed (e.g. your cached look, to a relay
+ *  that doesn't have it yet), with the same AUTH retry. */
+export async function publishSigned(hub: RelayHub, event: VerifiedEvent): Promise<PublishOutcome> {
   let [res] = await hub.publish({ relays: [activeRelay()], event });
   if (res?.status === 'rejected' && /^restricted:/i.test(res.reason ?? '')) {
     [res] = await hub.publish({ relays: [activeRelay()], event, authMode: 'auth-first' });
   }
   if (res?.status === 'ok') return { ok: true, event };
   const reason = res?.reason ?? res?.status ?? 'no answer';
-  if (template.kind === 9021 && ALREADY_MEMBER.test(reason)) return { ok: true, event };
+  if (event.kind === 9021 && ALREADY_MEMBER.test(reason)) return { ok: true, event };
   return { ok: false, event, reason, needsJoin: /^restricted:/i.test(reason) && /member/i.test(reason) };
 }

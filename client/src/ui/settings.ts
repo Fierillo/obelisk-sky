@@ -1,9 +1,12 @@
 // Settings: this browser's preferences (prefs.ts), applied live.
 
-import { QUALITIES, TIMES, type Prefs, type PrefsStore } from '../prefs';
+import { CHAT_OPEN_PREFS, QUALITIES, TIMES, type Prefs, type PrefsStore } from '../prefs';
 
 const QUALITY_LABEL: Record<Prefs['quality'], string> = {
   auto: 'Automatic (adapts to your device)', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra',
+};
+const CHAT_OPEN_LABEL: Record<Prefs['chatOpen'], string> = {
+  auto: 'Open it automatically', ask: 'Show a button to open it', off: 'Do nothing',
 };
 const TIME_LABEL: Record<Prefs['timeOfDay'], string> = {
   auto: 'Buenos Aires time', day: 'Always day', sunset: 'Always sunset', night: 'Always night',
@@ -110,6 +113,7 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   row('Invert vertical look', toggle('invertY'));
 
   section('Chat');
+  row('Walking into a channel', select('chatOpen', CHAT_OPEN_PREFS, CHAT_OPEN_LABEL));
   row('Panel opacity', slider('chatOpacity', 0.15, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
 
   section('Sound');

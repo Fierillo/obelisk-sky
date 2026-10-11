@@ -16,6 +16,8 @@ describe('prefs', () => {
     expect(p.chatOpacity).toBe(0.15);
     expect(p.volume).toBe(0.3);
     expect('extra' in p).toBe(false);
+    expect(normalizePrefs({ chatOpen: 'sometimes' }).chatOpen).toBe('ask');
+    expect(normalizePrefs({ chatOpen: 'off' }).chatOpen).toBe('off');
   });
   it('persists, survives junk, notifies, and resets', () => {
     const s = mem();
