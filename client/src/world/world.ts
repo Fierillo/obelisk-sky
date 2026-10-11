@@ -1085,7 +1085,7 @@ export class World {
     this.cam.sensitivity = p.mouseSensitivity;
     this.cam.invertY = p.invertY;
     this.fpFov = p.fov;
-    if (this.cam.firstPerson) { this.camera.fov = p.fov; this.camera.updateProjectionMatrix(); }
+    this.cam.fpFov = p.fov;
     const level = this.post.level;
     const want = !p.grass || level === 'low' ? 0 : level === 'medium' ? 5000 : level === 'high' ? 12000 : 22000;
     if (this.built && (this.grass?.count ?? 0) !== want && Math.abs((this.grass?.count ?? 0) - want) > 500) this.buildGrass(want);
@@ -2320,8 +2320,22 @@ export class World {
     const c = this.playerPk ? this.people.get(this.playerPk) : null;
     if (!c) { this.cam.setFirstPerson(false); return; }
     this.cam.setFirstPerson(on, c.body.rotation.y);
-    c.body.visible = !on;
+    this.cam.eye = on ? () => this.eyeOf(c) : null;
+    // Your body stays in the world for its shadow, but draws nothing for you.
+    c.body.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) { mat.colorWrite = !on; mat.depthWrite = !on; }
+    });
     c.badge.visible = !on;
+  }
+
+  /** Eyes: just in front of the head bone (it carries walking, sitting, lifting, jumping). */
+  private eyeOf(c: Character): THREE.Vector3 | null {
+    const h = c.bonePosition('Head', new THREE.Vector3());
+    if (!h) return null;
+    const yaw = c.body.rotation.y;
+    return h.add(new THREE.Vector3(Math.sin(yaw) * 0.035, 0.045, Math.cos(yaw) * 0.035));
   }
 
   /** Make `pk` the viewer's character (or none), spawning it at the plaza. */
@@ -2382,8 +2396,9 @@ export class World {
 
   // ── frame ─────────────────────────────────────────────────────────────
 
-  frame(): number {
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+  /** One frame. `dtIn`: the caller's frame time (main.ts steps your character first). */
+  frame(dtIn?: number): number {
+    const dt = dtIn ?? Math.min(this.clock.getDelta(), 0.1);
     this.elapsed += dt;
     this.sky.update(dt, this.elapsed);
     const night01 = 1 - this.sky.day;

@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { FpFeel, type FeelInput } from './fpFeel';
 
 const HOME_TARGET = new THREE.Vector3(0, -0.5, 1);
 const HOME_OFFSET = new THREE.Vector3(22, 21, 43);
@@ -68,8 +69,17 @@ export class Cameraman {
   fpPitch = -0.08;
   sensitivity = 1;
   invertY = false;
-  private dragFrom: { x: number; y: number } | null = null;
+  private dragFrom: { x: number; y: number; id: number } | null = null;
   private intro: Intro | null = null;
+  /** Where your eyes are (the head bone), when the body is loaded. */
+  eye: (() => THREE.Vector3 | null) | null = null;
+  /** First person's field of view; running widens it a little. */
+  fpFov = 70;
+  private feel = new FpFeel();
+  private feelIn: FeelInput = { speed: 0, running: false, airborne: false, landed: false, strafe: 0, turn: 0 };
+  /** Easing into first person from wherever the camera was. */
+  private fpEnter: { pos: THREE.Vector3; quat: THREE.Quaternion; t: number } | null = null;
+  private lastYaw = 0;
 
   /** Enter or leave first person, facing `yaw` (atan2(dx, dz)). */
   setFirstPerson(on: boolean, yaw = 0): void {
@@ -78,18 +88,26 @@ export class Cameraman {
     this.firstPerson = on;
     this.controls.enabled = !on;
     if (on) {
-      this.fpYaw = yaw;
+      this.fpYaw = this.lastYaw = yaw;
       this.fpPitch = -0.08;
       this.tween = null;
       this.follow = null;
+      this.feel.reset();
+      // Glide down into your eyes rather than cutting.
+      this.fpEnter = { pos: this.camera.position.clone(), quat: this.camera.quaternion.clone(), t: 0 };
     } else {
       if (document.pointerLockElement) document.exitPointerLock();
+      this.fpEnter = null;
+      this.camera.up.set(0, 1, 0);
       const p = this.player?.();
       if (p) {
-        // Back out behind where you were looking.
+        // Back out behind where you were looking, gliding from your eyes.
         const back = new THREE.Vector3(-Math.sin(this.fpYaw), 0, -Math.cos(this.fpYaw)).multiplyScalar(Math.cos(0.85)).setY(Math.sin(0.85));
-        this.controls.target.copy(p);
-        this.camera.position.copy(p).addScaledVector(back, 11);
+        const look = new THREE.Vector3(Math.sin(this.fpYaw), 0, Math.cos(this.fpYaw));
+        this.tween = {
+          fromT: this.camera.position.clone().addScaledVector(look, 1), toT: p.clone(),
+          fromP: this.camera.position.clone(), toP: p.clone().addScaledVector(back, 11), t: 0, dur: 0.55,
+        };
       }
       this.playingUntil = performance.now() + 30_000;
     }
@@ -108,13 +126,15 @@ export class Cameraman {
     document.addEventListener('mousemove', (e) => {
       if (this.firstPerson && document.pointerLockElement === dom) this.look(e.movementX, e.movementY);
     });
-    dom.addEventListener('pointerdown', (e) => { if (this.firstPerson && !document.pointerLockElement) this.dragFrom = { x: e.clientX, y: e.clientY }; });
+    dom.addEventListener('pointerdown', (e) => { if (this.firstPerson && !document.pointerLockElement) this.dragFrom = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
     window.addEventListener('pointermove', (e) => {
-      if (!this.firstPerson || !this.dragFrom) return;
+      // Only the finger that started on the scene looks around (not the one on the stick).
+      if (!this.firstPerson || !this.dragFrom || e.pointerId !== this.dragFrom.id) return;
       this.look((e.clientX - this.dragFrom.x) * 1.6, (e.clientY - this.dragFrom.y) * 1.6);
-      this.dragFrom = { x: e.clientX, y: e.clientY };
+      this.dragFrom = { x: e.clientX, y: e.clientY, id: e.pointerId };
     });
-    window.addEventListener('pointerup', () => { this.dragFrom = null; });
+    window.addEventListener('pointerup', (e) => { if (e.pointerId === this.dragFrom?.id) this.dragFrom = null; });
+    window.addEventListener('pointercancel', (e) => { if (e.pointerId === this.dragFrom?.id) this.dragFrom = null; });
     this.controls = new OrbitControls(camera, dom);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.07;
@@ -201,6 +221,11 @@ export class Cameraman {
     this.follow = null;
     this.intro = { radius, to: null, cur: null, toPlayer: false, t: 0, rate: 0 };
     this.applyIntro();
+  }
+
+  /** How you're moving, for the first-person bob, dip and lean (main.ts, each frame). */
+  setFeel(i: Omit<FeelInput, 'turn'>): void {
+    this.feelIn = { ...i, turn: 0 };
   }
 
   /** Swing from the top-down view to your character (if you're on the
@@ -332,10 +357,31 @@ export class Cameraman {
     if (this.firstPerson) {
       const p = this.player?.();
       if (p) {
-        const eye = p.clone().setY(p.y + EYE_ABOVE_ANCHOR);
-        this.camera.position.copy(eye);
+        // Your eyes: the head bone when the body is there (so sitting, lifting
+        // and jumping carry them), else above the floor you stand on.
+        const eye = this.eye?.() ?? p.clone().setY(p.y + EYE_ABOVE_ANCHOR);
+        const turn = dt > 0 ? Math.atan2(Math.sin(this.fpYaw - this.lastYaw), Math.cos(this.fpYaw - this.lastYaw)) / dt : 0;
+        this.lastYaw = this.fpYaw;
+        const o = this.feel.step(dt, { ...this.feelIn, turn });
+        const right = new THREE.Vector3(-Math.cos(this.fpYaw), 0, Math.sin(this.fpYaw));
+        eye.y += o.up;
+        eye.addScaledVector(right, o.side);
         const dir = new THREE.Vector3(Math.sin(this.fpYaw) * Math.cos(this.fpPitch), Math.sin(this.fpPitch), Math.cos(this.fpYaw) * Math.cos(this.fpPitch));
-        this.camera.lookAt(eye.add(dir));
+        this.camera.up.set(0, 1, 0);
+        this.camera.position.copy(eye);
+        this.camera.lookAt(eye.clone().add(dir));
+        this.camera.rotateZ(-o.roll);
+        const fov = this.fpFov + o.fov;
+        if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
+        if (this.fpEnter) {
+          // Ease in from where the camera was.
+          const en = this.fpEnter;
+          en.t = Math.min(1, en.t + dt / 0.4);
+          const k = easeInOut(en.t);
+          this.camera.position.lerpVectors(en.pos, eye, k);
+          this.camera.quaternion.slerpQuaternions(en.quat, this.camera.quaternion.clone(), k);
+          if (en.t >= 1) this.fpEnter = null;
+        }
         this.controls.target.copy(p);
       }
       return;

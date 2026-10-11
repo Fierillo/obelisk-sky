@@ -133,10 +133,36 @@ describe('first person', () => {
     const anchor = new THREE.Vector3(1, 0.5, 1);
     cam.followPlayer(() => anchor.clone());
     cam.setFirstPerson(true, 0);
-    cam.update(1 / 30);
+    for (let i = 0; i < 20; i++) cam.update(1 / 30); // the glide in has finished
     expect(camera.position.y).toBeCloseTo(0.62, 6);
     anchor.y = 2.3 + 0.5; // walked up onto a 2.3 m floor
     cam.update(1 / 30);
     expect(camera.position.y).toBeCloseTo(2.92, 6);
+  });
+
+  it('glides into your eyes instead of cutting, and uses the head when there is one', () => {
+    const camera = new THREE.PerspectiveCamera(32, 16 / 9, 0.08, 900);
+    const cam = new Cameraman(camera, document.createElement('div'));
+    cam.followPlayer(() => new THREE.Vector3(1, 0.5, 1));
+    camera.position.set(10, 10, 10);
+    cam.eye = () => new THREE.Vector3(1, 0.66, 1.03);
+    cam.setFirstPerson(true, 0);
+    cam.update(1 / 30);
+    expect(camera.position.distanceTo(new THREE.Vector3(1, 0.66, 1.03))).toBeGreaterThan(1);
+    for (let i = 0; i < 20; i++) cam.update(1 / 30);
+    expect(camera.position.distanceTo(new THREE.Vector3(1, 0.66, 1.03))).toBeLessThan(1e-6);
+  });
+
+  it('bobs as you walk and widens the view when you run', () => {
+    const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.08, 900);
+    const cam = new Cameraman(camera, document.createElement('div'));
+    cam.followPlayer(() => new THREE.Vector3(0, 0.5, 0));
+    cam.setFirstPerson(true, 0);
+    for (let i = 0; i < 20; i++) cam.update(1 / 30);
+    const ys: number[] = [];
+    cam.setFeel({ speed: 2.6, running: true, airborne: false, landed: false, strafe: 0 });
+    for (let i = 0; i < 90; i++) { cam.update(1 / 60); ys.push(camera.position.y); }
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.01);
+    expect(camera.fov).toBeGreaterThan(cam.fpFov + 3);
   });
 });

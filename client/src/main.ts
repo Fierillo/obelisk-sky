@@ -497,8 +497,16 @@ function stepPlayer(dt: number): void {
     else { world.cam.played(); return; }
   }
   if (world.isSeated(pk!)) { world.cam.played(); return; }
+  const before = { ...controller.pos };
   controller.step(dt, mvNow, world.cameraYaw());
   c.drive(controller.pos.x, controller.pos.z, controller.heading, controller.moving, controller.running, controller.height, controller.airborne);
+  world.cam.setFeel({
+    speed: dt > 0 ? Math.hypot(controller.pos.x - before.x, controller.pos.z - before.z) / dt : 0,
+    running: controller.running && controller.moving,
+    airborne: controller.airborne,
+    landed: controller.landed,
+    strafe: Math.max(-1, Math.min(1, mvNow.x)),
+  });
   if (controller.moving && performance.now() - input.lastInput < 200) world.cam.played();
   // Enter a channel when you stop in its yard or linger there; walking past
   // a yard doesn't count. What the chat does then is ui/chatAuto.ts.
@@ -1253,11 +1261,16 @@ let signTimer = 0;
 const pinged = new Set<string>();
 let placeDwell = 0;
 let qualityHeld = true;
+let lastFrame = performance.now();
 function loop(): void {
-  const dt = world.frame();
+  // Your character moves first, then the world draws it: no frame of lag.
+  const now = performance.now();
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  stepPlayer(dt);
+  world.frame(dt);
   // "auto" quality waits until the intro has landed: a step down mid-swing recompiles and stutters.
   if (qualityHeld && !world.cam.inIntro) { qualityHeld = false; world.post.holdLevel(false); }
-  stepPlayer(dt);
   tickActivity();
   renderSeatHint();
   renderChatHint();

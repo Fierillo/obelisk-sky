@@ -19,6 +19,10 @@ export const JUMP_BUFFER = 0.12;
 /** Solid furniture: blocks walking, but can be jumped onto and stood on. */
 export interface Solid { minX: number; maxX: number; minZ: number; maxZ: number; top: number }
 
+/** Getting up to speed and coming to a stop take a moment, not a frame (s). */
+export const ACCEL_TAU = 0.09;
+export const DECEL_TAU = 0.07;
+
 /** You step onto anything this low without jumping (a kerb, a mat). */
 export const STEP_UP = 0.06;
 /** Raised ground (a bridge's arch, a ramp) is climbed and descended by the
@@ -61,6 +65,9 @@ export class PlayerController {
   /** How far the last step moved you (for following ramps). */
   private lastMove = 0;
   private prevPos: Vec2 | null = null;
+  /** Current keyboard speed and direction (eases toward the input). */
+  private spd = 0;
+  private dir: Vec2 = { x: 0, z: 0 };
 
   get airborne(): boolean {
     // Just stepped down a stair or a ramp (snapped on the next step): still on your feet.
@@ -111,7 +118,10 @@ export class PlayerController {
       const rx = -fz, rz = fx;
       const dx = fx * ny + rx * nx, dz = fz * ny + rz * nx;
       const speed = (input.run ? RUN_SPEED : WALK_SPEED) * Math.min(1, mag);
-      this.tryMove(dx * speed * dt, dz * speed * dt);
+      this.spd = speed + (this.spd - speed) * Math.exp(-dt / ACCEL_TAU);
+      const dl = Math.hypot(dx, dz) || 1;
+      this.dir = { x: dx / dl, z: dz / dl };
+      this.tryMove(dx * this.spd * dt, dz * this.spd * dt);
       this.heading = Math.atan2(dx, dz);
       this.moving = true;
       return;
@@ -126,8 +136,17 @@ export class PlayerController {
       this.pos = { x: this.pos.x + dx, z: this.pos.z + dz };
       this.heading = Math.atan2(dx, dz);
       this.moving = true;
+      this.spd = 0;
       return;
     }
+    // Keys let go: a short coast to a stop.
+    if (this.spd > 0.05) {
+      this.spd *= Math.exp(-dt / DECEL_TAU);
+      this.tryMove(this.dir.x * this.spd * dt, this.dir.z * this.spd * dt);
+      this.moving = this.spd > 0.2;
+      return;
+    }
+    this.spd = 0;
     this.moving = false;
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PlayerController, placeAt, WALK_SPEED } from './controller';
+import { PlayerController, placeAt, RUN_SPEED, WALK_SPEED } from './controller';
 import { NavGrid } from '../world/layout';
 import { archHeight, BRIDGE_RISE } from '../world/bridge';
 
@@ -14,7 +14,7 @@ describe('PlayerController', () => {
     const g = grid();
     const c = new PlayerController(() => g, { x: 0, z: 0 });
     c.step(1, { x: 0, y: 1, run: false }, 0); // camera looks along +z
-    expect(c.pos.z).toBeCloseTo(WALK_SPEED, 5);
+    expect(c.pos.z).toBeCloseTo(WALK_SPEED, 3);
     expect(Math.abs(c.pos.x)).toBeLessThan(1e-6);
   });
   it('strafes to the screen right on "right" (looking down +z, right is -x)', () => {
@@ -38,6 +38,18 @@ describe('PlayerController', () => {
     for (let i = 0; i < 20; i++) c.step(0.05, { x: 0, y: 1, run: false }, Math.PI / 4);
     expect(c.pos.x).toBeLessThan(2);
     expect(c.pos.z).toBeGreaterThan(0.5);
+  });
+  it('eases up to speed and coasts briefly to a stop', () => {
+    const c = new PlayerController(() => grid(), { x: 0, z: -3 });
+    c.step(1 / 60, { x: 0, y: 1, run: true }, 0);
+    const first = c.pos.z + 3;
+    expect(first).toBeLessThan(RUN_SPEED / 60 * 0.5); // not full speed on the first frame
+    for (let i = 0; i < 30; i++) c.step(1 / 60, { x: 0, y: 1, run: true }, 0);
+    const z = c.pos.z;
+    for (let i = 0; i < 30; i++) c.step(1 / 60, { x: 0, y: 0, run: false }, 0);
+    expect(c.pos.z - z).toBeGreaterThan(0.05); // a little coast…
+    expect(c.pos.z - z).toBeLessThan(0.3); // …not a slide
+    expect(c.moving).toBe(false);
   });
   it('follows a click-to-walk path and keys cancel it', () => {
     const g = grid();
