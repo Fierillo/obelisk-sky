@@ -65,3 +65,32 @@ describe('Player', () => {
     expect(p.events.length).toBe(before);
   });
 });
+
+describe('history mode', () => {
+  it('keeps you in the past when live messages arrive, counting them', () => {
+    const p = new Player(new Director());
+    p.autoStory = false;
+    const base = 1_700_000_000;
+    p.load([m('a', base - 3600, 'g1'), m('b', base - 3500, 'g1'), m('a', base - 3400, 'g1')], base);
+    p.history = true;
+    p.playFrom(base - 3601, base - 3300, base);
+    p.push(m('c', base + 10, 'g1'), base + 10);
+    p.push(m('c', base + 11, 'g1'), base + 11);
+    expect(p.mode).toBe('replay');
+    expect(p.missed).toBe(2);
+    expect(p.events).toHaveLength(5);
+  });
+  it('stays where a replay ends instead of jumping back to now', () => {
+    const p = new Player(new Director());
+    p.autoStory = false;
+    const base = 1_700_000_000;
+    p.load([m('a', base - 3600, 'g1'), m('b', base - 3500, 'g1')], base);
+    p.history = true;
+    p.playFrom(base - 3601, base - 3400, base);
+    for (let i = 0; i < 200; i++) p.update(0.2, base);
+    expect(p.mode).toBe('replay');
+    p.history = false;
+    p.goLive(base);
+    expect(p.missed).toBe(0);
+  });
+});

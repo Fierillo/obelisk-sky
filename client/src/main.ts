@@ -20,9 +20,10 @@ import { AvatarStore, DEFAULT_AVATAR, avatarTemplate, type Avatar } from './nost
 import { ActivityBeacon, ActivityStore, activityTemplate, type Activity } from './nostr/activity';
 import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
 import { openCreator } from './ui/creator';
-import { CallRoom } from './voice/callRoom';
+import { CallRoom, RECONNECT_DELAYS, awayCountdown } from './voice/callRoom';
 import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/controlsGuide';
 import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
+import { SPANS, binCounts, dragRange, peakLabel, spanSeconds, timeToX, topPeaks, type SpanId } from './ui/history';
 import { PrefsStore, type Prefs } from './prefs';
 import { openSettings } from './ui/settings';
 import { openRelayModal } from './ui/relayModal';
@@ -42,12 +43,14 @@ import { NOSTR_WOT_PUBKEY, NOSTR_WOT_SITE } from './world/landmarks/nostrwot';
 import { DEFAULT_SOCIAL_RELAYS } from '@/constants/social/relays';
 import { pubkeyColor } from './world/character';
 import { Director } from './world/director';
-import { Player, type Ev, type PlayerStatus } from './world/player';
+import { Player, findEpisodes, type Ev, type PlayerStatus } from './world/player';
 import { World, type StationKind } from './world/world';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const nowSec = () => Math.floor(Date.now() / 1000);
-const TIMELINE_DAYS = 7;
+/** History mode: the panel under the village, and how far back it shows. */
+let historyOn = false;
+let historySpan: SpanId = '7d';
 const OBELISK_APP = 'https://obelisk.ar/app';
 
 const world = new World($('scene'), $('overlay'));
@@ -401,7 +404,7 @@ function handle(m: ServerMsg): void {
       player.events = player.events.filter((e) => groupOfEv(e) !== m.id);
       world.setGroups(groups, activityOf(player.events));
       player.seek(nowSec(), true);
-      player.goLive(nowSec());
+      if (historyOn) drawTimeline(); else player.goLive(nowSec());
       break;
     }
     case 'msg': {
@@ -1215,6 +1218,10 @@ const call = new CallRoom(hub, activeRelay);
 
 const VOICE_SIGNER = { nsec: 'nsec', nip07: 'nip07', nip46: 'bunker' } as const;
 
+/** Walking out of the call's yard: how long you've been away, and whether you chose to stay. */
+let awayFor = 0;
+let stayInCall = false;
+let awayShown: number | null = null;
 function renderCall(): void {
   const s = call.state;
   const here = place ? groups.find((g) => g.id === place) : null;
@@ -1226,13 +1233,20 @@ function renderCall(): void {
   const callGroup = inCall ? groups.find((g) => g.id === s.channelId) : voiceHere;
   ($('call-title') as HTMLElement).textContent = callGroup?.name ?? 'Voice';
   const names = s.participants.map((pk) => world.nameOf(pk));
+  const left = awayCountdown(inCall, place, s.channelId, awayFor, stayInCall);
   ($('call-who') as HTMLElement).textContent = inCall
-    ? (s.joining ? 'Joining…' : names.length ? names.join(', ') : 'Just you so far')
+    ? s.reconnecting ? `Reconnecting… (${s.reconnecting}/${RECONNECT_DELAYS.length})`
+      : s.joining ? 'Joining…'
+      : left !== null ? `Walked away: leaving in ${left} s`
+      : s.micBlocked && s.error ? s.error
+      : names.length ? names.join(', ') : 'Just you so far'
     : s.error ? `Couldn't join: ${s.error}` : 'Walk in and talk';
   const sfu = !inCall && voiceHere?.kind === 'voice-sfu';
   $('call-join').hidden = inCall || sfu;
+  $('call-stay').hidden = left === null;
   $('call-mic').hidden = !inCall || s.joining;
-  $('call-mic').textContent = s.micOn ? 'Mute' : 'Unmute';
+  // A blocked microphone: the button retries asking for it.
+  $('call-mic').textContent = s.micBlocked ? 'Allow mic' : s.micOn ? 'Mute' : 'Unmute';
   $('call-leave').hidden = !inCall;
   const app = $('call-app') as HTMLAnchorElement;
   app.hidden = !sfu;
@@ -1251,8 +1265,19 @@ $('call-join').addEventListener('click', () => {
   if (!g || !s) return;
   void call.join(g.id, { open: g.open !== false, signer: VOICE_SIGNER[s.method] });
 });
-$('call-mic').addEventListener('click', () => void call.setMic(!call.state.micOn));
+$('call-mic').addEventListener('click', () => void call.setMic(call.state.micBlocked || !call.state.micOn));
 $('call-leave').addEventListener('click', () => void call.leave());
+$('call-stay').addEventListener('click', () => { stayInCall = true; renderCall(); });
+
+function tickCallAway(dt: number): void {
+  const s = call.state;
+  if (!s.channelId || s.joining) { awayFor = 0; stayInCall = false; awayShown = null; return; }
+  if (place === s.channelId) { awayFor = 0; awayShown = null; return; }
+  awayFor += dt;
+  const left = awayCountdown(true, place, s.channelId, awayFor, stayInCall);
+  if (left !== awayShown) { awayShown = left; renderCall(); }
+  if (left === 0) { void call.leave(); toast('You walked away from the call, so you left it.'); }
+}
 window.addEventListener('beforeunload', () => { void call.leave(); });
 
 // ── frame loop ───────────────────────────────────────────────────────────
@@ -1268,6 +1293,7 @@ function loop(): void {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
   stepPlayer(dt);
+  tickCallAway(dt);
   world.frame(dt);
   // "auto" quality waits until the intro has landed: a step down mid-swing recompiles and stutters.
   if (qualityHeld && !world.cam.inIntro) { qualityHeld = false; world.post.holdLevel(false); }
@@ -1320,9 +1346,10 @@ function refreshSigns(): void {
   }
   const people = director.people.size;
   $('stats').textContent = `${groups.length} channels · ${people} resident${people === 1 ? '' : 's'}`;
-  const cursor = $('timeline-cursor');
-  const span = TIMELINE_DAYS * 86400;
-  cursor.style.left = `calc(8px + (100% - 16px) * ${Math.max(0, 1 - (nowSec() - at) / span)})`;
+  if (historyOn) {
+    const span = spanSeconds(historySpan);
+    $('timeline-cursor').style.left = `calc(8px + (100% - 16px) * ${Math.max(0, 1 - (nowSec() - at) / span)})`;
+  }
 }
 
 // ── status / feed / timeline ─────────────────────────────────────────────
@@ -1331,21 +1358,31 @@ function setStatus(mode: string, text: string): void {
   const s = $('status');
   s.dataset.mode = mode;
   (s.querySelector('.status-text') as HTMLElement).textContent = text;
-  ($('go-live') as HTMLButtonElement).hidden = mode !== 'replay';
 }
 
 function renderStatus(s: PlayerStatus): void {
-  if (s.mode === 'live') { setStatus('live', 'LIVE'); return; }
+  const missed = s.missed ? ` · ${s.missed} new` : '';
+  if (s.mode === 'live') { setStatus(s.history ? 'replay' : 'live', s.history ? `HISTORY · pick a moment${missed}` : 'LIVE'); return; }
   const d = new Date(s.at * 1000);
   const when = d.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   const g = s.episode ? groups.find((x) => x.id === s.episode!.groupId) : null;
-  setStatus('replay', `REPLAY · ${when}${g ? ` · ${g.name}` : ''}`);
+  setStatus('replay', `REPLAY · ${when}${g ? ` · ${g.name}` : ''}${missed}`);
 }
 
-$('go-live').addEventListener('click', () => {
-  player.seek(nowSec(), true);
-  player.goLive(nowSec());
-});
+/** Live: the village now. History: the panel below opens to pick a stretch of the past. */
+function setHistory(on: boolean): void {
+  historyOn = on;
+  player.history = on;
+  $('timeline-panel').hidden = !on;
+  for (const [id, want] of [['mode-live', false], ['mode-history', true]] as const) {
+    $(id).classList.toggle('on', on === want);
+    $(id).setAttribute('aria-pressed', String(on === want));
+  }
+  if (on) { drawTimeline(); player.status(); }
+  else { player.seek(nowSec(), true); player.goLive(nowSec()); }
+}
+$('mode-live').addEventListener('click', () => setHistory(false));
+$('mode-history').addEventListener('click', () => setHistory(!historyOn));
 
 function addFeed(pk: string, groupId: string, text: string, to: string | null): void {
   const feed = $('feed');
@@ -1368,46 +1405,87 @@ function addFeed(pk: string, groupId: string, text: string, to: string | null): 
   setTimeout(() => line.remove(), 15_500);
 }
 
+/** The history panel: messages over the span, the busiest stretches marked and listed. */
 function drawTimeline(): void {
+  if (!historyOn) return;
   const c = $('timeline-canvas') as HTMLCanvasElement;
   const w = (c.width = c.clientWidth * devicePixelRatio);
   const h = (c.height = c.clientHeight * devicePixelRatio);
   const g = c.getContext('2d')!;
   g.clearRect(0, 0, w, h);
-  const span = TIMELINE_DAYS * 86400;
   const now = nowSec();
-  const bins = Math.max(24, Math.floor(w / (3 * devicePixelRatio)));
-  const counts = new Array(bins).fill(0);
-  for (const e of player.events) {
-    if (e.k !== 'msg') continue;
-    const x = 1 - (now - e.at) / span;
-    if (x < 0 || x > 1) continue;
-    counts[Math.min(bins - 1, Math.floor(x * bins))]++;
+  const span = spanSeconds(historySpan);
+  const from = now - span;
+  const times = player.events.filter((e) => e.k === 'msg').map((e) => e.at);
+  const counts = binCounts(times, from, now, Math.max(24, Math.floor(w / (3 * devicePixelRatio))));
+  const peaks = topPeaks(findEpisodes(player.events), from, now, 5);
+  // The busiest stretches, shaded behind the bars.
+  g.fillStyle = 'rgba(255, 200, 61, 0.16)';
+  for (const p of peaks) {
+    const x0 = timeToX(p.start, from, now) * w, x1 = timeToX(p.end, from, now) * w;
+    g.fillRect(x0 - 2 * devicePixelRatio, 0, Math.max(4 * devicePixelRatio, x1 - x0 + 4 * devicePixelRatio), h);
   }
   const max = Math.max(1, ...counts);
-  const bw = w / bins;
-  for (let i = 0; i < bins; i++) {
+  const bw = w / counts.length;
+  for (let i = 0; i < counts.length; i++) {
     if (!counts[i]) continue;
     const bh = Math.max(2 * devicePixelRatio, (Math.sqrt(counts[i]) / Math.sqrt(max)) * h);
     g.fillStyle = 'rgba(180, 249, 83, 0.75)';
     g.fillRect(i * bw + 0.5, h - bh, Math.max(1, bw - 1), bh);
   }
-  // Day ticks.
+  // Day ticks (hours, over a day).
   g.fillStyle = 'rgba(255,255,255,0.12)';
-  for (let d = 1; d < TIMELINE_DAYS; d++) g.fillRect((d / TIMELINE_DAYS) * w, 0, devicePixelRatio, h);
-  $('tl-start').textContent = `${TIMELINE_DAYS} days ago`;
+  const tick = span <= 86400 ? 3600 * 3 : 86400;
+  for (let t = Math.ceil(from / tick) * tick; t < now; t += tick) g.fillRect(timeToX(t, from, now) * w, 0, devicePixelRatio, h);
+  $('tl-start').textContent = SPANS.find((s) => s.id === historySpan)!.label + ' ago';
+  renderHistoryChips(peaks);
 }
 window.addEventListener('resize', drawTimeline);
 
-$('timeline').addEventListener('click', (e) => {
-  const r = $('timeline').getBoundingClientRect();
-  const x = (e.clientX - r.left - 8) / (r.width - 16);
-  const t = nowSec() - (1 - Math.max(0, Math.min(1, x))) * TIMELINE_DAYS * 86400;
-  // Start a little before the nearest message so the scene has context.
-  const next = player.events.find((ev) => ev.k === 'msg' && ev.at >= t);
-  const from = next ? next.at - 2 : t;
-  player.playFrom(from, nowSec(), nowSec());
-});
+function renderHistoryChips(peaks: ReturnType<typeof topPeaks>): void {
+  const spans = $('tl-spans');
+  spans.replaceChildren(...SPANS.map((s) => {
+    const b = el('button', `tl-chip${s.id === historySpan ? ' on' : ''}`, s.label);
+    b.addEventListener('click', () => { historySpan = s.id; drawTimeline(); });
+    return b;
+  }));
+  const list = $('tl-peaks');
+  list.replaceChildren(...peaks.map((p) => {
+    const g = groups.find((x) => x.id === p.groupId);
+    const b = el('button', 'tl-chip peak');
+    b.append(el('b', undefined, `${p.count}`), ` · ${peakLabel(p.start)}${g ? ` · ${g.name}` : ''}`);
+    b.title = `Replay the ${p.count} messages from then`;
+    b.addEventListener('click', () => player.playFrom(p.start - 1, p.end, nowSec(), p));
+    return b;
+  }));
+  if (!peaks.length) list.append(el('span', 'tl-chip', 'Nothing busy in this span yet'));
+}
+
+// Drag across the panel to replay that stretch; a click plays the hour after it.
+{
+  const tl = $('timeline');
+  const sel = $('timeline-sel');
+  let x0: number | null = null;
+  const xOf = (e: PointerEvent) => { const r = tl.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left - 8) / (r.width - 16))); };
+  const show = (a: number, b: number) => {
+    sel.hidden = false;
+    sel.style.left = `calc(8px + (100% - 16px) * ${Math.min(a, b)})`;
+    sel.style.width = `calc((100% - 16px) * ${Math.abs(b - a)})`;
+  };
+  tl.addEventListener('pointerdown', (e) => { x0 = xOf(e); tl.setPointerCapture(e.pointerId); show(x0, x0); });
+  tl.addEventListener('pointermove', (e) => { if (x0 !== null) show(x0, xOf(e)); });
+  tl.addEventListener('pointerup', (e) => {
+    if (x0 === null) return;
+    const now = nowSec();
+    const { start, end } = dragRange(x0, xOf(e), now - spanSeconds(historySpan), now);
+    x0 = null;
+    setTimeout(() => { sel.hidden = true; }, 1200);
+    // Start a little before the first message so the scene has context.
+    const first = player.events.find((ev) => ev.k === 'msg' && ev.at >= start && ev.at <= end);
+    if (!first) { toast('Nobody wrote anything then. Try a shaded stretch.'); return; }
+    player.playFrom(first.at - 2, end, now);
+  });
+}
 
 // ── cards ────────────────────────────────────────────────────────────────
 
@@ -1503,6 +1581,8 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
         prefs.set({ autoDirector: !prefs.get().autoDirector });
         break;
       case 'story':
+        // The latest conversation, in history mode so it isn't cut short.
+        if (!historyOn) setHistory(true);
         player.playStory(nowSec());
         break;
       case 'time': {

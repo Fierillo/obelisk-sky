@@ -58,6 +58,10 @@ export interface PlayerStatus {
   /** Sim time being shown (unix s). */
   at: number;
   episode: Episode | null;
+  /** History mode is on (you browse the past; the present waits). */
+  history: boolean;
+  /** Messages that arrived live while you were in history mode. */
+  missed: number;
 }
 
 export class Player {
@@ -72,6 +76,10 @@ export class Player {
   private storyIdx = -1;
   private ids = new Set<string>();
   autoStory = true;
+  /** History mode: live messages don't pull you back to the present, and a
+   *  replay that ends stays where it ended. */
+  history = false;
+  missed = 0;
 
   constructor(
     private director: Director,
@@ -96,6 +104,12 @@ export class Player {
     this.ids.add(evId(ev));
     this.events.push(ev);
     this.quietFor = 0;
+    if (this.history) {
+      // Kept for later; counted so you know the present moved on.
+      this.missed++;
+      this.status();
+      return;
+    }
     if (this.mode !== 'live') {
       this.seek(now, true);
       this.goLive(now);
@@ -122,7 +136,7 @@ export class Player {
       this.wait += this.queue.length ? paceDelay(ev, this.queue[0]) : 0;
       this.status();
     }
-    if (!this.queue.length && this.wait <= -8) {
+    if (!this.queue.length && this.wait <= -8 && !this.history) {
       // Let the last line breathe, then return to the present.
       this.seek(now, true);
       this.goLive(now);
@@ -153,6 +167,7 @@ export class Player {
 
   goLive(now: number): void {
     this.mode = 'live';
+    this.missed = 0;
     this.queue = [];
     this.episode = null;
     this.at = now;
@@ -189,8 +204,9 @@ export class Player {
     else this.director.zap(e.z, e.at, instant);
   }
 
-  private status(): void {
-    this.onStatus({ mode: this.mode, at: this.at, episode: this.episode });
+  /** Tell the UI where things stand (mode, time, missed messages). */
+  status(): void {
+    this.onStatus({ mode: this.mode, at: this.at, episode: this.episode, history: this.history, missed: this.missed });
   }
 }
 
