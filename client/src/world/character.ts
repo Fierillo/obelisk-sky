@@ -165,6 +165,9 @@ export class Character {
    *  (world space) by `reachK` (0..1), mate in hand or not (world.ts rounds). */
   reach = new THREE.Vector3();
   reachK = 0;
+  /** Out of view (world.ts): keep walking, skip posing; the mixer catches up when seen. */
+  offscreen = false;
+  private skipped = 0;
   /** A barbell held in both hands (the gym): kept between the palms. */
   heldBar: THREE.Object3D | null = null;
   private hat: THREE.Object3D | null = null;
@@ -513,7 +516,9 @@ export class Character {
       this.pose('Idle_Loop', 'Idle_Loop', 0.3);
       this.idleFor += dt;
     }
-    this.mixer?.update(dt);
+    if (this.offscreen) { this.skipped += dt; return true; }
+    this.mixer?.update(dt + this.skipped);
+    this.skipped = 0;
     if ((this.mate || this.reachK > 0) && this.activity === 'sit' && this.model) this.holdProp();
 
     // The name badge rides above the head (jumps, pull-ups, push-ups, sitting).

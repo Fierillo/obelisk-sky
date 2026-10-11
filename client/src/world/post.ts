@@ -54,7 +54,8 @@ const Grade = {
     }`,
 };
 
-export type Level = 'low' | 'medium' | 'high' | 'ultra';
+import { adaptStep, newAdapt, startLevel, type Adapt, type Level } from './quality';
+export type { Level };
 
 export interface PostSettings {
   quality: 'auto' | Level;
@@ -71,7 +72,6 @@ const LEVELS: Record<Level, { pixelRatio: number; shadowMap: number; ao: 'off' |
   high: { pixelRatio: 1.75, shadowMap: 2048, ao: 'half', msaa: 4 },
   ultra: { pixelRatio: 2, shadowMap: 4096, ao: 'full', msaa: 4 },
 };
-const ORDER: Level[] = ['low', 'medium', 'high', 'ultra'];
 
 export class Post {
   readonly composer: EffectComposer;
@@ -84,9 +84,11 @@ export class Post {
   private fxaa: FXAAPass;
   level: Level = 'high';
   settings: PostSettings = { quality: 'auto', resolution: 1, shadows: true, ambientOcclusion: true, bloom: true, tiltShift: true };
-  private frameTimes: number[] = [];
-  private cooldown = 5;
+  private auto: Adapt;
   private held = false;
+  private frameNo = 0;
+  /** The level changed (by "auto" or by prefs): things sized by it follow (grass). */
+  onLevel?: (level: Level) => void;
   private size = new THREE.Vector2(1, 1);
 
   constructor(
@@ -95,6 +97,15 @@ export class Post {
     camera: THREE.Camera,
     private sun: THREE.DirectionalLight,
   ) {
+    // "Automatic" starts from a guess for this device, then follows the frame times.
+    const nav = (typeof navigator === 'undefined' ? {} : navigator) as Navigator & { deviceMemory?: number };
+    this.level = startLevel({
+      coarse: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
+      memory: nav.deviceMemory,
+      cores: nav.hardwareConcurrency,
+      short: typeof screen === 'undefined' ? 1080 : Math.min(screen.width, screen.height),
+    });
+    this.auto = newAdapt(this.level);
     this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, this.target);
     this.composer.addPass(new RenderPass(scene, camera));
@@ -119,11 +130,12 @@ export class Post {
 
   /** Preferences changed: pick the level and re-apply everything. */
   configure(s: PostSettings): void {
+    const was = this.level;
     this.settings = s;
     if (s.quality !== 'auto') this.level = s.quality;
-    this.frameTimes = [];
-    this.cooldown = 5;
+    this.auto = newAdapt(this.level, this.auto?.ceiling ?? null);
     this.applyLevel();
+    if (this.level !== was) this.onLevel?.(this.level);
   }
 
   private applyLevel(): void {
@@ -169,6 +181,12 @@ export class Post {
   render(dt: number): void {
     this.tiltH.enabled = this.tiltV.enabled = this.settings.tiltShift && this.level !== 'low';
     this.bloom.enabled = this.settings.bloom && this.level !== 'low';
+    // On medium the sun's shadows refresh every other frame (people move little in one).
+    this.frameNo++;
+    if (this.renderer.shadowMap.enabled) {
+      this.renderer.shadowMap.autoUpdate = this.level !== 'medium';
+      if (this.level === 'medium' && this.frameNo % 2 === 0) this.renderer.shadowMap.needsUpdate = true;
+    }
     this.composer.render(dt);
     this.adapt(dt);
   }
@@ -176,25 +194,17 @@ export class Post {
   /** Hold the "auto" level (while models load, slow frames say nothing about the GPU). */
   holdLevel(on: boolean): void {
     this.held = on;
-    this.frameTimes = [];
-    this.cooldown = 5;
+    this.auto = newAdapt(this.level, this.auto.ceiling);
   }
 
-  /** "auto": step down a level while frames run slower than ~32 fps. */
+  /** "auto": down a level when frames are slow, back up with plenty of headroom (quality.ts). */
   private adapt(dt: number): void {
     if (this.settings.quality !== 'auto' || this.held) return;
-    this.cooldown -= dt;
-    this.frameTimes.push(dt);
-    if (this.frameTimes.length > 90) this.frameTimes.shift();
-    if (this.cooldown > 0 || this.frameTimes.length < 90) return;
-    const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
-    const i = ORDER.indexOf(this.level);
-    if (avg > 1 / 32 && i > 0) {
-      this.level = ORDER[i - 1];
-      this.applyLevel();
-      console.info('[sky] quality →', this.level);
-      this.frameTimes = [];
-      this.cooldown = 5;
-    }
+    const next = adaptStep(this.auto, dt);
+    if (!next) return;
+    this.level = next;
+    this.applyLevel();
+    console.info('[sky] quality →', this.level);
+    this.onLevel?.(this.level);
   }
 }

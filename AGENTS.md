@@ -103,6 +103,10 @@ Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and ts
 - **Lighting:** the hemisphere fill is what faces, pets' bellies and building sides turned from the sun get. `world/sky.test.ts` keeps day, dusk and night fill above a floor; don't drop it to darken a mood.
 - **Exercise clips** are generated per body and grip height; hands are posed per grip (`OVER_BAR`, `ON_BAR`, `ON_PARALLEL`, `FLAT`) and the grip anchor is inside the curled fingers. Keep `exercises.test.ts` passing when changing poses.
 - **Assets.** Cloudflare caches `/models/*` and `/assets/*` as immutable for a year: a changed file under the same URL keeps serving the old one (add `?v=`). The server's CSP must keep `blob:` in `connect-src` and `'wasm-unsafe-eval'` in `script-src`, or GLB textures and meshopt fail and bodies don't render.
+- **Performance.** `__sky.perf()` (any build) reports one frame's draw calls and triangles (every post pass), lights on and the quality level. Keep it from regressing:
+  - Channel houses are merged after building (`world/merge.ts` `mergeStatic`, one mesh per material); the roof (`name: 'roof'`) and `windows` stay separate. Anything you add to a house that moves, hides or changes on its own must be kept out of the merge too.
+  - Point and spot lights are budgeted (`world/lightBudget.ts`): only the nearest few are visible, with constant counts so shaders don't recompile. A new lamp is picked up automatically; don't toggle `visible` on lights yourself.
+  - People out of view are hidden and not posed (`Character.offscreen`). "Auto" quality starts by device and steps both ways (`world/quality.ts`); grass follows the effective level (`Post.onLevel`).
 - **Water shader:** GLSL `smoothstep(a, b, x)` needs a < b.
 
 ## Testing

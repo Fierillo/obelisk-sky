@@ -41,9 +41,13 @@ export class Overlay {
 
   constructor(private root: HTMLElement, private camera: THREE.PerspectiveCamera) {}
 
+  /** The overlay's size, read once per update (reading it per item forces layout). */
+  private W = 1;
+  private H = 1;
+
   private project(p: THREE.Vector3): { x: number; y: number; visible: boolean } {
     this.v.copy(p).project(this.camera);
-    const w = this.root.clientWidth, h = this.root.clientHeight;
+    const w = this.W, h = this.H;
     return { x: (this.v.x * 0.5 + 0.5) * w, y: (-this.v.y * 0.5 + 0.5) * h, visible: this.v.z < 1 && Math.abs(this.v.x) < 1.2 && Math.abs(this.v.y) < 1.2 };
   }
 
@@ -165,10 +169,12 @@ export class Overlay {
     // Signs: nearest first (lowest on screen), farther ones nudged up so
     // labels never sit on top of each other.
     const signBoxes: { x: number; y: number; w: number; h: number }[] = [];
+    this.W = this.root.clientWidth;
+    this.H = this.root.clientHeight;
     const projected = [...this.signs.values()].map((s) => ({ s, p: this.project(s.pos) })).sort((a, b) => b.p.y - a.p.y);
     // Compass: channels with something for you that are off screen get an
     // arrow on the screen edge pointing their way.
-    const W = this.root.clientWidth, H = this.root.clientHeight;
+    const W = this.W, H = this.H;
     for (const { s, p } of projected) {
       const onScreen = p.visible && p.x > 0 && p.x < W && p.y > 0 && p.y < H;
       const want = !!(s.ping || (s.unread ?? 0) > 0) && !onScreen;
@@ -198,11 +204,19 @@ export class Overlay {
         s.arrow = undefined;
       }
     }
+    // Measure signs only when their text changed (cached on the element), all before any move.
     for (const { s, p } of projected) {
       const show = p.visible && this.showSigns;
-      s.el.style.display = show ? '' : 'none';
-      if (!show) continue;
-      const w = s.el.offsetWidth || 100, h = s.el.offsetHeight || 24;
+      if (s.el.style.display !== (show ? '' : 'none')) s.el.style.display = show ? '' : 'none';
+    }
+    for (const { s, p } of projected) {
+      if (!(p.visible && this.showSigns)) continue;
+      const key = s.el.textContent ?? '';
+      if (s.el.dataset.mk !== key) { s.el.dataset.mk = key; s.el.dataset.mw = String(s.el.offsetWidth || 100); s.el.dataset.mh = String(s.el.offsetHeight || 24); }
+    }
+    for (const { s, p } of projected) {
+      if (!(p.visible && this.showSigns)) continue;
+      const w = Number(s.el.dataset.mw) || 100, h = Number(s.el.dataset.mh) || 24;
       let y = p.y;
       for (let i = 0; i < 6; i++) {
         const hit = signBoxes.find((o) => Math.abs(o.x - p.x) < (o.w + w) / 2 + 4 && Math.abs(o.y - y) < h + 3);
@@ -215,6 +229,7 @@ export class Overlay {
 
     // Bubbles: project, then push apart vertically so none overlap.
     const live: Bubble[] = [];
+    const seen: { b: Bubble; visible: boolean }[] = [];
     for (const b of [...this.bubbles]) {
       if (now > b.until) {
         b.el.classList.add('out');
@@ -224,13 +239,18 @@ export class Overlay {
       const a = b.anchor.get();
       if (!a) { this.removeBubble(b); continue; }
       const p = this.project(a);
-      b.el.style.visibility = p.visible ? 'visible' : 'hidden';
+      seen.push({ b, visible: p.visible });
       if (!p.visible) continue;
       b.x = p.x;
       b.y = p.y;
+      // Sizes read together, before this frame's writes.
       b.h = b.el.offsetHeight;
       b.w = b.el.offsetWidth;
       live.push(b);
+    }
+    for (const { b, visible } of seen) {
+      const v = visible ? 'visible' : 'hidden';
+      if (b.el.style.visibility !== v) b.el.style.visibility = v;
     }
     live.sort((a, b) => b.y - a.y);
     const placed: { x: number; y: number; w: number; h: number }[] = [];

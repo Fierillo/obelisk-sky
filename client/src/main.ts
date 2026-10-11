@@ -1,4 +1,5 @@
 import { nip19, type VerifiedEvent } from 'nostr-tools';
+import type * as THREE from 'three';
 import { renderContent } from './ui/content';
 import type { ServerMsg, WireGroup, WireMessage } from './nostr/wire';
 import { hexToNpub } from '@nostr-wot/data';
@@ -170,7 +171,23 @@ world.hooks = {
 };
 
 // Handy for poking at the scene from the console.
-(window as unknown as { __sky: unknown }).__sky = { world: () => world, player: () => player, director: () => director, session: () => session, chat: () => chat, groups: () => groups, controller: () => controller, activity: () => activity, motion: () => motion };
+(window as unknown as { __sky: unknown }).__sky = {
+  world: () => world, player: () => player, director: () => director, session: () => session, chat: () => chat, groups: () => groups, controller: () => controller, activity: () => activity, motion: () => motion,
+  /** What the last frame cost: draw calls, triangles, lights in the scene, the quality level, recent fps. */
+  perf: async () => {
+    // Count one whole frame (every pass of the post chain), not just the last draw.
+    const info = world.renderer.info;
+    info.autoReset = false;
+    info.reset();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const out = { calls: info.render.calls, triangles: info.render.triangles };
+    info.autoReset = true;
+    let lights = 0, lightsOn = 0;
+    world.scene.traverse((o) => { if ((o as THREE.Light).isLight && !(o as THREE.Light & { isAmbientLight?: boolean }).isAmbientLight) { lights++; if (o.visible) lightsOn++; } });
+    const avg = frameTimes.length ? frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length : 0;
+    return { ...out, programs: info.programs?.length ?? 0, lights, lightsOn, level: world.post.level, fps: avg ? Math.round(1 / avg) : 0 };
+  },
+};
 if (import.meta.env.DEV) {
   // Dev server only (never in a production build): log in with a hex key
   // so headless checks can exercise the signed-in path.
@@ -621,7 +638,14 @@ function toggleSeat(): void {
 
 /** "Press E to sit" (or a Sit / Stand up button on touch) near a free seat. */
 function renderSeatHint(): void {
-  const hint = $('seat-hint') as HTMLButtonElement;
+  // Written only when it changes (this runs every frame).
+  const real = $('seat-hint') as HTMLButtonElement;
+  const hint = { hidden: real.hidden, textContent: real.textContent ?? '' };
+  seatHintCompute(hint);
+  if (real.hidden !== hint.hidden) real.hidden = hint.hidden;
+  if (!hint.hidden && real.textContent !== hint.textContent) real.textContent = hint.textContent;
+}
+function seatHintCompute(hint: { hidden: boolean; textContent: string }): void {
   const pk = world.playerPk;
   if (!controller || !pk) { hint.hidden = true; return; }
   const touch = isTouch();
@@ -1284,14 +1308,18 @@ window.addEventListener('beforeunload', () => { void call.leave(); });
 
 let signTimer = 0;
 const pinged = new Set<string>();
+const roofLit = new Set<string>();
 let placeDwell = 0;
 let qualityHeld = true;
 let lastFrame = performance.now();
+const frameTimes: number[] = [];
 function loop(): void {
   // Your character moves first, then the world draws it: no frame of lag.
   const now = performance.now();
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
+  frameTimes.push(dt);
+  if (frameTimes.length > 120) frameTimes.shift();
   stepPlayer(dt);
   tickCallAway(dt);
   world.frame(dt);
@@ -1310,7 +1338,12 @@ function loop(): void {
   sound.night = world.sky.night;
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }
-  for (const [id, b] of world.buildings) setRoofPing(b, pinged.has(id), performance.now() / 1000);
+  // Only roofs that glow (or just stopped) are touched.
+  for (const [id, b] of world.buildings) {
+    const on = pinged.has(id);
+    if (on || roofLit.has(id)) setRoofPing(b, on, performance.now() / 1000);
+    if (on) roofLit.add(id); else roofLit.delete(id);
+  }
   // Standing in a channel with its chat open for a second reads it.
   if (place && readState && chat.groupId === place && !chat.minimised) {
     placeDwell += dt;

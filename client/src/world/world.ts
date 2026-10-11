@@ -24,6 +24,8 @@ import { fbm2 } from './noise';
 import { CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
 import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
 import { Flock } from './nostrich';
+import { mergeStatic } from './merge';
+import { chooseLights, lightBudget, type LightSpot } from './lightBudget';
 import { buildObelisk, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
@@ -160,6 +162,12 @@ export class World {
   private flock: Flock | null = null;
   private frustum = new THREE.Frustum();
   private projView = new THREE.Matrix4();
+  private cullSphere = new THREE.Sphere(new THREE.Vector3(), 1.2);
+  /** Every lamp and glow that is a real light, and when the budget was last applied. */
+  private budgeted: (THREE.PointLight | THREE.SpotLight)[] = [];
+  private lightsAt = -99;
+  private lightsCollectedAt = -99;
+  private readonly coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   /** Slots held by landmarks (La Crypta, the nostr-wot HQ, the café, the parrilla). */
   readonly landmarkSlots: Map<LandmarkId, Slot>;
   private landmarks = new Map<LandmarkId, LandmarkBuild>();
@@ -180,6 +188,12 @@ export class World {
     this.cam = new Cameraman(this.camera, canvas);
     this.sky = new Sky(this.scene);
     this.post = new Post(this.renderer, this.scene, this.camera, this.sky.sun);
+    // Grass follows the quality level "auto" settles on, not just the preference.
+    this.post.onLevel = (level) => {
+      const want = grassFor(this.grassPref, level);
+      if (this.built && Math.abs((this.grass?.count ?? 0) - want) > 500) this.buildGrass(want);
+      this.grassWanted = want;
+    };
     this.overlay = new Overlay(overlayEl, this.camera);
     this.plan = planIsland();
     this.track = trackSite(this.plan);
@@ -245,6 +259,9 @@ export class World {
       const slot = this.plan.slots[this.slotOf.get(g.id)!];
       const b = gym ? buildGym(slot, buildBuilding(g, slot, tier, district).roofColor) : buildBuilding(g, slot, tier, district);
       if (gym) this.setGym(b as GymBuild, g.id, slot);
+      // A house is dozens of little pieces: draw them as a handful (the roof
+      // lights up for mentions and the windows at night, so they stay apart).
+      else this.meshesMerged += mergeStatic(b.group, (m) => m.name === 'roof' || b.windows.includes(m));
       b.group.userData = { groupId: g.id, tier, kind: g.kind, district, gym };
       this.buildingRoot.add(b.group);
       this.buildings.set(g.id, b);
@@ -722,6 +739,27 @@ export class World {
     }
   }
 
+  /** Keep only a budget of point and spot lights on, nearest where you look (lightBudget.ts). */
+  private budgetLights(): void {
+    if (this.elapsed - this.lightsCollectedAt > 3) {
+      this.lightsCollectedAt = this.elapsed;
+      const found: (THREE.PointLight | THREE.SpotLight)[] = [];
+      this.scene.traverse((o) => { if ((o as THREE.PointLight).isPointLight || (o as THREE.SpotLight).isSpotLight) found.push(o as THREE.PointLight); });
+      this.budgeted = found;
+      this.lightsAt = -99;
+    }
+    if (this.elapsed - this.lightsAt < 0.25) return;
+    this.lightsAt = this.elapsed;
+    const p = new THREE.Vector3();
+    const spots: LightSpot[] = this.budgeted.map((l) => {
+      l.getWorldPosition(p);
+      return { x: p.x, y: p.y, z: p.z, kind: (l as THREE.SpotLight).isSpotLight ? 'spot' : 'point', lit: l.intensity > 0.01 };
+    });
+    const t = this.cam.controls.target;
+    const keep = chooseLights(spots, { x: t.x, y: t.y, z: t.z }, lightBudget(this.coarse, this.post.level));
+    this.budgeted.forEach((l, i) => { l.visible = keep.has(i); });
+  }
+
   /** Two pairs of wild nostriches, on open ground away from the plaza. */
   private buildFlock(): void {
     const R = this.plan.R;
@@ -1087,7 +1125,8 @@ export class World {
     this.fpFov = p.fov;
     this.cam.fpFov = p.fov;
     const level = this.post.level;
-    const want = !p.grass || level === 'low' ? 0 : level === 'medium' ? 5000 : level === 'high' ? 12000 : 22000;
+    this.grassPref = p.grass;
+    const want = grassFor(p.grass, level);
     if (this.built && (this.grass?.count ?? 0) !== want && Math.abs((this.grass?.count ?? 0) - want) > 500) this.buildGrass(want);
     this.grassWanted = want;
     // Sharper textures at a glancing angle.
@@ -1100,6 +1139,9 @@ export class World {
 
   fpFov = 70;
   private grassWanted = 0;
+  private grassPref = true;
+  /** How many house pieces were folded into merged meshes (__sky.perf). */
+  meshesMerged = 0;
 
   private buildFireflies(): void {
     const r = rng(3);
@@ -2424,12 +2466,14 @@ export class World {
 
     for (const p of this.pets.values()) p.update(dt, (q) => this.groundAt(q));
     this.updateRounds(dt);
+    this.gym?.group.userData.setNight?.(night01);
+    this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.projView);
+    this.budgetLights();
     if (this.flock) {
       // Runners startle them; off screen they keep moving but aren't posed.
       const runners: Vec2[] = [];
       for (const c of this.people.values()) if (c.external ? c.external.moving && c.external.running : c.path.length && c.running) runners.push(c.pos);
-      this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-      this.frustum.setFromProjectionMatrix(this.projView);
       const v = new THREE.Vector3();
       this.flock.update(dt, runners, (p) => this.frustum.containsPoint(v.set(p.x, 0.4, p.z)));
     }
@@ -2441,6 +2485,11 @@ export class World {
     for (const c of this.people.values()) {
       // The viewer's own height comes with drive(); seats carry their own height.
       c.groundY = c.external || this.seatOf.has(c.pk) ? 0 : this.groundAt(c.pos);
+      // Off screen (with a margin for their shadow): not drawn, not posed.
+      this.cullSphere.center.set(c.root.position.x, c.root.position.y + 0.4, c.root.position.z);
+      const seen = c.pk === this.playerPk || this.frustum.intersectsSphere(this.cullSphere);
+      c.offscreen = !seen;
+      c.root.visible = seen;
       c.update(dt);
       if (!this.residents.has(c.pk)) this.idleLife(c, dt);
     }
@@ -2458,6 +2507,11 @@ export class World {
     this.post.render(dt);
     return dt;
   }
+}
+
+/** Grass tufts for a quality level (0: none). */
+function grassFor(on: boolean, level: string): number {
+  return !on || level === 'low' ? 0 : level === 'medium' ? 5000 : level === 'high' ? 12000 : 22000;
 }
 
 function easeOutBack(t: number): number {
