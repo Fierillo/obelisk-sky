@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import { laCryptaGround, LA_CRYPTA_STAIRS, LA_CRYPTA_ROOM } from './lacrypta';
 
 describe('La Crypta: the ground you walk on', () => {
@@ -39,5 +40,15 @@ describe('La Crypta: the ground you walk on', () => {
     expect(laCryptaGround({ x: -2, z: 0.5 })).toBe(0);
     expect(laCryptaGround({ x: -2, z: -0.2 })).toBe(0);
     expect(laCryptaGround({ x: 3, z: 1 })).toBe(0);
+  });
+});
+
+describe('La Crypta interior decals', () => {
+  it('hang clear of the panelling and draw in front of it (they flickered at 6 mm)', async () => {
+    const { DECAL_GAP, decal } = await import('./lacryptaInterior');
+    expect(DECAL_GAP).toBeGreaterThanOrEqual(0.02);
+    const m = decal(new THREE.MeshBasicMaterial());
+    expect(m.polygonOffset).toBe(true);
+    expect(m.polygonOffsetFactor).toBeLessThan(0);
   });
 });

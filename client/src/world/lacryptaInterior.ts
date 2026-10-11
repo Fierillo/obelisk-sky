@@ -75,6 +75,17 @@ const parquetTexture = () => canvasTexture(256, 256, (g) => {
   }
 }, true);
 
+/** Signs and neon hung on the panelling: this far off the wall plane, and
+ *  drawn in front of it, or they flicker through it as the camera moves
+ *  (depth precision at the follow camera's distance, and the AO pass). */
+export const DECAL_GAP = 0.025;
+export function decal<M extends THREE.Material>(m: M): M {
+  m.polygonOffset = true;
+  m.polygonOffsetFactor = -2;
+  m.polygonOffsetUnits = -4;
+  return m;
+}
+
 /** The white stone frieze over the firebox: a row of carved roundels. */
 const friezeTexture = () => canvasTexture(512, 96, (g) => {
   g.fillStyle = '#d9d4ca';
@@ -257,7 +268,8 @@ export function buildLivingRoom(s: RoomSpec): LivingRoom {
   box(0.13, SH, 0.12, stone, fx - SW / 2 + 0.065, F + SH / 2, fz + 0.06);
   box(0.13, SH, 0.12, stone, fx + SW / 2 - 0.065, F + SH / 2, fz + 0.06);
   const friezeMat = new THREE.MeshStandardMaterial({ map: friezeTexture(), roughness: 0.8 });
-  box(SW, 0.16, 0.12, friezeMat, fx, F + SH - 0.08, fz + 0.06);
+  // A little proud of the pillars: their tops overlap it, coplanar faces would flicker.
+  box(SW, 0.16, 0.13, friezeMat, fx, F + SH - 0.08, fz + 0.065);
   box(SW - 0.26, SH - 0.16, 0.06, sooty, fx, F + (SH - 0.16) / 2, fz + 0.03);
   box(SW + 0.22, 0.02, 0.32, stone, fx, F + 0.01, fz + 0.16); // hearth
   // The mantel shelf.
@@ -290,21 +302,21 @@ export function buildLivingRoom(s: RoomSpec): LivingRoom {
     wicks.push(add(new THREE.Mesh(new THREE.SphereGeometry(0.008, 5, 4), wick), fx + dx, y0 + hgt + 0.01, fz + 0.1));
   }
   // "PAPER ST" on the mantel, and another on the wall to the right.
-  const signMat = new THREE.MeshStandardMaterial({ map: streetSign(), roughness: 0.5 });
-  const sign1 = add(new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075), signMat), fx - 0.55, F + SH + 0.08, fz + 0.03);
+  const signMat = decal(new THREE.MeshStandardMaterial({ map: streetSign(), roughness: 0.5 }));
+  const sign1 = add(new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075), signMat), fx - 0.55, F + SH + 0.08, fz + 0.05);
   sign1.rotation.y = 0.15;
-  add(new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075), signMat), fx + 0.95, F + 0.42, fz + 0.01);
+  add(new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075), signMat), fx + 0.95, F + 0.42, fz + DECAL_GAP);
 
   // The neon ₿ over the mantel, up to the ceiling's orange wash.
-  const neonMat = new THREE.MeshBasicMaterial({ map: neonBitcoin(), transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending });
+  const neonMat = decal(new THREE.MeshBasicMaterial({ map: neonBitcoin(), transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }));
   const bh = Math.min(0.6, H - SH - 0.12);
-  add(new THREE.Mesh(new THREE.PlaneGeometry(bh * 0.75, bh), neonMat), fx, F + SH + 0.06 + bh / 2, fz + 0.012);
+  add(new THREE.Mesh(new THREE.PlaneGeometry(bh * 0.75, bh), neonMat), fx, F + SH + 0.06 + bh / 2, fz + DECAL_GAP);
   // A warm light under the ceiling: the neon and the fire wash it orange.
   const ceilLight = add(new THREE.PointLight(0xff8a3a, 1, 3.2, 1.3), cx, s.ceil - 0.18, cz);
 
   // The neon words on the right wall, over its leaded windows.
-  const wordsMat = new THREE.MeshBasicMaterial({ map: neonWords(), toneMapped: false });
-  const words = add(new THREE.Mesh(new THREE.PlaneGeometry(1.36, 0.68), wordsMat), s.maxX - 0.01, F + 0.66, cz - 0.1);
+  const wordsMat = decal(new THREE.MeshBasicMaterial({ map: neonWords(), toneMapped: false }));
+  const words = add(new THREE.Mesh(new THREE.PlaneGeometry(1.36, 0.68), wordsMat), s.maxX - DECAL_GAP, F + 0.66, cz - 0.1);
   words.rotation.y = -Math.PI / 2;
 
   // Two cream sofas in an L facing the fire, a low brass-and-glass table.
