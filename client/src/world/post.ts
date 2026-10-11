@@ -48,7 +48,7 @@ const Grade = {
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, uSat);
       c.rgb = (c.rgb - 0.5) * uContrast + 0.5;
-      float v = smoothstep(0.85, 0.25, distance(vUv, vec2(0.5)));
+      float v = 1.0 - smoothstep(0.25, 0.85, distance(vUv, vec2(0.5)));
       c.rgb *= mix(1.0 - uVignette, 1.0, v);
       gl_FragColor = c;
     }`,

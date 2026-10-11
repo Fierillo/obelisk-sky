@@ -27,12 +27,15 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   group.add(buildRoots(plan));
   for (const m of plan.mountains) group.add(buildMountain(m.pos, m.r, m.h, plan.seed + Math.round(m.pos.x * 10)));
 
-  // The river runs at about 0.55 units a second; the pond is still.
+  // The river runs at about 0.55 units a second; the pond is still. They
+  // meet on an exact circle (POND_EDGE past the shore): the pond draws
+  // inside it, the river outside, and the river turns into the pond's own
+  // surface as it gets there, so nothing overlaps and nothing jumps.
   const wmat = waterMaterial(0.55, plan.riverWidth * 1.24, plan.pond);
-  const pmat = waterMaterial(0);
+  const pmat = waterMaterial(0, 1, plan.pond);
   water.push(wmat, pmat);
   group.add(buildRiver(riverPts, plan.riverWidth, wmat));
-  const pond = new THREE.Mesh(new THREE.CircleGeometry(plan.pond.r + 0.25, 40), pmat);
+  const pond = new THREE.Mesh(new THREE.CircleGeometry(plan.pond.r + POND_EDGE + 0.15, 64), pmat);
   pond.rotation.x = -Math.PI / 2;
   pond.position.set(plan.pond.c.x, -0.13, plan.pond.c.z);
   pond.receiveShadow = true;
@@ -342,11 +345,20 @@ function buildMountain(p: Vec2, radius: number, h: number, seed: number): THREE.
 
 // ── water ──────────────────────────────────────────────────────────────
 
+/** Where the river hands over to the pond: this far past the pond's shore. */
+export const POND_EDGE = 0.25;
+/** Over this distance outside the pond the river becomes the pond's surface. */
+export const POND_BLEND = 0.9;
+
 /**
  * Water. The river (`flow > 0`) is drawn in its own frame: uv.x runs across
  * it (0 and 1 are the banks), uv.y is the distance along it, so ripples,
  * streaks and foam all travel downstream and foam gathers at the banks. The
  * pond has no current: its ripples drift in world space.
+ *
+ * With a pond, the two split the surface on the circle `pond.r + POND_EDGE`:
+ * the pond material draws only inside it, the river only outside, and over
+ * the last POND_BLEND the river shades exactly as the pond does.
  */
 export function waterMaterial(flow = 0, width = 1, pond: { c: Vec2; r: number } | null = null): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -354,33 +366,23 @@ export function waterMaterial(flow = 0, width = 1, pond: { c: Vec2; r: number } 
     side: THREE.DoubleSide,
     uniforms: {
       uTime: { value: 0 }, uDay: { value: 1 }, uFlow: { value: flow }, uWidth: { value: width },
-      // The river runs through the pond: inside it, the pond's own surface shows.
-      uPond: { value: new THREE.Vector3(pond?.c.x ?? 0, pond?.c.z ?? 0, pond ? pond.r + 0.25 : -1) },
+      uPond: { value: new THREE.Vector3(pond?.c.x ?? 0, pond?.c.z ?? 0, pond ? pond.r + POND_EDGE : -1) },
+      uBlend: { value: POND_BLEND },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv; varying vec3 vW;
       void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime; uniform float uDay; uniform float uFlow; uniform float uWidth; uniform vec3 uPond;
+      uniform float uTime; uniform float uDay; uniform float uFlow; uniform float uWidth; uniform vec3 uPond; uniform float uBlend;
       varying vec2 vUv; varying vec3 vW;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
         return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ return n(p) * 0.6 + n(p * 2.3 + 7.1) * 0.3 + n(p * 5.1 - 3.7) * 0.1; }
-      void main() {
-        float inPond = uPond.z > 0.0 ? 1.0 - smoothstep(uPond.z - 0.35, uPond.z + 0.05, distance(vW.xz, uPond.xy)) : 0.0;
-        if (inPond > 0.995) discard;
-        vec2 q; float bank = 1.0;
-        if (uFlow > 0.0) {
-          // River frame, in world units: x across, y downstream.
-          q = vec2((vUv.x - 0.5) * uWidth, vUv.y);
-          // Faster in the middle than at the banks.
-          float across = abs(vUv.x - 0.5) * 2.0;
-          q.y -= uTime * uFlow * (1.15 - across * across * 0.6);
-          bank = min(vUv.x, 1.0 - vUv.x) * uWidth;
-        } else {
-          q = vW.xz + vec2(uTime * 0.08, uTime * 0.05);
-        }
+      // One water surface: q is the ripple frame, bank the distance to the
+      // nearest bank (large for open water), current 1 for the river's
+      // streaks and foam, 0 for still water. Alpha in w.
+      vec4 surface(vec2 q, float bank, float current) {
         // Ripples stretched along the current; a second, finer layer.
         float a = fbm(vec2(q.x * 2.6, q.y * 1.1));
         float b = fbm(vec2(q.x * 5.0 + 3.0, q.y * 2.4 - uTime * 0.2));
@@ -392,18 +394,39 @@ export function waterMaterial(flow = 0, width = 1, pond: { c: Vec2; r: number } 
         vec3 sun = normalize(vec3(0.5, 0.8, 0.3));
         float glint = pow(max(dot(nrm, normalize(sun + view)), 0.0), 60.0);
         vec3 deep = vec3(0.10, 0.40, 0.55), shallow = vec3(0.32, 0.72, 0.78);
-        float depth = uFlow > 0.0 ? smoothstep(0.0, 0.45, bank) : 1.0;
+        float depth = smoothstep(0.0, 0.45, bank);
         vec3 col = mix(shallow, deep, depth * (0.55 + a * 0.45));
         // Streaks riding the current, and foam along the banks.
-        float streak = smoothstep(0.66, 0.74, b) * (uFlow > 0.0 ? 0.35 : 0.2);
-        float foam = uFlow > 0.0 ? 1.0 - smoothstep(0.0, 0.16, bank + (a - 0.5) * 0.12) : 0.0;
+        float streak = smoothstep(0.66, 0.74, b) * mix(0.2, 0.35, current);
+        float foam = current * (1.0 - smoothstep(0.0, 0.16, bank + (a - 0.5) * 0.12));
         col = mix(col, vec3(0.93, 0.98, 1.0), clamp(streak + foam * 0.8, 0.0, 1.0));
         col += glint * 0.55 * uDay;
         // Fresnel: shallower angles reflect more sky.
         float fres = pow(1.0 - max(view.y, 0.0), 3.0);
         col = mix(col, vec3(0.75, 0.88, 0.95), fres * 0.35 * uDay);
         col *= mix(0.16, 1.0, uDay);
-        gl_FragColor = vec4(col, mix(0.82, 0.95, max(depth, foam)) * (1.0 - inPond));
+        return vec4(col, mix(0.82, 0.95, max(depth, foam)));
+      }
+      void main() {
+        vec2 still = vW.xz + vec2(uTime * 0.08, uTime * 0.05);
+        float d = uPond.z > 0.0 ? distance(vW.xz, uPond.xy) : 1e3;
+        if (uFlow <= 0.0) {
+          // The pond: only inside the hand-over circle.
+          if (uPond.z > 0.0 && d > uPond.z) discard;
+          gl_FragColor = surface(still, 9.0, 0.0);
+        } else {
+          if (d <= uPond.z) discard;
+          // River frame, in world units: x across, y downstream.
+          vec2 q = vec2((vUv.x - 0.5) * uWidth, vUv.y);
+          // Faster in the middle than at the banks.
+          float across = abs(vUv.x - 0.5) * 2.0;
+          q.y -= uTime * uFlow * (1.15 - across * across * 0.6);
+          float bank = min(vUv.x, 1.0 - vUv.x) * uWidth;
+          vec4 river = surface(q, bank, 1.0);
+          // Nearing the pond, become the pond: at the circle they're identical.
+          float k = 1.0 - smoothstep(uPond.z, uPond.z + uBlend, d);
+          gl_FragColor = k > 0.0 ? mix(river, surface(still, 9.0, 0.0), k) : river;
+        }
         #include <colorspace_fragment>
       }`,
   });
@@ -451,8 +474,9 @@ function waterfallMaterial(): THREE.ShaderMaterial {
         float s = fract(vUv.y * 3.0 + uTime * speed + h(vec2(col, 2.0)));
         float streak = smoothstep(0.0, 0.25, s) * (1.0 - smoothstep(0.55, 1.0, s));
         vec3 c = mix(vec3(0.42, 0.78, 0.86), vec3(0.95, 1.0, 1.0), streak * 0.7);
-        float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
-        float fade = 1.0 - smoothstep(0.55, 1.0, vUv.y);
+        float edge = smoothstep(0.0, 0.12, vUv.x) * (1.0 - smoothstep(0.88, 1.0, vUv.x));
+        // Soft at the lip, where it takes over from the river, and fading below.
+        float fade = smoothstep(0.0, 0.05, vUv.y) * (1.0 - smoothstep(0.55, 1.0, vUv.y));
         c *= mix(0.35, 1.0, uDay);
         gl_FragColor = vec4(c, (0.65 + streak * 0.3) * edge * fade);
         #include <colorspace_fragment>
