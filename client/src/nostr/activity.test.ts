@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
 import {
   ACTIVITY_D_TAG, ACTIVITY_TTL_S, ActivityBeacon, ActivityStore, DEBOUNCE_MS, HEARTBEAT_S,
-  activityTemplate, parseActivity, parseSpot, seatSpotId, stationSpotId, validActivity, type Activity,
+  activityTemplate, laneSpotId, parseActivity, parseSpot, seatSpotId, stationSpotId, validActivity, type Activity,
 } from './activity';
 
 const dips: Activity = { spot: 'station:1', kind: 'dip' };
@@ -154,5 +154,18 @@ describe('ActivityBeacon', () => {
     const mu = { spot: 'station:0', kind: 'muscleup' as const };
     b.update(mu, 20_000);
     expect(b.update(mu, 20_000 + DEBOUNCE_MS)).toEqual({ activity: mu, since: 20 });
+  });
+});
+
+describe('track lanes and gym lifts', () => {
+  it('pairs lanes with running and stations with exercises', () => {
+    expect(parseSpot(laneSpotId(2))).toEqual({ type: 'lane', index: 2 });
+    expect(validActivity('lane:1', 'run')).toBe(true);
+    expect(validActivity('lane:1', 'sit')).toBe(false);
+    expect(validActivity('lane:1', 'pushup')).toBe(false);
+    expect(validActivity('station:4', 'benchpress')).toBe(true);
+    expect(validActivity('station:4', 'run')).toBe(false);
+    expect(validActivity('seat:10:20', 'run')).toBe(false);
+    expect(parseSpot('lane:12')).toBeNull();
   });
 });

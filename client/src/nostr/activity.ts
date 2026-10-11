@@ -27,8 +27,8 @@ export const HEARTBEAT_S = 45;
  *  people watching you walk up don't see you stand there before you sit. */
 export const DEBOUNCE_MS = 300;
 
-export type ActivityKind = ExerciseKind | 'sit';
-const KINDS: readonly ActivityKind[] = ['pushup', 'pullup', 'muscleup', 'dip', 'sit'];
+export type ActivityKind = ExerciseKind | 'sit' | 'run';
+const KINDS: readonly ActivityKind[] = ['pushup', 'pullup', 'muscleup', 'dip', 'benchpress', 'squat', 'curl', 'sit', 'run'];
 
 export interface Activity { spot: string; kind: ActivityKind }
 
@@ -37,25 +37,30 @@ export interface Claim extends Activity { pk: string; since: number; id: string;
 
 type Vec2 = { x: number; z: number };
 
-const SPOT_RE = /^(?:station:(\d{1,2})|seat:(-?\d{1,6}):(-?\d{1,6}))$/;
+const SPOT_RE = /^(?:station:(\d{1,2})|seat:(-?\d{1,6}):(-?\d{1,6})|lane:(\d))$/;
 
 export const stationSpotId = (index: number): string => `station:${index}`;
 export const seatSpotId = (p: Vec2): string => `seat:${Math.round(p.x * 10)}:${Math.round(p.z * 10)}`;
+/** A lane of the running track (0 inside … 2 outside). */
+export const laneSpotId = (index: number): string => `lane:${index}`;
 
-export type ParsedSpot = { type: 'station'; index: number } | { type: 'seat'; pos: Vec2 };
+export type ParsedSpot = { type: 'station'; index: number } | { type: 'seat'; pos: Vec2 } | { type: 'lane'; index: number };
 
 export function parseSpot(id: string): ParsedSpot | null {
   const m = SPOT_RE.exec(id);
   if (!m) return null;
   if (m[1] !== undefined) return { type: 'station', index: Number(m[1]) };
+  if (m[4] !== undefined) return { type: 'lane', index: Number(m[4]) };
   return { type: 'seat', pos: { x: Number(m[2]) / 10, z: Number(m[3]) / 10 } };
 }
 
-/** A spot and a kind that belong together: exercises at stations, sitting on seats. */
+/** A spot and a kind that belong together: exercises at stations, sitting on seats, running in lanes. */
 export function validActivity(spot: string, kind: unknown): kind is ActivityKind {
   const s = parseSpot(spot);
   if (!s || !KINDS.includes(kind as ActivityKind)) return false;
-  return (s.type === 'seat') === (kind === 'sit');
+  if (s.type === 'seat') return kind === 'sit';
+  if (s.type === 'lane') return kind === 'run';
+  return kind !== 'sit' && kind !== 'run';
 }
 
 const nowS = () => Math.floor(Date.now() / 1000);

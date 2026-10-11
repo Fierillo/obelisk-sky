@@ -13,21 +13,24 @@ import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises
 import { buildPerson } from '../people/people';
 import type { Command } from './director';
 import { buildIsland, type IslandMeshes } from './island';
+import { carrierOf, reachOf, stepRound, type Round } from './mateRound';
 import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bridge';
 import {
-  assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite,
+  assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
   millSite, type MillSite,
 } from './layout';
 import { fbm2 } from './noise';
-import { CALISTHENICS_STATIONS, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
+import { CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
+import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
+import { Flock } from './nostrich';
 import { buildObelisk, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
-import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type SeatProp } from './landmarks';
+import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
 import { buildMill, type Mill } from './mill';
 import type { Avatar } from '../nostr/avatars';
-import { parseSpot, seatSpotId, stationSpotId, type Activity, type Claim } from '../nostr/activity';
+import { laneSpotId, parseSpot, seatSpotId, stationSpotId, type Activity, type Claim } from '../nostr/activity';
 import { extrapolate, type Motion } from '../nostr/motion';
 import { RUN_SPEED as PLAYER_RUN, WALK_SPEED as PLAYER_WALK, type Solid } from '../player/controller';
 import { Post } from './post';
@@ -39,10 +42,27 @@ interface ConvoSpot { center: Vec2; groupId: string; members: string[]; fire: TH
 
 interface Effect { obj: THREE.Object3D; age: number; life: number; tick: (e: Effect, dt: number) => void }
 
-export interface Seat { pos: Vec2; face: number; y: number; taken: string | null; dynamic?: boolean; prop?: SeatProp; landmark?: LandmarkId; laptop?: boolean; indoor?: boolean }
+export interface Seat {
+  pos: Vec2; face: number; y: number; taken: string | null; dynamic?: boolean; prop?: SeatProp; landmark?: LandmarkId; laptop?: boolean; indoor?: boolean;
+  /** Seats on one bench or sofa share one mate when two or more sit there (mateRound.ts). */
+  bench?: string;
+}
 
-/** A place to train in the sports park (see districts.ts CALISTHENICS_STATIONS). */
-export interface Station { pos: Vec2; face: number; grip: number; half?: number; kinds: ExerciseKind[]; taken: string | null }
+/** What a station offers: an exercise, or running laps (a track lane). */
+export type StationKind = ExerciseKind | 'run';
+
+/** A place to train: the park (districts.ts CALISTHENICS_STATIONS), a gym machine (gym.ts) or a track lane. */
+export interface Station {
+  pos: Vec2; face: number; grip: number; half?: number; kinds: StationKind[]; taken: string | null;
+  /** A lane of the running track (spot `lane:<i>`). */
+  lane?: number;
+  /** A machine in this channel's gym. */
+  gym?: string;
+  /** Where you step on and off (else a spot in front of it). */
+  approach?: Vec2;
+  /** The bar resting on the machine, hidden while it's in use. */
+  rest?: THREE.Object3D;
+}
 
 export interface WorldHooks {
   onSay?: (pk: string, groupId: string, text: string, to: string | null, instant: boolean) => void;
@@ -129,7 +149,17 @@ export class World {
   readonly solids: Solid[] = [];
   private laptops = new Map<string, THREE.Object3D>();
   readonly stations: Station[] = [];
-  private trainingAt = new Map<string, { station: Station; kind: ExerciseKind; since: number }>();
+  private trainingAt = new Map<string, { station: Station; kind: StationKind; since: number }>();
+  /** The running track's lanes (inside to outside), like stations. */
+  readonly lanes: Station[] = [];
+  /** The channel whose house is the gym, and its hall. */
+  private gymId: string | null = null;
+  private gym: GymBuild | null = null;
+  private gymSolids: Solid[] = [];
+  /** Wild nostriches running about the island. */
+  private flock: Flock | null = null;
+  private frustum = new THREE.Frustum();
+  private projView = new THREE.Matrix4();
   /** Slots held by landmarks (La Crypta, the nostr-wot HQ, the café, the parrilla). */
   readonly landmarkSlots: Map<LandmarkId, Slot>;
   private landmarks = new Map<LandmarkId, LandmarkBuild>();
@@ -199,19 +229,23 @@ export class World {
       this.buildStatic();
       this.built = true;
     }
+    const gymId = pickGymChannel(groups.filter((g) => this.slotOf.has(g.id)), (id) => this.districtFor(id), (id) => this.slotFor(id)?.w ?? 0);
+    if (gymId !== this.gymId) this.setGym(null);
     for (const g of groups) {
       if (!this.slotOf.has(g.id)) continue;
       const tier = tierFor(activity.get(g.id) ?? 0);
       const existing = this.buildings.get(g.id);
       const district = this.districtFor(g.id);
-      if (existing && existing.group.userData.tier === tier && existing.group.userData.kind === g.kind && existing.group.userData.district === district) {
+      const gym = g.id === gymId;
+      if (existing && existing.group.userData.tier === tier && existing.group.userData.kind === g.kind && existing.group.userData.district === district && !!existing.group.userData.gym === gym) {
         this.setSign(g);
         continue;
       }
       if (existing) existing.group.removeFromParent();
       const slot = this.plan.slots[this.slotOf.get(g.id)!];
-      const b = buildBuilding(g, slot, tier, district);
-      b.group.userData = { groupId: g.id, tier, kind: g.kind, district };
+      const b = gym ? buildGym(slot, buildBuilding(g, slot, tier, district).roofColor) : buildBuilding(g, slot, tier, district);
+      if (gym) this.setGym(b as GymBuild, g.id, slot);
+      b.group.userData = { groupId: g.id, tier, kind: g.kind, district, gym };
       this.buildingRoot.add(b.group);
       this.buildings.set(g.id, b);
       this.setSign(g);
@@ -281,6 +315,7 @@ export class World {
   }
 
   private removeGroup(id: string): void {
+    if (id === this.gymId) this.setGym(null);
     this.groups.delete(id);
     this.buildings.get(id)?.group.removeFromParent();
     this.buildings.delete(id);
@@ -399,6 +434,7 @@ export class World {
       this.solids.push({ minX: seat.pos.x - r, maxX: seat.pos.x + r, minZ: seat.pos.z - r, maxZ: seat.pos.z + r, top: seat.y });
     }
     this.buildFireflies();
+    this.buildFlock();
     if (this.grassWanted) this.buildGrass(this.grassWanted);
   }
 
@@ -508,7 +544,7 @@ export class World {
         this.solids.push({ minX: c.x - hx, maxX: c.x + hx, minZ: c.z - hz, maxZ: c.z + hz, top: so.top });
       }
       for (const seat of b.seats ?? []) {
-        this.seats.push({ pos: this.landmarkToWorld(s, d.forward, seat.pos), face: seat.face + s.rot, y: seat.y, taken: null, prop: seat.prop, landmark: d.id, laptop: seat.laptop, indoor: seat.indoor });
+        this.seats.push({ pos: this.landmarkToWorld(s, d.forward, seat.pos), face: seat.face + s.rot, y: seat.y, taken: null, prop: seat.prop, landmark: d.id, laptop: seat.laptop, indoor: seat.indoor, bench: seat.bench ? `${d.id}:${seat.bench}` : undefined });
       }
     }
   }
@@ -523,12 +559,62 @@ export class World {
     return { x: dx * c - dz * sn, z: dx * sn + dz * c };
   }
 
+  /** Slot-local → world, for a channel's building (no forward offset). */
+  private buildingToWorld(s: Slot, p: Vec2): Vec2 {
+    return this.landmarkToWorld(s, 0, p);
+  }
+
+  /** The gym hall: its machines become stations, its furniture solid. */
+  private setGym(b: GymBuild | null, id: string | null = null, slot: Slot | null = null): void {
+    for (const st of this.stations) if (st.gym && st.taken && !st.taken.startsWith('pending:')) this.stopTraining(st.taken);
+    for (let i = this.stations.length - 1; i >= 0; i--) {
+      const st = this.stations[i];
+      if (!st.gym) continue;
+      if (st.taken?.startsWith('pending:')) this.releasePending(st.taken.slice('pending:'.length));
+      this.stations.splice(i, 1);
+    }
+    for (const s of this.gymSolids) { const i = this.solids.indexOf(s); if (i >= 0) this.solids.splice(i, 1); }
+    this.gymSolids = [];
+    this.gym = b;
+    this.gymId = b ? id : null;
+    if (!b || !id || !slot) return;
+    for (const st of b.stations) {
+      this.stations.push({
+        pos: this.buildingToWorld(slot, st.at), face: st.face + slot.rot, grip: st.grip, kinds: st.kinds, taken: null,
+        gym: id, approach: this.buildingToWorld(slot, st.approach), rest: st.rest,
+      });
+    }
+    for (const so of b.solids) {
+      const c = this.buildingToWorld(slot, { x: so.x, z: so.z });
+      const cs = Math.abs(Math.cos(slot.rot)), sn = Math.abs(Math.sin(slot.rot));
+      const hx = so.hx * cs + so.hz * sn, hz = so.hx * sn + so.hz * cs;
+      const solid = { minX: c.x - hx, maxX: c.x + hx, minZ: c.z - hz, maxZ: c.z + hz, top: so.top };
+      this.solids.push(solid);
+      this.gymSolids.push(solid);
+    }
+  }
+
+  /** Buildings you can walk into: landmarks with an interior, and the gym. */
+  private *enterables(): Generator<{ it: LandmarkInterior; local: (p: Vec2) => Vec2 | null; groundAt?: (l: Vec2) => number }> {
+    for (const [id, b] of this.landmarks) {
+      if (b.interior) yield { it: b.interior, local: (p) => this.toLandmarkLocal(id, p), groundAt: b.groundAt };
+    }
+    const slot = this.gymId ? this.slotFor(this.gymId) : null;
+    if (this.gym && slot) {
+      const c = Math.cos(slot.rot), sn = Math.sin(slot.rot);
+      yield {
+        it: this.gym.interior,
+        local: (p) => { const dx = p.x - slot.pos.x, dz = p.z - slot.pos.z; return { x: dx * c - dz * sn, z: dx * sn + dz * c }; },
+        groundAt: this.gym.groundAt,
+      };
+    }
+  }
+
   /** Inside a building you can enter (its room or doorway): walkable for the player. */
   insideWalkable(p: Vec2): boolean {
-    for (const [id, b] of this.landmarks) {
-      if (!b.interior) continue;
-      const l = this.toLandmarkLocal(id, p);
-      if (l && b.interior.rooms.some((r) => l.x > r.minX && l.x < r.maxX && l.z > r.minZ && l.z < r.maxZ)) return true;
+    for (const e of this.enterables()) {
+      const l = e.local(p);
+      if (l && e.it.rooms.some((r) => l.x > r.minX && l.x < r.maxX && l.z > r.minZ && l.z < r.maxZ)) return true;
     }
     return false;
   }
@@ -543,6 +629,11 @@ export class World {
       const l = this.toLandmarkLocal(id, p);
       if (l) h = Math.max(h, b.groundAt(l));
     }
+    const slot = this.gym && this.gymId ? this.slotFor(this.gymId) : null;
+    if (slot && Math.abs(p.x - slot.pos.x) < slot.w && Math.abs(p.z - slot.pos.z) < slot.d) {
+      const c = Math.cos(slot.rot), sn = Math.sin(slot.rot), dx = p.x - slot.pos.x, dz = p.z - slot.pos.z;
+      h = Math.max(h, this.gym!.groundAt({ x: dx * c - dz * sn, z: dx * sn + dz * c }));
+    }
     return h;
   }
 
@@ -551,13 +642,12 @@ export class World {
   private updateInteriors(): void {
     const me = this.playerPk ? this.people.get(this.playerPk) : null;
     const walkers = [me, ...[...this.movers.keys()].map((pk) => this.people.get(pk))].filter((c): c is Character => !!c);
-    for (const [id, b] of this.landmarks) {
-      const it = b.interior;
-      if (!it) continue;
-      const l = me ? this.toLandmarkLocal(id, me.pos) : null;
+    for (const e of this.enterables()) {
+      const it = e.it;
+      const l = me ? e.local(me.pos) : null;
       let d = 99;
       for (const c of walkers) {
-        const w = this.toLandmarkLocal(id, c.pos);
+        const w = e.local(c.pos);
         if (w) d = Math.min(d, Math.hypot(w.x - it.door.x, w.z - it.door.z));
       }
       it.setDoor(THREE.MathUtils.clamp((1.3 - d) / 0.5, 0, 1));
@@ -626,6 +716,51 @@ export class World {
       const [i, j] = this.grid.cellOf(p);
       if (this.grid.inBounds(i, j)) this.pathCells.add(this.grid.idx(i, j));
     }
+    // Three lanes, one runner each, like seats.
+    for (let lane = 0; lane < TRACK_LANES; lane++) {
+      this.lanes.push({ pos: trackLap(this.track, 1, lane)[0], face: 0, grip: 0, kinds: ['run'], taken: null, lane });
+    }
+  }
+
+  /** Two pairs of wild nostriches, on open ground away from the plaza. */
+  private buildFlock(): void {
+    const R = this.plan.R;
+    const r = rng(this.plan.seed + 77);
+    const homes: Vec2[] = [];
+    for (let tries = 0; homes.length < 2 && tries < 40; tries++) {
+      const a = r() * Math.PI * 2, d = R * (0.45 + r() * 0.25);
+      const p = this.grid.nearestWalkable({ x: Math.cos(a) * d, z: Math.sin(a) * d });
+      if (p && dist(p, this.plan.plaza.c) > 5 && homes.every((h) => dist(h, p) > 6)) homes.push(p);
+    }
+    this.flock = new Flock({
+      spotNear: (p, rad) => this.grid.nearestWalkable({ x: p.x + (r() - 0.5) * 2 * rad, z: p.z + (r() - 0.5) * 2 * rad }),
+      path: (from, to) => this.grid.findPath(from, to),
+      groundAt: (p) => this.groundAt(p),
+    }, homes, 2, r);
+    this.staticRoot.add(this.flock.root);
+  }
+
+  /** A lap of `lane` from the point nearest `from`, back round to it. */
+  lanePath(lane: number, from: Vec2): Vec2[] {
+    if (!this.track) return [];
+    const lap = trackLap(this.track, 40, lane);
+    let k = 0;
+    for (let i = 1; i < lap.length; i++) if (dist(lap[i], from) < dist(lap[k], from)) k = i;
+    return [...lap.slice(k), ...lap.slice(0, k + 1)];
+  }
+
+  /** The free lane you're standing on or beside (within `within` of its line). */
+  nearestLane(p: Vec2, within = 0.45): Station | null {
+    if (!this.track) return null;
+    let best: Station | null = null, bd = within;
+    for (const st of this.lanes) {
+      if (st.taken && st.taken !== this.playerPk) continue;
+      for (const q of trackLap(this.track, 60, st.lane)) {
+        const d = dist(p, q);
+        if (d < bd) { bd = d; best = st; }
+      }
+    }
+    return best;
   }
 
   /** Cobbled paths from the plaza to every building slot (used or not, so
@@ -712,16 +847,22 @@ export class World {
       if (this.onLandmarkLawn(p)) continue; // a landmark's stairs or terrace come down here
       this.lantern(p, i % 2 === 0);
     }
-    // Benches on the plaza (the market has its own square, see buildMarket).
+    // Benches on the plaza (the market has its own square, see buildMarket):
+    // long enough for three, who share a mate.
     for (let i = 0; i < 3; i++) {
       const a = 0.9 + i * 0.55;
       const b = model('town/stall-bench');
       b.position.set(c.x + Math.cos(a) * (this.plan.plaza.r - 0.55), 0.03, c.z + Math.sin(a) * (this.plan.plaza.r - 0.55));
       b.rotation.y = -a;
+      b.scale.set(1, 1, 1.35);
       this.staticRoot.add(b);
       this.addSolidObject(b);
-      const pos = { x: b.position.x, z: b.position.z };
-      this.seats.push({ pos, face: Math.atan2(c.x - pos.x, c.z - pos.z) + Math.PI, y: 0.22, taken: null });
+      const mid = { x: b.position.x, z: b.position.z };
+      const face = Math.atan2(c.x - mid.x, c.z - mid.z) + Math.PI;
+      const along = { x: -Math.sin(a), z: Math.cos(a) }; // the bench's long axis
+      for (const o of [-0.4, 0, 0.4]) {
+        this.seats.push({ pos: { x: mid.x + along.x * o, z: mid.z + along.z * o }, face, y: 0.22, taken: null, bench: `plaza:${i}` });
+      }
     }
   }
 
@@ -1432,18 +1573,38 @@ export class World {
       });
       return;
     }
-    // Sports folk jog a lap of the track.
-    if (home && this.districtFor(home) === 'sports' && this.track && roll < 0.4) {
-      const lap = trackLap(this.track, 24);
-      let k = 0;
-      for (let i = 1; i < lap.length; i++) if (dist(lap[i], c.pos) < dist(lap[k], c.pos)) k = i;
-      const route = [...lap.slice(k), ...lap.slice(0, k + 1)];
-      this.walkTo(c, route[0], { then: () => c.walk(route.slice(1), true) });
+    // Sports folk run laps, each in a lane of their own.
+    const lane = this.lanes.find((x) => !x.taken);
+    if (home && this.districtFor(home) === 'sports' && lane && roll < 0.35) {
+      this.reserve(c.pk, lane);
+      this.walkTo(c, this.lanePath(lane.lane!, c.pos)[0], {
+        then: () => {
+          this.releasePending(c.pk);
+          if (this.train(c.pk, lane, 'run')) this.trainUntil.set(c.pk, this.elapsed + 20 + this.wanderRng() * 30);
+        },
+      });
       return;
+    }
+    // …or lift at the gym: in through the door, then straight to a free machine.
+    const machine = this.stations.find((x) => x.gym && !x.taken);
+    if (home && this.districtFor(home) === 'sports' && machine && this.gym && this.gymId && roll >= 0.35 && roll < 0.45) {
+      const slot = this.slotFor(this.gymId);
+      if (slot) {
+        this.reserve(c.pk, machine);
+        const inside = this.buildingToWorld(slot, { x: 0, z: slot.d / 2 - 0.35 });
+        this.walkTo(c, this.doorOf(this.gymId), {
+          then: () => c.walk([inside, this.stationApproach(machine)], false, () => {
+            this.releasePending(c.pk);
+            const kind = machine.kinds[0];
+            if (this.train(c.pk, machine, kind)) this.trainUntil.set(c.pk, this.elapsed + 12 + this.wanderRng() * 16);
+          }),
+        });
+        return;
+      }
     }
     // Sports folk also do a set in the park.
     if (home && this.districtFor(home) === 'sports' && roll >= 0.4 && roll < 0.6) {
-      const st = this.stations.find((x) => !x.taken);
+      const st = this.stations.find((x) => !x.taken && !x.gym);
       if (st) {
         this.reserve(c.pk, st);
         const kind = st.kinds[Math.floor(this.wanderRng() * st.kinds.length)];
@@ -1590,6 +1751,7 @@ export class World {
 
   nearestFreeSeat(p: Vec2, within: number, npc = false): Seat | null {
     let best: Seat | null = null;
+    let bestScore = Infinity;
     const inside = !npc && this.insideWalkable(p);
     for (const s of this.seats) {
       if (s.taken) continue;
@@ -1599,7 +1761,10 @@ export class World {
       // A landmark's tables stand on its terrace, which you can't walk onto:
       // they count as near from the path in front.
       const reach = s.landmark ? within + 1 : within;
-      if (d <= reach && (!best || d < dist(best.pos, p))) best = s;
+      if (d > reach) continue;
+      // Neighbours would rather join a bench where a mate is already going round.
+      const score = d - (npc && s.bench && this.benchSeated(s.bench).length ? 2.5 : 0);
+      if (score < bestScore) { best = s; bestScore = score; }
     }
     return best;
   }
@@ -1626,7 +1791,10 @@ export class World {
     // Sitting replaces any jump, run or standing-on-furniture state.
     c.resetDrive();
     c.sit();
-    if (!c.mate) {
+    // On a bench someone's already drinking from, you join their round
+    // (updateRounds hands you the mate in turn).
+    const sharing = !!seat.bench && this.benchSeated(seat.bench).length > 1;
+    if (!c.mate && !sharing) {
       // A mate, a coffee or a choripán: the character keeps it in the left
       // hand and lifts it to sip or bite (Character.update).
       const prop = seat.prop ?? 'mate';
@@ -1674,6 +1842,8 @@ export class World {
 
   /** A walkable spot just outside the park, in front of a station. */
   stationApproach(st: Station): Vec2 {
+    if (st.approach) return st.approach;
+    if (st.lane !== undefined) return st.pos;
     const out = { x: st.pos.x - Math.sin(st.face) * 1.3, z: st.pos.z - Math.cos(st.face) * 1.3 };
     return this.grid.isWalkable(out) ? out : this.grid.nearestWalkable?.(out) ?? out;
   }
@@ -1692,18 +1862,38 @@ export class World {
     return this.trainingAt.has(pk);
   }
 
-  /** What `pk` is training and how many reps so far. */
-  training(pk: string): { kind: ExerciseKind; reps: number } | null {
+  /** What `pk` is training and how many reps (laps, running) so far. */
+  training(pk: string): { kind: StationKind; reps: number } | null {
     const t = this.trainingAt.get(pk);
-    return t ? { kind: t.kind, reps: repsDone(t.kind, this.elapsed - t.since) } : null;
+    if (!t) return null;
+    if (t.kind === 'run') {
+      const { halfLength: L, radius: R } = TRACK;
+      return { kind: 'run', reps: Math.floor(((this.elapsed - t.since) * PLAYER_RUN) / (4 * L + 2 * Math.PI * (R - 0.45))) };
+    }
+    return { kind: t.kind, reps: repsDone(t.kind, this.elapsed - t.since) };
   }
 
-  /** Start a looping exercise at a station (false if its clip can't be built yet). */
-  train(pk: string, st: Station, kind: ExerciseKind): boolean {
+  /** The lane `pk` is running laps in, if any. */
+  laneOf(pk: string): number | null {
+    return this.trainingAt.get(pk)?.station.lane ?? null;
+  }
+
+  /** Start a looping exercise at a station, or laps in a lane (false if its clip can't be built yet). */
+  train(pk: string, st: Station, kind: StationKind): boolean {
     const c = this.people.get(pk);
     if (!c) return false;
     this.stand(pk);
     this.stopTraining(pk);
+    if (kind === 'run') {
+      st.taken = pk;
+      this.trainingAt.set(pk, { station: st, kind, since: this.elapsed });
+      // Your own laps are run by the controller (main.ts); everyone else loops here.
+      if (pk !== this.playerPk) {
+        const lap = () => { if (this.trainingAt.get(pk)?.station === st) c.walk(this.lanePath(st.lane!, c.pos), true, lap); };
+        lap();
+      }
+      return true;
+    }
     const name = `${kind}@${st.grip.toFixed(2)}/${st.half ?? 0}:${c.look.body}`;
     if (!this.builtClips.has(name)) {
       const model = buildPerson(c.look)?.root;
@@ -1717,6 +1907,12 @@ export class World {
     c.body.rotation.y = st.face;
     c.faceToward({ x: st.pos.x + Math.sin(st.face), z: st.pos.z + Math.cos(st.face) });
     c.exercise = name;
+    // Gym lifts: the bar comes off the rack and into your hands.
+    if (st.gym && kind !== 'pushup' && kind !== 'pullup' && kind !== 'muscleup' && kind !== 'dip') {
+      if (st.rest) st.rest.visible = false;
+      c.heldBar = buildBarbell(kind === 'curl' ? 0.34 : 0.68, kind === 'curl' ? 0.045 : 0.07);
+      c.body.add(c.heldBar);
+    }
     this.trainingAt.set(pk, { station: st, kind, since: this.elapsed });
     return true;
   }
@@ -1727,8 +1923,12 @@ export class World {
     if (!t) return;
     this.trainingAt.delete(pk);
     if (t.station.taken === pk) t.station.taken = null;
+    if (t.station.rest) t.station.rest.visible = true;
     const c = this.people.get(pk);
     if (c) {
+      if (c.heldBar) { c.heldBar.removeFromParent(); c.heldBar = null; }
+      // Out of the lane: stop where you are.
+      if (t.kind === 'run' && pk !== this.playerPk) c.halt();
       c.exercise = null;
       // Step off the equipment.
       if (c.pos.x === t.station.pos.x && c.pos.z === t.station.pos.z) c.place(this.stationApproach(t.station));
@@ -1747,9 +1947,93 @@ export class World {
     if (!c) return;
     c.seatY = 0;
     c.stand();
+    c.reachK = 0;
     if (c.mate) { c.mate.removeFromParent(); c.mate = null; }
     this.laptops.get(pk)?.removeFromParent();
     this.laptops.delete(pk);
+  }
+
+  // ── sharing a mate on a bench (mateRound.ts) ──────────────────────────
+
+  private rounds = new Map<string, Round>();
+
+  /** Who sits on a bench, in seat order. */
+  private benchSeated(bench: string): string[] {
+    const out: string[] = [];
+    for (const s of this.seats) if (s.bench === bench && s.taken && this.seatOf.get(s.taken) === s) out.push(s.taken);
+    return out;
+  }
+
+  private benchIds: string[] = [];
+  private benchIdsFor = -1;
+
+  /** One mate per shared bench: it goes round, changing hands between neighbours. */
+  private updateRounds(dt: number): void {
+    // Seats come and go (the island builds after the first frames, yard stools later).
+    if (this.benchIdsFor !== this.seats.length) {
+      this.benchIdsFor = this.seats.length;
+      this.benchIds = [...new Set(this.seats.flatMap((s) => (s.bench ? [s.bench] : [])))];
+    }
+    for (const bench of this.benchIds) {
+      const prev = this.rounds.get(bench) ?? null;
+      const seated = this.benchSeated(bench);
+      if (!prev && seated.length < 2) continue;
+      const r = stepRound(prev, seated, dt);
+      if (!r) {
+        // Back to one (or none): whoever's left gets a mate of their own.
+        this.rounds.delete(bench);
+        for (const pk of seated) {
+          const c = this.people.get(pk);
+          if (c && !c.mate) { c.reachK = 0; this.giveMate(c); }
+        }
+        continue;
+      }
+      this.rounds.set(bench, r);
+      const carrier = carrierOf(r);
+      // Exactly one mate on the bench, in the carrier's hand: move it there.
+      let mate: THREE.Object3D | null = null;
+      for (const pk of seated) {
+        const c = this.people.get(pk);
+        if (!c?.mate) continue;
+        if (!mate) mate = c.mate;
+        else c.mate.removeFromParent(); // someone sat down with their own: one is enough
+        c.mate = null;
+      }
+      const cc = this.people.get(carrier);
+      if (cc) {
+        if (!mate) this.giveMate(cc);
+        else {
+          if (mate.parent !== cc.body) { mate.removeFromParent(); cc.body.add(mate); }
+          cc.mate = mate;
+        }
+      }
+      // A new holder sips at once; the giver rests while handing it over.
+      if (r.phase === 'sip' && (!prev || prev.phase === 'pass' || prev.holder !== r.holder) && cc) cc.sipClock = 0;
+      // Both arms reach toward the middle while it changes hands.
+      const k = reachOf(r);
+      for (const pk of seated) {
+        const c = this.people.get(pk);
+        if (!c) continue;
+        const passing = r.phase === 'pass' && (pk === r.holder || pk === r.to);
+        c.reachK = passing ? k : 0;
+        if (passing && r.to) {
+          const a = this.people.get(r.holder), b = this.people.get(r.to);
+          const seat = this.seatOf.get(pk);
+          if (a && b && seat) {
+            c.reach.copy(a.root.position).add(b.root.position).multiplyScalar(0.5);
+            c.reach.x += Math.sin(seat.face) * 0.12;
+            c.reach.z += Math.cos(seat.face) * 0.12;
+            c.reach.y = seat.y + 0.17;
+          }
+        }
+      }
+    }
+  }
+
+  private giveMate(c: Character): void {
+    c.mate = buildMate();
+    c.mate.scale.setScalar(0.75);
+    c.body.add(c.mate);
   }
 
   // ── live activities (nostr/activity.ts) ───────────────────────────────
@@ -1788,7 +2072,7 @@ export class World {
     const seat = this.seatOf.get(pk);
     if (seat) return { spot: seatSpotId(seat.pos), kind: 'sit' };
     const t = this.trainingAt.get(pk);
-    if (t) return { spot: stationSpotId(this.stations.indexOf(t.station)), kind: t.kind };
+    if (t) return { spot: t.station.lane !== undefined ? laneSpotId(t.station.lane) : stationSpotId(this.stations.indexOf(t.station)), kind: t.kind };
     return null;
   }
 
@@ -1797,6 +2081,7 @@ export class World {
     const s = parseSpot(id);
     if (!s) return null;
     if (s.type === 'station') return this.stations[s.index] ?? null;
+    if (s.type === 'lane') return this.lanes[s.index] ?? null;
     let best: Seat | null = null, bd = 0.5;
     for (const seat of this.seats) {
       if (seatSpotId(seat.pos) === id) return seat;
@@ -1833,7 +2118,7 @@ export class World {
     const place = this.spotPlace(cl.spot);
     const station = place && 'kinds' in place ? place : null;
     const seat = place && !station ? (place as Seat) : null;
-    if (!place || (station && !station.kinds.includes(cl.kind as ExerciseKind)) || (seat && cl.kind !== 'sit')) {
+    if (!place || (station && !station.kinds.includes(cl.kind as StationKind)) || (seat && cl.kind !== 'sit')) {
       // A spot this village doesn't have (a yard stool of another channel set).
       this.claims.set(pk, { ...cl, place: null });
       if (this.claimSpawned.delete(pk)) this.despawn(pk);
@@ -1853,7 +2138,7 @@ export class World {
       this.reserve(pk, place);
     }
     // The winner goes to the equipment; someone who lost the race waits beside it.
-    const dest = station ? this.stationApproach(station) : cl.held ? seat!.pos : this.exitSpot(seat!.pos, seat!.face);
+    const dest = station?.lane !== undefined ? this.lanePath(station.lane, c.pos)[0] : station ? this.stationApproach(station) : cl.held ? seat!.pos : this.exitSpot(seat!.pos, seat!.face);
     const arrive = () => {
       const ch = this.people.get(pk);
       if (!ch || this.claims.get(pk)?.place !== place) return;
@@ -1861,7 +2146,7 @@ export class World {
       this.releasePending(pk);
       if (seat) this.sit(pk, seat);
       // No clip yet (the body is still loading): the next sync tries again.
-      else if (!this.train(pk, station!, cl.kind as ExerciseKind)) this.claims.delete(pk);
+      else if (!this.train(pk, station!, cl.kind as StationKind)) this.claims.delete(pk);
     };
     if (fresh) {
       // New in the village: fade in right there.
@@ -2123,6 +2408,16 @@ export class World {
     this.post.setNight(night01);
 
     for (const p of this.pets.values()) p.update(dt, (q) => this.groundAt(q));
+    this.updateRounds(dt);
+    if (this.flock) {
+      // Runners startle them; off screen they keep moving but aren't posed.
+      const runners: Vec2[] = [];
+      for (const c of this.people.values()) if (c.external ? c.external.moving && c.external.running : c.path.length && c.running) runners.push(c.pos);
+      this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+      this.frustum.setFromProjectionMatrix(this.projView);
+      const v = new THREE.Vector3();
+      this.flock.update(dt, runners, (p) => this.frustum.containsPoint(v.set(p.x, 0.4, p.z)));
+    }
     for (const [pk, then] of [...this.blinks]) {
       const c = this.people.get(pk);
       if (!c) this.blinks.delete(pk);

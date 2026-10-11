@@ -346,12 +346,13 @@ export function buildLivingRoom(s: RoomSpec): LivingRoom {
     solids.push({ x, z, hx, hz, top: F + 0.3 });
     for (let i = 0; i < n; i++) {
       const o = -len / 2 + (i + 0.5) * (len / n);
-      seats.push({ pos: { x: x + along.x * o + fwd.x * 0.02, z: z + along.z * o + fwd.z * 0.02 }, face, y: F + SEAT_Y, prop: 'mate', indoor: true });
+      seats.push({ pos: { x: x + along.x * o + fwd.x * 0.02, z: z + along.z * o + fwd.z * 0.02 }, face, y: F + SEAT_Y, prop: 'mate', indoor: true, bench: `sofa:${x.toFixed(2)}:${z.toFixed(2)}` });
     }
   };
-  // One across the room facing the fire, one along the left wall facing in.
-  sofa(fx + 0.05, s.minZ + 1.25, 0.8, Math.PI, 2);
-  sofa(s.minX + 0.22, s.minZ + 0.75, 0.7, Math.PI / 2, 2);
+  // One across the room facing the fire, one along the left wall facing in;
+  // three places each, one mate going round.
+  sofa(fx + 0.05, s.minZ + 1.25, 0.96, Math.PI, 3);
+  sofa(s.minX + 0.22, s.minZ + 0.75, 0.9, Math.PI / 2, 3);
   // The table and a rug under it.
   const tx = fx + 0.05, tz = s.minZ + 0.72;
   const rug = add(new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.62), flat(0x5a1e18, { roughness: 1 })), tx - 0.05, F + 0.004, tz);

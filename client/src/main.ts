@@ -40,11 +40,10 @@ import { defaultLook, preloadPeople } from './people/people';
 import type { LandmarkId } from './world/landmarks';
 import { NOSTR_WOT_PUBKEY, NOSTR_WOT_SITE } from './world/landmarks/nostrwot';
 import { DEFAULT_SOCIAL_RELAYS } from '@/constants/social/relays';
-import type { ExerciseKind } from './world/anim/exercises';
 import { pubkeyColor } from './world/character';
 import { Director } from './world/director';
 import { Player, type Ev, type PlayerStatus } from './world/player';
-import { World } from './world/world';
+import { World, type StationKind } from './world/world';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -482,13 +481,23 @@ function stepPlayer(dt: number): void {
     standPlayer();
     controller.path = path;
   }
+  // Running laps: round your lane at a run until you steer or jump off it.
+  const lane = world.laneOf(pk!);
+  let mvNow = mv;
+  if (lane !== null) {
+    if (Math.hypot(mv.x, mv.y) > 0.05 || mv.jump) { world.stopTraining(pk!); controller.path = []; }
+    else {
+      if (!controller.path.length) controller.path = world.lanePath(lane, controller.pos);
+      mvNow = { ...mv, run: true };
+    }
+  }
   // Walking off ends a set (and steps you off the equipment).
-  if (world.isTraining(pk!)) {
+  else if (world.isTraining(pk!)) {
     if (Math.hypot(mv.x, mv.y) > 0.05 || controller.path.length || mv.jump) { world.stopTraining(pk!); controller.pos = { ...c.pos }; }
     else { world.cam.played(); return; }
   }
   if (world.isSeated(pk!)) { world.cam.played(); return; }
-  controller.step(dt, mv, world.cameraYaw());
+  controller.step(dt, mvNow, world.cameraYaw());
   c.drive(controller.pos.x, controller.pos.z, controller.heading, controller.moving, controller.running, controller.height, controller.airborne);
   if (controller.moving && performance.now() - input.lastInput < 200) world.cam.played();
   // Enter a channel when you stop in its yard or linger there; walking past
@@ -538,6 +547,8 @@ world.hooks.onBubbleClick = (msgId) => {
 
 world.hooks.onGroundClick = (p) => {
   if (!controller) return;
+  // Walking somewhere else ends your laps.
+  if (world.playerPk && world.laneOf(world.playerPk) !== null) world.stopTraining(world.playerPk);
   controller.walkTo(p);
   world.cam.played();
 };
@@ -551,16 +562,26 @@ function toggleFirstPerson(): void {
   if (on) toast(isTouch() ? 'First person: drag to look, the stick to walk. Tap the eye to leave.' : 'First person: click to look with the mouse, WASD to walk, V or Esc to leave.');
 }
 
-const EX_LABEL: Record<ExerciseKind, string> = { pullup: 'pull-ups', muscleup: 'muscle-ups', dip: 'dips', pushup: 'push-ups' };
+const EX_LABEL: Record<StationKind, string> = {
+  pullup: 'pull-ups', muscleup: 'muscle-ups', dip: 'dips', pushup: 'push-ups',
+  benchpress: 'bench press', squat: 'squats', curl: 'curls', run: 'laps',
+};
 
 /** At the park: start (or stop) a set. `pick` chooses among the station's exercises. */
 function toggleTraining(pick = 0): boolean {
   const pk = world.playerPk;
   if (!controller || !pk) return false;
   const now = world.training(pk);
-  const st = world.nearestStation(controller.pos, 1.9);
+  // Off a lane: just stop running.
+  if (now?.kind === 'run') { world.stopTraining(pk); controller.path = []; return true; }
+  const st = world.nearestStation(controller.pos, 1.9) ?? world.nearestLane(controller.pos);
   if (now && (!st || pick === 0 || st.kinds[pick] === now.kind)) { world.stopTraining(pk); controller.pos = { ...world.people.get(pk)!.pos }; return true; }
   if (!st || !st.kinds[pick]) return false;
+  if (st.lane !== undefined) {
+    // Into the lane: the laps start from where you are.
+    if (world.train(pk, st, 'run')) controller.path = world.lanePath(st.lane, controller.pos);
+    return true;
+  }
   if (world.train(pk, st, st.kinds[pick])) { controller.pos = { ...st.pos }; controller.path = []; }
   return true;
 }
@@ -596,7 +617,16 @@ function renderSeatHint(): void {
   const t = world.training(pk);
   if (t) {
     hint.hidden = false;
-    hint.textContent = `${EX_LABEL[t.kind][0].toUpperCase()}${EX_LABEL[t.kind].slice(1)} · ${t.reps} rep${t.reps === 1 ? '' : 's'} · ${touch ? 'tap to stop' : 'E to stop'}`;
+    hint.textContent = t.kind === 'run'
+      ? `Running laps · ${t.reps} lap${t.reps === 1 ? '' : 's'} · ${touch ? 'tap or steer to stop' : 'E or steer to stop'}`
+      : `${EX_LABEL[t.kind][0].toUpperCase()}${EX_LABEL[t.kind].slice(1)} · ${t.reps} rep${t.reps === 1 ? '' : 's'} · ${touch ? 'tap to stop' : 'E to stop'}`;
+    return;
+  }
+  const lane = world.nearestStation(controller.pos, 1.9) ? null : world.nearestLane(controller.pos);
+  if (lane) {
+    hint.hidden = false;
+    const name = ['inside', 'middle', 'outside'][lane.lane!] ?? String(lane.lane! + 1);
+    hint.textContent = touch ? `Run laps (${name} lane)` : `Press E to run laps in the ${name} lane`;
     return;
   }
   const st = world.nearestStation(controller.pos, 1.9);

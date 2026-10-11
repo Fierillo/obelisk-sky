@@ -23,6 +23,8 @@ export interface LandmarkSeat {
   laptop?: boolean;
   /** Inside a building: only for the player, and only from inside. */
   indoor?: boolean;
+  /** Seats sharing a bench or sofa share one mate (world/mateRound.ts). */
+  bench?: string;
 }
 
 export interface LandmarkBuild {

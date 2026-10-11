@@ -16,7 +16,7 @@ export function buildTrack(site: { c: Vec2; rot: number }): THREE.Group {
   g.position.set(site.c.x, 0.07, site.c.z);
   g.rotation.y = -site.rot;
   const { halfLength: L, radius: R } = TRACK;
-  const width = 0.9;
+  const width = TRACK_WIDTH;
   const stadium = (r: number) => {
     const s = new THREE.Shape();
     s.moveTo(-L, -r);
@@ -53,10 +53,15 @@ export function buildTrack(site: { c: Vec2; rot: number }): THREE.Group {
   return g;
 }
 
-/** Points around the track's centre lane, for people jogging laps. */
-export function trackLap(site: { c: Vec2; rot: number }, n = 24): Vec2[] {
+/** The track's lanes, inside (0) to outside: each is a third of its width. */
+export const TRACK_LANES = 3;
+const TRACK_WIDTH = 0.9;
+
+/** Points around the track, along the middle of `lane` (or the track's
+ *  centre line), for people running laps. */
+export function trackLap(site: { c: Vec2; rot: number }, n = 24, lane?: number): Vec2[] {
   const { halfLength: L, radius: R } = TRACK;
-  const r = R - 0.45;
+  const r = lane === undefined ? R - TRACK_WIDTH / 2 : R - TRACK_WIDTH + (TRACK_WIDTH * (lane + 0.5)) / TRACK_LANES;
   const pts: Vec2[] = [];
   const perim = 4 * L + 2 * Math.PI * r;
   for (let i = 0; i < n; i++) {

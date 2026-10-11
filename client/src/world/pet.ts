@@ -8,8 +8,11 @@ import { loadGltf } from './assets';
 import type { Character } from './character';
 import { CHAR_HEIGHT } from './character';
 import type { Hat } from '../nostr/avatars';
+import { Nostrich, NOSTRICH_HEIGHT } from './nostrich';
 
 const PET_HEIGHT = 0.32;
+/** A pet nostrich is long-legged: taller than the cube pets. */
+const NOSTRICH_PET_HEIGHT = 0.5;
 
 export class Pet {
   readonly root = new THREE.Group();
@@ -22,10 +25,17 @@ export class Pet {
   readonly label: THREE.Sprite;
 
   private hopY = 0;
+  /** The nostrich has no model file: it is built and animated in code. */
+  private bird: Nostrich | null = null;
+  private moved = 0;
 
   constructor(readonly kind: string, readonly name: string, private owner: Character) {
     this.root.position.copy(owner.root.position).add(new THREE.Vector3(0.5, 0, 0.4));
-    void loadGltf(`pets/${kind}`).then((g) => {
+    if (kind === 'nostrich') {
+      this.bird = new Nostrich();
+      this.bird.root.scale.setScalar(NOSTRICH_PET_HEIGHT / NOSTRICH_HEIGHT);
+      this.root.add(this.bird.root);
+    } else void loadGltf(`pets/${kind}`).then((g) => {
       const model = skeletonClone(g.scene);
       model.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(model);
@@ -39,7 +49,7 @@ export class Pet {
       this.play('idle');
     }).catch(() => { /* no model: no pet */ });
     this.label = nameTag(name);
-    this.label.position.y = PET_HEIGHT + 0.16;
+    this.label.position.y = (this.bird ? NOSTRICH_PET_HEIGHT : PET_HEIGHT) + 0.16;
     if (name) this.root.add(this.label);
   }
 
@@ -48,6 +58,7 @@ export class Pet {
   }
 
   private play(name: string): void {
+    if (this.bird) { this.bird.mode = name as 'idle' | 'walk' | 'run' | 'dance'; return; }
     const a = this.actions.get(name);
     if (!a || a === this.current) return;
     a.reset().fadeIn(0.2).play();
@@ -81,6 +92,7 @@ export class Pet {
       const step = Math.min(d, speed * dt);
       p.x += (dx / d) * step;
       p.z += (dz / d) * step;
+      this.moved = step;
       this.root.rotation.y = Math.atan2(dx, dz);
       this.play(speed > 2 ? 'run' : 'walk');
       // A little hop while moving.
@@ -94,6 +106,12 @@ export class Pet {
     p.y += this.hopY;
     if (d > 8) p.set(heel.x, groundAt(heel), heel.z); // teleported owner: catch up at once
     this.mixer?.update(dt);
+    if (this.bird) {
+      // Its own stride: no hop, the legs do the work.
+      if (d > 0.12) p.y -= Math.abs(Math.sin(performance.now() / 110)) * 0.04;
+      this.bird.update(dt, dt > 0 ? this.moved / dt / (NOSTRICH_PET_HEIGHT / NOSTRICH_HEIGHT) : 0);
+      this.moved = 0;
+    }
   }
 
   dispose(): void {

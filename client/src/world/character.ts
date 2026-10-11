@@ -128,6 +128,8 @@ function drawBadge(pk: string, name: string, img: HTMLImageElement | null, mark:
   return t;
 }
 
+const BAR_AXIS = new THREE.Vector3(1, 0, 0);
+
 export class Character {
   readonly root = new THREE.Group();
   readonly body = new THREE.Group();
@@ -159,6 +161,12 @@ export class Character {
   seatY = 0;
   /** The mate (or cup) in hand while sitting, if any (kept in the left hand). */
   mate: THREE.Object3D | null = null;
+  /** Passing the mate along a bench: the left hand reaches toward `reach`
+   *  (world space) by `reachK` (0..1), mate in hand or not (world.ts rounds). */
+  reach = new THREE.Vector3();
+  reachK = 0;
+  /** A barbell held in both hands (the gym): kept between the palms. */
+  heldBar: THREE.Object3D | null = null;
   private hat: THREE.Object3D | null = null;
   look: PersonLook;
   private lookKey = '';
@@ -176,7 +184,7 @@ export class Character {
   /** Ground speed this frame, for picking and pacing the gait. */
   private speed = 0;
   private lastPos = new THREE.Vector3();
-  private sipClock: number;
+  sipClock: number;
 
   constructor(readonly pk: string, name: string) {
     this.name = name;
@@ -506,7 +514,7 @@ export class Character {
       this.idleFor += dt;
     }
     this.mixer?.update(dt);
-    if (this.mate && this.activity === 'sit' && this.model) this.holdProp();
+    if ((this.mate || this.reachK > 0) && this.activity === 'sit' && this.model) this.holdProp();
 
     // The name badge rides above the head (jumps, pull-ups, push-ups, sitting).
     if (this.model) {
@@ -518,6 +526,19 @@ export class Character {
       }
     }
 
+    // A barbell sits across both palms, along the line between them.
+    if (this.model && this.heldBar) {
+      const l = this.bonePosition('hand_l', this.tmp2), r = this.bonePosition('hand_r', this.tmp3);
+      const lk = this.bonePosition('middle_01_l', this.tmp4), rk = this.bonePosition('middle_01_r', this.tmp5);
+      if (l && r) {
+        if (lk) l.lerp(lk, 0.6);
+        if (rk) r.lerp(rk, 0.6);
+        this.body.worldToLocal(l);
+        this.body.worldToLocal(r);
+        this.heldBar.position.copy(l).add(r).multiplyScalar(0.5);
+        this.heldBar.quaternion.setFromUnitVectors(BAR_AXIS, r.sub(l).normalize());
+      }
+    }
     // Props follow their bones: hat on the head, mate in the left hand.
     if (this.model && (this.hat || this.mate)) {
       if (this.hat) {
@@ -580,11 +601,14 @@ export class Character {
     const lips = v(head).addScaledVector(fwd, 0.04 * k).addScaledVector(upW, 0.02 * k);
     // Sip: up in 0.5 s, 0.8 s at the lips, down in 0.5 s, every 6 s.
     const t = this.sipClock % 6;
-    const s01 = t < 0.5 ? t / 0.5 : t < 1.3 ? 1 : t < 1.8 ? 1 - (t - 1.3) / 0.5 : 0;
+    const s01 = this.mate ? (t < 0.5 ? t / 0.5 : t < 1.3 ? 1 : t < 1.8 ? 1 - (t - 1.3) / 0.5 : 0) : 0;
     const sip = s01 * s01 * (3 - 2 * s01);
     // At the lips the hand sits a mate's height below them (the bombilla on top).
-    const tip = (this.mate!.userData.mouth as THREE.Vector3 | undefined)?.y ?? 0.1;
-    const target = hold.lerp(lips.addScaledVector(upW, -tip * this.mate!.scale.y * 0.9), sip);
+    const tip = (this.mate?.userData.mouth as THREE.Vector3 | undefined)?.y ?? 0.1;
+    const target = hold.lerp(lips.addScaledVector(upW, -tip * (this.mate?.scale.y ?? 1) * 0.9), sip);
+    // Handing the mate over (or taking it): out toward the neighbour.
+    if (this.reachK > 0) target.lerp(this.reach, this.reachK);
+    else if (!this.mate) return; // nothing in hand, nothing to pass: the clip's own arms
     // Elbow: in the plane toward the pole (down, out, a little back).
     const toT = new THREE.Vector3().subVectors(target, S);
     const d = THREE.MathUtils.clamp(toT.length(), Math.abs(a - b) + 1e-4, a + b - 1e-4);

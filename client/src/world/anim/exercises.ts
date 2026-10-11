@@ -16,7 +16,7 @@
 
 import * as THREE from 'three';
 
-export type ExerciseKind = 'pushup' | 'pullup' | 'muscleup' | 'dip';
+export type ExerciseKind = 'pushup' | 'pullup' | 'muscleup' | 'dip' | 'benchpress' | 'squat' | 'curl';
 
 type Dir = [number, number, number];
 export interface PoseSpec {
@@ -61,8 +61,31 @@ const DIP_LOW: PoseSpec = { pitch: 0.35, hands: ON_PARALLEL, aim: merge(both('up
 const PLANK_UP: PoseSpec = { hands: FLAT, aim: merge(both('upperarm', [0.15, 0.05, 1]), both('lowerarm', [0.03, 0, 1]), STRAIGHT_LEGS) };
 const PLANK_DOWN: PoseSpec = { hands: FLAT, aim: merge(both('upperarm', [0.8, -0.45, 0.3]), both('lowerarm', [0.05, 0.2, 1]), STRAIGHT_LEGS) };
 
-/** Key poses and timing (seconds) of one repetition; the last key returns to the first. */
-export const EXERCISES: Record<ExerciseKind, { keys: Key[]; grip: 'bar' | 'floor'; label: string }> = {
+// The gym (world/gym.ts), with a barbell in both hands (Character.heldBar).
+// Bench press: lying on the back, so the chest's "forward" is up; the feet
+// go down to the floor beside the bench.
+const PRESS_HANDS = { dir: [0, 0, 1] as Dir, palm: [0, -1, 0] as Dir, curl: 0.85 };
+const BENCH_LEGS = merge(both('thigh', [0.3, -1, -0.1]), both('calf', [0.05, -0.15, -1]));
+const PRESS_UP: PoseSpec = { pitch: -Math.PI / 2, hands: PRESS_HANDS, aim: merge(both('upperarm', [0.35, 0.12, 1]), both('lowerarm', [0.08, 0.04, 1]), BENCH_LEGS) };
+const PRESS_DOWN: PoseSpec = { pitch: -Math.PI / 2, hands: PRESS_HANDS, aim: merge(both('upperarm', [1, 0.12, -0.2]), both('lowerarm', [0.05, 0.06, 1]), BENCH_LEGS) };
+// Squat: the bar across the upper back, hands just outside the shoulders.
+// Aims pitch with the torso, so the low squat's thighs are written in the
+// leaning body's frame (they end up about level in the world).
+const BAR_ON_BACK = merge(both('upperarm', [1, 0.3, -0.3]), both('lowerarm', [0.05, 1, -0.25]));
+const BACK_HANDS = { dir: [0, 1, 0] as Dir, palm: [0, 0, 1] as Dir, curl: 0.8 };
+const SQUAT_UP: PoseSpec = { pitch: 0.06, hands: BACK_HANDS, aim: merge(BAR_ON_BACK, STRAIGHT_LEGS) };
+const SQUAT_LOW: PoseSpec = { pitch: 0.55, hands: BACK_HANDS, aim: merge(BAR_ON_BACK, both('thigh', [0.18, 0.27, 1]), both('calf', [0, -1.04, 0.22])) };
+// Curls: elbows at the sides, forearms up to the shoulders and down.
+const CURL_DOWN: PoseSpec = { hands: { dir: [0, -1, 0.15], palm: [0, 0.15, 1], curl: 0.85 }, aim: merge(both('upperarm', [0.12, -1, 0.05]), both('lowerarm', [0.06, -1, 0.2]), STRAIGHT_LEGS) };
+const CURL_UP: PoseSpec = { hands: { dir: [0, 0.45, 1], palm: [0, 1, -0.45], curl: 0.85 }, aim: merge(both('upperarm', [0.12, -1, 0.12]), both('lowerarm', [0.05, 0.45, 1]), STRAIGHT_LEGS) };
+
+/**
+ * Key poses and timing (seconds) of one repetition; the last key returns to
+ * the first. Grip: hands on a bar at its height, hands on the floor, feet on
+ * the floor ('stand', the hands go where the pose puts them) or lying on a
+ * bench whose top is at the grip height ('lie').
+ */
+export const EXERCISES: Record<ExerciseKind, { keys: Key[]; grip: 'bar' | 'floor' | 'stand' | 'lie'; label: string }> = {
   pullup: { label: 'Pull-ups', grip: 'bar', keys: [{ t: 0, pose: HANG }, { t: 0.9, pose: PULLED }, { t: 1.3, pose: PULLED }, { t: 2.3, pose: HANG }] },
   muscleup: {
     label: 'Muscle-ups', grip: 'bar',
@@ -74,6 +97,9 @@ export const EXERCISES: Record<ExerciseKind, { keys: Key[]; grip: 'bar' | 'floor
   },
   dip: { label: 'Dips', grip: 'bar', keys: [{ t: 0, pose: DIP_TOP }, { t: 0.9, pose: DIP_LOW }, { t: 1.2, pose: DIP_LOW }, { t: 2.1, pose: DIP_TOP }] },
   pushup: { label: 'Push-ups', grip: 'floor', keys: [{ t: 0, pose: PLANK_UP }, { t: 0.8, pose: PLANK_DOWN }, { t: 1.0, pose: PLANK_DOWN }, { t: 1.8, pose: PLANK_UP }] },
+  benchpress: { label: 'Bench press', grip: 'lie', keys: [{ t: 0, pose: PRESS_UP }, { t: 1.1, pose: PRESS_DOWN }, { t: 1.35, pose: PRESS_DOWN }, { t: 2.3, pose: PRESS_UP }, { t: 2.7, pose: PRESS_UP }] },
+  squat: { label: 'Squats', grip: 'stand', keys: [{ t: 0, pose: SQUAT_UP }, { t: 1.2, pose: SQUAT_LOW }, { t: 1.4, pose: SQUAT_LOW }, { t: 2.4, pose: SQUAT_UP }, { t: 2.8, pose: SQUAT_UP }] },
+  curl: { label: 'Curls', grip: 'stand', keys: [{ t: 0, pose: CURL_DOWN }, { t: 0.9, pose: CURL_UP }, { t: 1.1, pose: CURL_UP }, { t: 2.0, pose: CURL_DOWN }] },
 };
 
 interface Rest { bone: THREE.Bone; q: THREE.Quaternion; p: THREE.Vector3 }
@@ -107,6 +133,16 @@ export function buildExerciseClip(
 
   const alignForward = kind === 'pullup' || kind === 'muscleup';
   const onFloor = kind === 'pushup';
+  const grip = EXERCISES[kind].grip;
+  // Standing lifts keep the feet where they stand; lying ones put the back
+  // on the bench. Measured at rest: the soles, and the back's depth below
+  // the pelvis joint (about a sixteenth of the body's height).
+  const feet = () => {
+    const l = wp('foot_l'), r = wp('foot_r');
+    return { x: (l.x + r.x) / 2, z: (l.z + r.z) / 2, y: Math.min(l.y, r.y, wp('ball_l').y, wp('ball_r').y) };
+  };
+  const restFeet = feet();
+  const backDepth = Math.max(0.05, wp('Head').y - restFeet.y) / 16;
   // Each hand's palm normal, in the hand bone's own space: the side the thumb
   // sits on, square to the hand's length and its knuckle line.
   const palmLocal = new Map<'l' | 'r', THREE.Vector3>();
@@ -217,6 +253,21 @@ export function buildExerciseClip(
       b.updateMatrixWorld(true);
     }
     if (pose.hands) for (const sd of ['l', 'r'] as const) poseHand(sd, pose.hands, bodyFrame);
+    if (grip === 'stand') {
+      // Feet stay planted: the hips drop and push back over them.
+      const f = feet();
+      root.position.x += restFeet.x - f.x;
+      root.position.z += restFeet.z - f.z;
+      root.position.y += restFeet.y - f.y;
+      model.updateMatrixWorld(true);
+      return;
+    }
+    if (grip === 'lie') {
+      // On the back: the pelvis rests a back's depth above the bench top.
+      root.position.y += gripY + backDepth - wp('pelvis').y;
+      model.updateMatrixWorld(true);
+      return;
+    }
     // Grip: move the body so the bar's centre sits where each hand holds it.
     const y = (anchor('l').y + anchor('r').y) / 2;
     root.position.y += gripY - y;

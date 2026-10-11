@@ -104,3 +104,40 @@ describe('the bar stays in the hands, never through the body', () => {
     expect(Math.abs(feetZ(0.45) - feetZ(0.95))).toBeGreaterThan(0.25);
   });
 });
+
+describe('gym lifts', () => {
+  const pos = (o: THREE.Object3D, n: string) => o.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+  it('squats keep the feet planted and drop the hips', () => {
+    const clip = buildExerciseClip('squat', figure(), 0);
+    const up = poseAt(clip, 0), low = poseAt(clip, 1.3);
+    const sole = (f: THREE.Object3D) => Math.min(y(f, 'foot_l'), y(f, 'foot_r'), y(f, 'ball_l'), y(f, 'ball_r'));
+    const rest = sole(figure());
+    for (const f of [up, low]) {
+      expect(sole(f)).toBeCloseTo(rest, 2);
+      expect(Math.abs(pos(f, 'foot_l').z)).toBeLessThan(0.05);
+    }
+    expect(y(low, 'pelvis')).toBeLessThan(y(up, 'pelvis') - 0.25);
+  });
+  it('curls bring the hands up to the shoulders and back down', () => {
+    const clip = buildExerciseClip('curl', figure(), 0);
+    expect(palmY(poseAt(clip, 1.0))).toBeGreaterThan(palmY(poseAt(clip, 0)) + 0.25);
+  });
+  it('bench press lies on the bench and pushes the bar up from the chest', () => {
+    const clip = buildExerciseClip('benchpress', figure(), 0.5);
+    const up = poseAt(clip, 0), down = poseAt(clip, 1.2);
+    for (const f of [up, down]) {
+      // Lying: head and pelvis level, just above the bench.
+      expect(Math.abs(y(f, 'Head') - y(f, 'pelvis'))).toBeLessThan(0.15);
+      expect(y(f, 'pelvis')).toBeGreaterThan(0.5);
+      expect(y(f, 'pelvis')).toBeLessThan(0.75);
+    }
+    expect(palmY(up)).toBeGreaterThan(palmY(down) + 0.2);
+    expect(palmY(down)).toBeGreaterThan(y(down, 'spine_01') - 0.05); // the bar stays above the chest
+  });
+  it('counts reps for every exercise', () => {
+    for (const k of Object.keys(EXERCISES) as (keyof typeof EXERCISES)[]) {
+      const keys = EXERCISES[k].keys;
+      expect(repsDone(k, keys[keys.length - 1].t * 3 + 0.01)).toBe(3);
+    }
+  });
+});

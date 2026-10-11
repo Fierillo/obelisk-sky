@@ -24,6 +24,8 @@ export const HATS = ['none', 'cap', 'beanie', 'tophat', 'crown', 'headband', 'bo
 export const PETS = [
   'beaver', 'bee', 'bunny', 'caterpillar', 'cat', 'chick', 'cow', 'crab', 'deer', 'dog', 'elephant', 'fish',
   'fox', 'giraffe', 'hog', 'koala', 'lion', 'monkey', 'panda', 'parrot', 'penguin', 'pig', 'polar', 'tiger',
+  // Nostr's purple ostrich: built in code (world/nostrich.ts), not a Kenney model.
+  'nostrich',
 ] as const;
 export const HAT_COLORS = ['#b4f953', '#ff4d5e', '#38bdf8', '#fbbf24', '#c084fc', '#f472b6', '#fafafa', '#171717'] as const;
 
