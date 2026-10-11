@@ -38,6 +38,28 @@ const TiltShift = (horizontal: boolean) => ({
 });
 
 /** A light colour grade: a touch more saturation and contrast, soft vignette. */
+/**
+ * Right after the scene: no pixel brighter than a bright highlight, and no
+ * NaN. The scene renders into half floats (max 65504), and a sun glint on
+ * very smooth glass or metal (three's GGX peaks near 40000× the light) can
+ * overflow to infinity; the bloom blur turns that into NaN and NaN spreads
+ * over the whole frame: a black flash. One cheap pass makes it impossible.
+ */
+export const SafeColor = {
+  uniforms: { tDiffuse: { value: null }, uMax: { value: 8 } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uMax; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      // NaN fails every comparison, so it falls to 0 here; ±infinity clamps.
+      vec3 ok = vec3(greaterThanEqual(c.rgb, vec3(0.0)));
+      c.rgb = clamp(c.rgb * ok, 0.0, uMax);
+      c.a = c.a >= 0.0 ? min(c.a, 1.0) : 1.0;
+      gl_FragColor = c;
+    }`,
+};
+
 const Grade = {
   uniforms: { tDiffuse: { value: null }, uSat: { value: 1.08 }, uContrast: { value: 1.04 }, uVignette: { value: 0.22 } },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -109,6 +131,7 @@ export class Post {
     this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, this.target);
     this.composer.addPass(new RenderPass(scene, camera));
+    this.composer.addPass(new ShaderPass(SafeColor));
     this.gtao = new GTAOPass(scene, camera, 1, 1);
     this.gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.3, thickness: 1.5, scale: 1.1, samples: 12 });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });

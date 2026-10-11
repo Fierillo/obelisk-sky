@@ -29,6 +29,7 @@ import { DmPanel } from './ui/dmPanel';
 import { DmStore } from './nostr/dm';
 import { PrivateCall } from './voice/privateCall';
 import { MembersStore } from './nostr/members';
+import { relayIdentity } from './nostr/branding';
 import { PresenceTracker, type Presence } from './nostr/presence';
 import { SPANS, binCounts, dragRange, peakLabel, spanSeconds, timeToX, topPeaks, type SpanId } from './ui/history';
 import { PrefsStore, type Prefs } from './prefs';
@@ -120,8 +121,30 @@ function knownRelays(): string[] {
   return [...new Set([...SUGGESTED_RELAYS, ...prefs.get().customRelays, activeRelay()])];
 }
 
+/** The relay switcher shows the relay as it presents itself: its operator's
+ *  branding or NIP-11 name and icon (nostr/branding.ts); the domain until then. */
+let relayShown = '';
 function renderRelayName(): void {
-  ($('relay-name') as HTMLElement).textContent = activeRelay().replace(/^wss?:\/\//, '');
+  const relay = activeRelay();
+  const host = relay.replace(/^wss?:\/\//, '').replace(/\/$/, '');
+  const btn = $('relay-btn');
+  btn.title = `Switch relay · ${host}`;
+  if (relayShown === relay) return;
+  relayShown = relay;
+  ($('relay-name') as HTMLElement).textContent = host;
+  btn.querySelector('.relay-ico img')?.remove();
+  btn.classList.remove('has-icon');
+  // Deferred: this first runs during start-up, before the hub exists.
+  setTimeout(() => void relayIdentity(hub, relay).then((id) => {
+    if (relayShown !== relay) return;
+    if (id.name) ($('relay-name') as HTMLElement).textContent = id.name;
+    if (!id.icon) return;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.onload = () => { if (relayShown === relay) { btn.querySelector('.relay-ico')?.prepend(img); btn.classList.add('has-icon'); } };
+    img.src = id.icon;
+  }), 0);
 }
 
 /** Go to another relay's village: new subscriptions, AUTH only there. */

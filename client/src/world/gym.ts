@@ -99,11 +99,11 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
 
   // Walls: brick back wall with a mirror, glass sides and front on a low brick base.
   const brick = mat(0xa4553f, { roughness: 0.9 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0.1, depthWrite: false });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.22, roughness: 0.18, metalness: 0.1, depthWrite: false });
   const frame = mat(0x2b2e34, { metalness: 0.5, roughness: 0.4 });
   const walls: THREE.Mesh[] = [];
   walls.push(add(box(W, H, T, brick), 0, F + H / 2, -D / 2 + T / 2));
-  const mirror = add(box(W * 0.7, 0.62, 0.012, mat(0xdfe8ee, { metalness: 0.95, roughness: 0.06 })), 0, F + 0.55, -D / 2 + T + 0.007);
+  const mirror = add(box(W * 0.7, 0.62, 0.012, mat(0xdfe8ee, { metalness: 0.9, roughness: 0.2 })), 0, F + 0.55, -D / 2 + T + 0.007);
   mirror.castShadow = false;
   const DOOR = 0.62;
   const glassWall = (x: number, z: number, w: number, d: number) => {

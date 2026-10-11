@@ -9,10 +9,10 @@
 // white glowing ball with the gold ₿ sits on the lawn; red and violet
 // uplights at night. No front fence.
 //
-// On the left, flush with the front, the older wing on flat ground: a
-// wooden arched garage door in stone, a band of leaded windows that glow
-// orange at night, a wooden balcony under a tiled lean-to roof that runs
-// along the street, its high edge tucked under the main roof's eaves.
+// On the left, flush with the front and as tall, the older wing on flat
+// ground: a wooden arched garage door in stone, a band of leaded windows
+// that glow orange at night, a wooden balcony, and a slate gable like the
+// others turned to face the side, joining the house's roof as a cross gable.
 //
 // You can walk up the steps and in: the door swings open on the living
 // room (lacryptaInterior.ts), the fireplace under the neon ₿.
@@ -386,7 +386,8 @@ export function buildLaCryptaHouse(): LandmarkBuild {
   const leaded = new THREE.MeshStandardMaterial({ color: 0x3a2a20, map: leadedTexture(), emissive: 0xff7a30, emissiveIntensity: 0.05, roughness: 0.3, metalness: 0.1 });
   {
     const wx0 = -W / 2 - WING_W, wx1 = -W / 2, wc = (wx0 + wx1) / 2;
-    const wingH = 2.25;
+    // As tall as the house: its eaves line up with the gables'.
+    const wingH = eaves;
     // The body behind the balcony, and its front block (garage, windows).
     brickWall(WING_W, wingH, D + WING_Z - 0.3, wc, wingH / 2, (WING_Z - 0.3 - D) / 2);
     const base = new THREE.Mesh(new THREE.BoxGeometry(WING_W, 0.74, 0.3), baseStone);
@@ -458,43 +459,20 @@ export function buildLaCryptaHouse(): LandmarkBuild {
       plant.position.set(x, 1.5, WING_Z - 0.08);
       shell.add(plant);
     }
-    // A tiled lean-to roof running along the street (across the gables'
-    // ridges): low over the balcony, rising to the back, where its high edge
-    // tucks under the main roof's eaves against the house's side wall, so
-    // the two roofs never meet.
-    const hiY = eaves - 0.13;
-    const z0 = WING_Z + 0.14, z1 = -D - 0.04;
-    const rx0 = wx0 - 0.1, rx1 = wx1 - 0.004;
-    const dy = hiY - wingH, dz = z0 - z1;
-    const lean = new THREE.Mesh(new THREE.BoxGeometry(rx1 - rx0, 0.05, Math.hypot(dy, dz)), flat(0x4f4a3a, { roughness: 0.85 }));
-    lean.position.set((rx0 + rx1) / 2, (wingH + hiY) / 2 + 0.03, (z0 + z1) / 2);
-    lean.rotation.x = Math.atan2(dy, dz);
-    lean.castShadow = lean.receiveShadow = true;
-    shell.add(lean);
-    overhead.push(lean);
-    // Tile courses: thin battens across the slope.
-    for (let i = 1; i < 6; i++) {
-      const k = i / 6;
-      const batten = new THREE.Mesh(new THREE.BoxGeometry(rx1 - rx0, 0.018, 0.03), flat(0x3f3a2e));
-      batten.position.set((rx0 + rx1) / 2, wingH + dy * k + 0.065, z0 - dz * k);
-      batten.rotation.x = lean.rotation.x;
-      shell.add(batten);
-      overhead.push(batten);
-    }
-    // Brick fills the wing's side and back up to the sloping roof.
-    const infill = new THREE.Shape();
-    infill.moveTo(0, 0);
-    // Local +x runs to the back once turned (rotation.y = π/2 maps x to −z).
-    infill.lineTo(WING_Z - z1 - 0.04, 0);
-    infill.lineTo(WING_Z - z1 - 0.04, hiY - wingH - 0.01);
-    infill.closePath();
-    const side = new THREE.Mesh(new THREE.ShapeGeometry(infill), new THREE.MeshStandardMaterial({ map: brickTexture(D, 0.5), roughness: 0.95, side: THREE.DoubleSide }));
-    side.rotation.y = Math.PI / 2;
-    side.position.set(wx0, wingH, WING_Z);
-    side.castShadow = true;
-    shell.add(side);
-    overhead.push(side);
-    brickWall(WING_W, hiY - wingH, T, wc, (wingH + hiY) / 2, -D + T / 2);
+    // Its roof: a gable like the house's two, the same height and pitch of
+    // slate, but turned: the ridge runs along the street and the triangle
+    // faces the side. It runs on into the left bay's roof as a cross gable
+    // (valleys where the two meet), as a real wing joins its house.
+    const wingRoof = gableRoof(D, L - wx0);
+    wingRoof.rotation.y = -Math.PI / 2;
+    wingRoof.position.set(wx0, eaves, -D / 2);
+    const wingGable = gableWall(D);
+    wingGable.rotation.y = -Math.PI / 2;
+    wingGable.position.set(wx0 - 0.003, eaves, -D / 2);
+    shell.add(wingRoof, wingGable);
+    overhead.push(wingRoof, wingGable);
+    // Brick from the balcony's beam up to the eaves, across its front.
+    brickWall(WING_W, eaves - 2.27, T, wc, (2.27 + eaves) / 2, WING_Z - T / 2);
   }
 
   // The grassy mound: from the door's level down to the street, in front

@@ -560,3 +560,7 @@ body.side-open .feed { opacity: 0; pointer-events: none; }
 }
 /* A private call's bar stays clear of the chat or DM panel on the right. */
 body.chat-open .pcall { left: calc((100% - 400px) / 2); }
+
+.relay-ico img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 9px; }
+.relay-btn.has-icon .relay-ico { background: #fff; border-color: rgba(255, 255, 255, 0.25); }
+.relay-btn.has-icon .relay-ico svg { visibility: hidden; }
