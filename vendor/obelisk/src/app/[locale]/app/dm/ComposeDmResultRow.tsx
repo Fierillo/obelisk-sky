@@ -1,0 +1,38 @@
+'use client';
+
+import Text from '@/components/ui/layout/Text';
+import Button from '@/components/ui/buttons/Button';
+import type { UserHit } from '@/constants/identity/user-search';
+import { useIdentitySearchResult } from '@/hooks/identity/useIdentitySearchResult';
+import UserAvatar from '@/components/ui/media/UserAvatar';
+import { CheckBadgeIcon } from '@/assets/icons';
+
+/** One person in the desktop "New message" results. */
+export function ComposeDmResultRow({ hit, active, onPick, onHover }: { hit: UserHit; active: boolean; onPick: () => void; onHover: () => void }) {
+  const row = useIdentitySearchResult(hit);
+  return (
+    <Button
+      variant="bare"
+      type="button"
+      role="option"
+      aria-selected={active}
+      onClick={onPick}
+      onMouseEnter={onHover}
+      className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${active ? 'bg-lc-green/15' : 'hover:bg-white/5'}`}
+      data-testid="dm-compose-result"
+    >
+      <UserAvatar pubkey={hit.pubkey} picture={row.picture} name={row.name} size={8} />
+      <span className="min-w-0 flex-1">
+        <Text size="sm" tone="default" weight="semibold" className="block truncate">{row.name}</Text>
+        <span
+          className={`flex items-center gap-1 text-[11px] ${row.verified ? 'text-lc-green' : 'text-lc-muted'}`}
+          data-testid="dm-compose-result-sub"
+          data-nip05-state={row.nip05State}
+        >
+          {row.verified && <CheckBadgeIcon size={11} />}
+          <span className="truncate">{row.sub}</span>
+        </span>
+      </span>
+    </Button>
+  );
+}

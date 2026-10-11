@@ -1,0 +1,52 @@
+{
+  "call": {
+    "voice": "Chamada de voz",
+    "video": "Videochamada",
+    "incomingVoice": "Chamada recebida",
+    "incomingVideo": "Videochamada recebida",
+    "acceptVideo": "Aceitar com vídeo",
+    "acceptVoice": "Aceitar",
+    "decline": "Recusar",
+    "hangup": "Desligar",
+    "calling": "Chamando…",
+    "connecting": "Conectando…",
+    "reconnecting": "Reconectando…",
+    "mute": "Silenciar",
+    "unmute": "Ativar microfone",
+    "cameraOn": "Ligar câmera",
+    "cameraOff": "Desligar câmera",
+    "flip": "Trocar câmera",
+    "shareScreen": "Compartilhar tela",
+    "stopShare": "Parar de compartilhar",
+    "encrypted": "Criptografada de ponta a ponta",
+    "ipHidden": "Seu IP está oculto, via relé",
+    "close": "Fechar",
+    "needsDms": "Ative as mensagens diretas para fazer chamadas",
+    "ended": {
+      "local-hangup": "Chamada encerrada",
+      "remote-hangup": "Chamada encerrada",
+      "declined": "Chamada recusada",
+      "busy": "Ocupado em outra chamada",
+      "no-answer": "Sem resposta",
+      "missed": "Chamada perdida",
+      "cancelled": "Chamada cancelada",
+      "answered-elsewhere": "Atendida em outro dispositivo",
+      "connect-failed": "Não foi possível conectar a chamada",
+      "connection-lost": "Conexão perdida",
+      "error": "A chamada falhou"
+    },
+    "fullscreen": "Tela cheia",
+    "exitFullscreen": "Sair da tela cheia",
+    "error": {
+      "load": "Não foi possível carregar a chamada.",
+      "mic": "Microfone indisponível.",
+      "send": "Não foi possível enviar a chamada.",
+      "camera": "Não foi possível ligar ou desligar a câmera.",
+      "flip": "Não foi possível trocar de câmera.",
+      "screen": "Não foi possível compartilhar a tela.",
+      "permission": "O acesso ao microfone ou à câmera está bloqueado. Permita no navegador e tente de novo.",
+      "noDevice": "Nenhum microfone ou câmera foi encontrado.",
+      "deviceBusy": "Outro app está usando seu microfone ou sua câmera."
+    }
+  }
+}

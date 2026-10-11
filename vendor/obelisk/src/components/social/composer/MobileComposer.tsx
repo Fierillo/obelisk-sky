@@ -1,0 +1,216 @@
+'use client';
+
+/**
+ * The mobile composer: a full-screen sheet.
+ *
+ * Why not the desktop card in a modal, which is what it used to be: on a
+ * phone the software keyboard takes roughly half the viewport, so a centred
+ * card with a toolbar, a textarea, a live preview and a button row leaves a
+ * writing slot a couple of lines tall, and every control is a 24px text
+ * target. The inline "¿Qué está pasando?" row had the same problem from the
+ * other end: it promised an input and delivered a link to one.
+ *
+ * So: the sheet owns the screen. Post is a thumb-sized pill in the header
+ * where every phone client puts it, the text area is everything between the
+ * header and the keyboard, and the tools are one row of icons that sits
+ * directly above the keyboard instead of scrolling away with the content.
+ *
+ * Back closes it (`useHistoryDismiss`), so the OS swipe-back gesture does
+ * what it does everywhere else on a phone rather than leaving the app.
+ *
+ * Publishing is `useNoteDraft`, shared with the desktop composer: the two
+ * differ in presentation only.
+ */
+
+import TextArea from '@/components/ui/forms/TextArea';
+import type { Event as NostrEvent } from 'nostr-tools';
+import { useUserMetadata } from '@/services/nostr-bridge';
+import { useMyPubkey } from '@/hooks/session/useSession';
+import { useTranslations } from 'next-intl';
+import { useHistoryDismiss } from '@/hooks/common/useHistoryDismiss';
+import Button from '@/components/ui/buttons/Button';
+import RemoteImage from '@/components/ui/media/RemoteImage';
+import UserAvatar from '@/components/ui/media/UserAvatar';
+import { useNoteDraft, type ComposerMode } from '@/hooks/social/composer/useNoteDraft';
+import Spinner from '@/components/ui/feedback/Spinner';
+import ErrorState from '@/components/ui/feedback/ErrorState';
+import FileInput from '@/components/ui/forms/FileInput';
+import ComposerToolButton from './ComposerToolButton';
+import { AlertTriangleIcon, ImageIcon, LinkIcon } from '@/assets/icons';
+import Text from '@/components/ui/layout/Text';
+
+/** Twitter-ish soft limit: past this, a note is an article. */
+const SOFT_LIMIT = 1000;
+
+export default function MobileComposer({
+  mode = { kind: 'note' },
+  onPublished,
+  onClose,
+}: {
+  mode?: ComposerMode;
+  onPublished?: (event: NostrEvent) => void;
+  onClose: () => void;
+}) {
+  const t = useTranslations();
+  const myPubkey = useMyPubkey();
+  const meta = useUserMetadata(myPubkey ?? '');
+  const dismiss = useHistoryDismiss(true, onClose);
+
+  const {
+    draft, setDraft, attachments, busy, error, sensitive, setSensitive,
+    textareaRef, fileRef, wrapSelection, uploadFiles, onPaste,
+    submit, placeholder, canPost,
+  } = useNoteDraft({ mode, onPublished, autoFocus: true });
+
+  const parent = mode.kind === 'reply' ? mode.parent : mode.kind === 'quote' ? mode.target : null;
+  const title = mode.kind === 'reply'
+    ? t('social.replyAction')
+    : mode.kind === 'quote'
+      ? t('social.quote')
+      : t('social.profileFeed.createPost');
+
+  return (
+    <div
+      className="fixed inset-0 z-[130] flex flex-col bg-lc-black"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      data-testid="mobile-composer"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-lc-border px-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={dismiss}
+          data-testid="mobile-composer-cancel"
+        >
+          {t('common.cancel')}
+        </Button>
+        <Text size="sm" weight="semibold" tone="default" truncate="truncate" className="min-w-0 flex-1 text-center">
+          {title}
+        </Text>
+        {/*
+          Post lives in the header, not at the bottom: the keyboard owns the
+          bottom of a phone, and a submit button that the keyboard covers is
+          a button that doesn't exist.
+        */}
+        <Button
+          variant="pill"
+          size="xs"
+          onClick={() => void submit()}
+          disabled={!canPost}
+          className="shrink-0"
+          data-testid="mobile-composer-post"
+        >
+          {busy ? t('common.saving') : t('social.profileFeed.publish')}
+        </Button>
+      </header>
+
+      {parent && (
+        <div className="shrink-0 border-b border-lc-border px-4 py-2" data-testid="mobile-composer-context">
+          <Text as="p" variant="caption" className="line-clamp-2">{parent.content}</Text>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 gap-3 overflow-y-auto px-4 py-3">
+        {myPubkey && (
+          <UserAvatar
+            pubkey={myPubkey}
+            picture={meta?.picture ?? null}
+            size={9}
+            name={meta?.displayName || meta?.name || undefined}
+            alt=""
+            className="shrink-0"
+          />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/*
+            `text-base` is load-bearing on iOS: Safari zooms the viewport when
+            a focused input's font is under 16px, and the page never zooms
+            back out.
+          */}
+          <TextArea variant="bare" resize="none"
+            ref={textareaRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onPaste={onPaste}
+            placeholder={placeholder}
+            className="min-h-40 w-full flex-1 bg-transparent text-base leading-relaxed text-lc-white outline-none placeholder:text-lc-muted"
+            data-testid="composer-input"
+          />
+
+          {attachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2" data-testid="mobile-composer-attachments">
+              {attachments.map((attachment) => (
+                <RemoteImage
+                  key={attachment.url}
+                  src={attachment.url}
+                  alt=""
+                  className="h-20 w-20 rounded-lg border border-lc-border object-cover"
+                />
+              ))}
+            </div>
+          )}
+
+          {error && <ErrorState className="mt-2">{error}</ErrorState>}
+        </div>
+      </div>
+
+      {/*
+        The tool row is pinned above the keyboard rather than living in the
+        scroll area, because the one moment you want the image button is
+        while you're typing, which is exactly when a scrolled toolbar is
+        off-screen.
+      */}
+      <div
+        className="flex shrink-0 items-center gap-1 border-t border-lc-border px-2 py-2"
+        style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
+      >
+        <ComposerToolButton
+          label={t('social.profileFeed.upload')}
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          testId="mobile-composer-upload"
+        >
+          <ImageIcon size={20} />
+        </ComposerToolButton>
+        <FileInput
+          ref={fileRef}
+          accept="image/*,video/*,audio/*"
+          multiple
+          aria-label={t('social.profileFeed.upload')}
+          onChange={(event) => void uploadFiles(event.target.files)}
+          data-testid="composer-files"
+        />
+
+        <ComposerToolButton label={t('chat.composer.bold')} onClick={() => wrapSelection('**')} testId="mobile-composer-bold">
+          <span className="text-base font-bold">B</span>
+        </ComposerToolButton>
+        <ComposerToolButton label={t('chat.composer.link')} onClick={() => wrapSelection('[', '](https://)')} testId="mobile-composer-link">
+          <LinkIcon size={20} />
+        </ComposerToolButton>
+        <ComposerToolButton
+          label={t('social.markSensitive')}
+          onClick={() => setSensitive(!sensitive)}
+          pressed={sensitive}
+          testId="composer-sensitive"
+        >
+          <AlertTriangleIcon size={20} />
+        </ComposerToolButton>
+
+        {busy && <Spinner size="sm" className="ml-1" />}
+
+        <span
+          className={`ml-auto pr-2 text-[11px] tabular-nums ${
+            draft.length > SOFT_LIMIT ? 'text-amber-400' : 'text-lc-muted'
+          }`}
+          data-testid="mobile-composer-count"
+        >
+          {draft.length}
+        </span>
+      </div>
+    </div>
+  );
+}
+

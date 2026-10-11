@@ -1,0 +1,47 @@
+'use client';
+
+import type { ReactEventHandler } from 'react';
+import { useMediaThumb } from '@/hooks/media/library/useMediaThumb';
+import RemoteImage from '@/components/ui/media/RemoteImage';
+import { ImageOffIcon } from '@/assets/icons';
+
+/**
+ * Picker/library thumbnail that never degrades into its own shortcode.
+ *
+ * A bare `<img>` paints its `alt` text when the source fails (dead GIPHY link,
+ * pruned Blossom blob, pack host offline), so broken media showed up in the
+ * emoji/GIF/sticker grids as the literal text `:party_cat:` where the media
+ * should be. Render a neutral glyph instead and keep the name for assistive
+ * tech and the tooltip only.
+ */
+export default function MediaThumb({ src, alt, className, onLoad, onError }: {
+  src: string;
+  alt: string;
+  className?: string;
+  onLoad?: ReactEventHandler<HTMLImageElement>;
+  onError?: () => void;
+}) {
+  const { broken, failed } = useMediaThumb(src, onError);
+
+  if (broken) {
+    return (
+      <span
+        data-testid="media-thumb-fallback"
+        className={'flex items-center justify-center text-lc-muted ' + (className ?? '')}
+        {...(alt ? { role: 'img', 'aria-label': alt, title: alt } : { 'aria-hidden': true })}
+      >
+        <ImageOffIcon size={null} className="h-[1.25em] w-[1.25em]" />
+      </span>
+    );
+  }
+
+  return (
+    <RemoteImage
+      src={src}
+      alt={alt}
+      className={className}
+      onLoad={onLoad}
+      onError={failed}
+    />
+  );
+}

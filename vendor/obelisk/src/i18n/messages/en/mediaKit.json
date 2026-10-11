@@ -1,0 +1,142 @@
+{
+  "about": "About Obelisk",
+  "logos": "Logos & icons",
+  "banners": "Banners",
+  "hero": "Hero / Open Graph",
+  "xHeader": "X (Twitter) header",
+  "linkedin": "LinkedIn cover",
+  "github": "GitHub social preview",
+  "square": "Square / Instagram",
+  "widePill": "Wide pill",
+  "mono": "Minimal mono",
+  "palette": "Palette - La Crypta",
+  "typography": "Typography",
+  "shortCopy": "Short copy",
+  "embeds": "HTML embeds",
+  "bannerPill": "Banner pill",
+  "openGraph": "Open Graph",
+  "openGraphPreview": "Open Graph preview",
+  "contact": "Contact & links",
+  "guidelines": "Brand guidelines",
+  "eyebrow": "Press & Media",
+  "title": "Obelisk Media Kit",
+  "download": "Download",
+  "openOgPng": "Open OG PNG",
+  "openApp": "Open app →",
+  "openInNewTab": "Open in new tab",
+  "website": "Website",
+  "defaultRelay": "Default relay",
+  "rule": {
+    "dark": "Use the logo on dark backgrounds (#0a0a0a) whenever possible.",
+    "green": "Use lime green (#b4f953) only for accents and CTAs.",
+    "capital": "Write “Obelisk” with a capital O.",
+    "noSkew": "Don’t skew or rotate the logo.",
+    "noColors": "Don’t replace the green with other bright colors.",
+    "noEffects": "Don’t add your own shadows, outlines, or gradients.",
+    "clearSpace": "Respect the clear-space area: at least the symbol’s height around it.",
+    "lowContrast": "Don’t place the logo on low-contrast backgrounds (mid-grays)."
+  },
+  "needAnythingElse": "Need anything else? Open an issue or reach out via Nostr.",
+  "intro": "Logos, banners, icons, palette and copy ready to use. Everything you need to write about, embed or share Obelisk.",
+  "backHome": "← Back to home",
+  "copy": "Copy",
+  "copied": "Copied ✓",
+  "downloadPng": "Download PNG",
+  "rendering": "Rendering…",
+  "poweredByBadge": "\"Powered by Obelisk\" badge",
+  "do": "✓ Do",
+  "dont": "✕ Don’t",
+  "desc": {
+    "about": "Short and long pitch, ready to copy.",
+    "logos": "Right-click → Save image as… or use the Download button.",
+    "banners": "Banners rendered in HTML/CSS: copy the snippets, screenshot them, or use the linked PNGs.",
+    "palette": "Design-system tokens. Tap the HEX to copy it.",
+    "typography": "System UI / Inter for everything. Weights: 400, 600, 700, 800.",
+    "shortCopy": "Quick-use phrases.",
+    "embeds": "Paste these snippets anywhere to link to Obelisk with style.",
+    "og": "Runtime-generated share preview and ready-to-paste meta tags.",
+    "contact": "Where to find us if you need anything else for a story or integration.",
+    "guidelines": "Simple rules to keep the brand consistent."
+  },
+  "nav": {
+    "about": "About Obelisk",
+    "logos": "Logos & icons",
+    "banners": "Banners",
+    "colors": "Colors",
+    "typography": "Typography",
+    "copy": "Copy",
+    "embeds": "HTML embeds",
+    "og": "Open Graph",
+    "contact": "Contact",
+    "guidelines": "Guidelines"
+  },
+  "spec": {
+    "hero": "1200 × 630 - share preview",
+    "xHeader": "1500 × 500 - profile cover (3:1)",
+    "linkedin": "1584 × 396 - profile background (4:1)",
+    "github": "1280 × 640 - repository preview",
+    "square": "1080 × 1080 - post or avatar",
+    "widePill": "footer / sponsor row",
+    "mono": "for print / merch"
+  },
+  "pitch": {
+    "short": "Short pitch",
+    "long": "Long pitch"
+  },
+  "shortCopyLabel": {
+    "name": "Name",
+    "tagline": "Tagline",
+    "oneLiner": "One-liner",
+    "url": "URL",
+    "github": "GitHub"
+  },
+  "color": {
+    "black": {
+      "name": "Black",
+      "usage": "Background"
+    },
+    "dark": {
+      "name": "Dark",
+      "usage": "Cards"
+    },
+    "border": {
+      "name": "Border",
+      "usage": "Dividers"
+    },
+    "muted": {
+      "name": "Muted",
+      "usage": "Secondary text"
+    },
+    "white": {
+      "name": "White",
+      "usage": "Primary text"
+    },
+    "green": {
+      "name": "Green",
+      "usage": "Accent / CTA"
+    }
+  },
+  "asset": {
+    "logo": "Obelisk Logo (PNG)",
+    "favicon": "Favicon (PNG)",
+    "appIcon": "App Icon - 192px (PNG)",
+    "animated": "Animated Obelisk (GIF)",
+    "animatedLarge": "Animated Obelisk - Large",
+    "animatedMedium": "Animated Obelisk - Medium",
+    "animatedSmall": "Animated Obelisk - Small",
+    "laCryptaLogo": "La Crypta Logo (PNG)",
+    "laCryptaBanner": "La Crypta Banner (PNG)",
+    "wotLogoPng": "Nostr WoT Logo (PNG)",
+    "wotLogoSvg": "Nostr WoT Logo (SVG)",
+    "wotLogoClean": "Nostr WoT Logo - Clean (PNG)"
+  },
+  "brand": {
+    "tagline": "Group chat powered by Nostr identity",
+    "oneLiner": "No emails. No passwords. Cryptographic identity.",
+    "shortPitch": "Obelisk is a Discord-style group chat where identity comes from your Nostr keypair. No emails, no passwords: cryptographic identity only.",
+    "longPitch": "Obelisk is a fully relay-only group chat application built on Nostr. It implements NIP-29 for groups, NIP-04/NIP-17 for direct messages, P2P voice via WebRTC signaled over Nostr plus SFU voice for big rooms, and Lightning zaps via NIP-57, paid through Nostr Wallet Connect (NIP-47) or a WebLN browser extension. No backend, no database: the client talks directly to relays.",
+    "monoTagline": "Nostr-native group chat",
+    "poweredBy": "Powered by Obelisk",
+    "ogComment": "Add these tags to your page head for sharing previews"
+  }
+}

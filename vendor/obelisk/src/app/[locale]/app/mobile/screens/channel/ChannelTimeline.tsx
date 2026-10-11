@@ -1,0 +1,62 @@
+'use client';
+
+import type { JsMessage, JsReaction, MessagesStatus } from '@/services/nostr-bridge';
+import { useTranslations } from 'next-intl';
+import { ChannelTimelineItem } from './ChannelTimelineItem';
+import type { TimelineItem } from '@/utils/chat/timeline/channel-timeline';
+import { ChatIcon } from '@/assets/icons';
+
+type Props = {
+  items: ReadonlyArray<TimelineItem>;
+  messagesStatus: MessagesStatus;
+  /** Reply parents resolved once per batch, so a row's `parent` prop is stable. */
+  messagesById: ReadonlyMap<string, JsMessage>;
+  reactions: Readonly<Record<string, ReadonlyArray<JsReaction>>>;
+  myPubkey: string | null;
+  isAdmin: boolean;
+  groupId: string;
+  /** Both must be stable callbacks: every memoized row receives them. */
+  onLongPress: (m: JsMessage) => void;
+  onAvatar: (pubkey: string) => void;
+};
+
+/** The phone channel's messages with day dividers, or the loading / empty state. */
+export function ChannelTimeline({
+  items, messagesStatus, messagesById, reactions, myPubkey, isAdmin, groupId, onLongPress, onAvatar,
+}: Props) {
+  const t = useTranslations();
+  if (items.length === 0) {
+    // Bridge-owned confidence: only render "No messages yet" once
+    // the retry ladder has exhausted (status === 'empty-confirmed').
+    // 'loading' and 'empty-unconfirmed' both keep the spinner up.
+    return messagesStatus !== 'empty-confirmed' ? (
+      <div className="empty-state" data-testid="messages-loading">
+        <div className="lc-spinner" aria-hidden="true" />
+        <div className="empty-state-title">{t('mobile.channel.loadingMessages')}</div>
+      </div>
+    ) : (
+      <div className="empty-state">
+        <ChatIcon size={null} strokeWidth={1.5} />
+        <div className="empty-state-title">{t('mobile.channel.noMessages')}</div>
+        <div className="empty-state-desc">{t('mobile.channel.noMessagesDescription')}</div>
+      </div>
+    );
+  }
+  return (
+    <>
+      {items.map((it) => (
+        <ChannelTimelineItem
+          key={it.key}
+          item={it}
+          messagesById={messagesById}
+          reactions={reactions}
+          myPubkey={myPubkey}
+          isAdmin={isAdmin}
+          groupId={groupId}
+          onLongPress={onLongPress}
+          onAvatar={onAvatar}
+        />
+      ))}
+    </>
+  );
+}

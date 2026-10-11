@@ -1,0 +1,280 @@
+// Calisthenics clips, built from pose descriptions on the people's skeleton.
+//
+// The animation library has no push-ups, pull-ups, muscle-ups or dips, so
+// each is a handful of key poses. A pose aims limbs in character space
+// ("upper arm points up and a little out") and may pitch the whole body;
+// each aimed bone is rotated from its rest pose onto its target direction,
+// parents first. Then the body is moved so the hands land where they grip
+// (the bar, the parallel bars, the floor): the clips are built for a given
+// bar height, so a grip meets the real bar whatever the skeleton's
+// proportions. For push-ups the body's pitch is also solved so hands and
+// toes both touch the floor.
+//
+// Aims are in the body's own frame (y toward the head, z toward the chest,
+// x to the character's left), so they pitch with the body; the frame is
+// checked against the skeleton itself when building.
+
+import * as THREE from 'three';
+
+export type ExerciseKind = 'pushup' | 'pullup' | 'muscleup' | 'dip';
+
+type Dir = [number, number, number];
+export interface PoseSpec {
+  /** Forward pitch of the whole body, radians (+ leans the head forward). */
+  pitch?: number;
+  /** Bone → direction its first child should lie along. */
+  aim: Record<string, Dir>;
+  /** The left hand (the right mirrors it): which way it points, which way the
+   *  palm faces, and how far the fingers curl (radians per joint). */
+  hands?: { dir: Dir; palm: Dir; curl: number };
+}
+interface Key { t: number; pose: PoseSpec }
+
+/** Mirror a left-side aim onto the right (x flips). */
+const both = (bone: string, d: Dir): Record<string, Dir> => ({ [`${bone}_l`]: d, [`${bone}_r`]: [-d[0], d[1], d[2]] });
+const merge = (...parts: Record<string, Dir>[]): Record<string, Dir> => Object.assign({}, ...parts);
+
+// Hands. Hanging: pointing up past the bar, palm forward, fingers over it.
+// On a bar from above: pointing down, palm to the bar. On parallel bars:
+// pointing down the inside of the bar, palm facing in, fingers round it.
+// Push-ups: flat on the floor, fingers forward.
+const OVER_BAR = { dir: [0, 1, 0] as Dir, palm: [0, 0, 1] as Dir, curl: 0.85 };
+const ON_BAR = { dir: [0, -1, 0.3] as Dir, palm: [0, 0.3, 1] as Dir, curl: 0.8 };
+const ON_PARALLEL = { dir: [0.15, -1, 0.15] as Dir, palm: [-1, -0.1, 0] as Dir, curl: 0.95 };
+const FLAT = { dir: [0, 1, 0] as Dir, palm: [0, 0, 1] as Dir, curl: 0.08 };
+
+const STRAIGHT_LEGS = merge(both('thigh', [0.03, -1, 0]), both('calf', [0, -1, -0.02]));
+const HANG_LEGS = merge(both('thigh', [0.04, -1, 0.15]), both('calf', [0, -1, -0.35]));
+const TUCK_LEGS = merge(both('thigh', [0.05, -1, 0.35]), both('calf', [0, -0.6, -0.8]));
+
+const HANG: PoseSpec = { hands: OVER_BAR, aim: merge(both('upperarm', [0.15, 1, 0]), both('lowerarm', [0.08, 1, 0]), HANG_LEGS) };
+const PULLED: PoseSpec = { hands: OVER_BAR, aim: merge(both('upperarm', [0.8, -0.5, 0.15]), both('lowerarm', [-0.05, 1, 0.05]), TUCK_LEGS) };
+// Kipping: the body swings under the bar, chest through (arch), then legs
+// forward (hollow), and the swing back drives the pull.
+const KIP_ARCH: PoseSpec = { pitch: -0.3, hands: OVER_BAR, aim: merge(both('upperarm', [0.15, 1, 0]), both('lowerarm', [0.08, 1, 0]), both('thigh', [0.04, -1, -0.35]), both('calf', [0, -1, -0.45])) };
+const KIP_HOLLOW: PoseSpec = { pitch: 0.28, hands: OVER_BAR, aim: merge(both('upperarm', [0.15, 1, 0]), both('lowerarm', [0.08, 1, 0]), both('thigh', [0.05, -0.75, 0.65]), both('calf', [0, -0.9, 0.3])) };
+const TRANSITION: PoseSpec = { pitch: 0.45, hands: { dir: [0, 0.7, 1], palm: [0, -1, 0.7], curl: 0.8 }, aim: merge(both('upperarm', [0.3, -0.5, -0.8]), both('lowerarm', [0.05, 0.25, 1]), TUCK_LEGS) };
+const SUPPORT: PoseSpec = { pitch: 0.12, hands: ON_BAR, aim: merge(both('upperarm', [0.14, -1, -0.08]), both('lowerarm', [0.06, -1, 0.1]), HANG_LEGS) };
+const DIP_TOP: PoseSpec = { pitch: 0.1, hands: ON_PARALLEL, aim: merge(both('upperarm', [0.12, -1, -0.05]), both('lowerarm', [0.06, -1, 0.1]), both('thigh', [0.03, -1, 0.25]), both('calf', [0, -0.35, -1])) };
+const DIP_LOW: PoseSpec = { pitch: 0.35, hands: ON_PARALLEL, aim: merge(both('upperarm', [0.15, -0.4, -1]), both('lowerarm', [0.05, -1, 0.2]), both('thigh', [0.03, -1, 0.35]), both('calf', [0, -0.3, -1])) };
+// Push-ups are lying down: in the body's own frame "forward" is toward the floor.
+const PLANK_UP: PoseSpec = { hands: FLAT, aim: merge(both('upperarm', [0.15, 0.05, 1]), both('lowerarm', [0.03, 0, 1]), STRAIGHT_LEGS) };
+const PLANK_DOWN: PoseSpec = { hands: FLAT, aim: merge(both('upperarm', [0.8, -0.45, 0.3]), both('lowerarm', [0.05, 0.2, 1]), STRAIGHT_LEGS) };
+
+/** Key poses and timing (seconds) of one repetition; the last key returns to the first. */
+export const EXERCISES: Record<ExerciseKind, { keys: Key[]; grip: 'bar' | 'floor'; label: string }> = {
+  pullup: { label: 'Pull-ups', grip: 'bar', keys: [{ t: 0, pose: HANG }, { t: 0.9, pose: PULLED }, { t: 1.3, pose: PULLED }, { t: 2.3, pose: HANG }] },
+  muscleup: {
+    label: 'Muscle-ups', grip: 'bar',
+    keys: [
+      { t: 0, pose: HANG }, { t: 0.45, pose: KIP_ARCH }, { t: 0.95, pose: KIP_HOLLOW }, { t: 1.4, pose: KIP_ARCH },
+      { t: 1.85, pose: PULLED }, { t: 2.2, pose: TRANSITION }, { t: 2.65, pose: SUPPORT }, { t: 3.3, pose: SUPPORT },
+      { t: 3.9, pose: PULLED }, { t: 4.5, pose: HANG },
+    ],
+  },
+  dip: { label: 'Dips', grip: 'bar', keys: [{ t: 0, pose: DIP_TOP }, { t: 0.9, pose: DIP_LOW }, { t: 1.2, pose: DIP_LOW }, { t: 2.1, pose: DIP_TOP }] },
+  pushup: { label: 'Push-ups', grip: 'floor', keys: [{ t: 0, pose: PLANK_UP }, { t: 0.8, pose: PLANK_DOWN }, { t: 1.0, pose: PLANK_DOWN }, { t: 1.8, pose: PLANK_UP }] },
+};
+
+interface Rest { bone: THREE.Bone; q: THREE.Quaternion; p: THREE.Vector3 }
+
+/**
+ * Build the looping clip for `kind`, gripping at `gripY` (model units above
+ * the feet: the bar's height, or 0 for the floor). `model` is a person's
+ * model in its rest pose (not animated), unscaled.
+ */
+export function buildExerciseClip(
+  kind: ExerciseKind, model: THREE.Object3D, gripY: number, name = `${kind}@${gripY.toFixed(2)}`,
+  /** Half the distance between the two grips (parallel bars), model units. */
+  gripHalf?: number,
+  /** The bar's radius (model units): the fingers close round it. */
+  barR = 0.06,
+): THREE.AnimationClip {
+  const bones = new Map<string, THREE.Bone>();
+  model.traverse((o) => { if ((o as THREE.Bone).isBone) bones.set(o.name, o as THREE.Bone); });
+  const rest: Rest[] = [...bones.values()].map((bone) => ({ bone, q: bone.quaternion.clone(), p: bone.position.clone() }));
+  const root = bones.get('root') ?? rest[0].bone;
+  const restore = () => { for (const r of rest) { r.bone.quaternion.copy(r.q); r.bone.position.copy(r.p); } model.updateMatrixWorld(true); };
+  restore();
+
+  // Which way is left and forward in this skeleton's own space?
+  const wp = (n: string) => bones.get(n)!.getWorldPosition(new THREE.Vector3());
+  const sx = Math.sign(wp('hand_l').x - wp('hand_r').x) || 1;
+  const sz = Math.sign(wp('ball_l').z - wp('foot_l').z) || 1;
+  const toModel = (d: Dir) => new THREE.Vector3(d[0] * sx, d[1], d[2] * sz).normalize();
+  const pitchAxis = new THREE.Vector3(sx, 0, 0); // +pitch takes the head toward +z (forward)
+  if (sz < 0) pitchAxis.negate();
+
+  const alignForward = kind === 'pullup' || kind === 'muscleup';
+  const onFloor = kind === 'pushup';
+  // Each hand's palm normal, in the hand bone's own space: the side the thumb
+  // sits on, square to the hand's length and its knuckle line.
+  const palmLocal = new Map<'l' | 'r', THREE.Vector3>();
+  for (const sd of ['l', 'r'] as const) {
+    const hand = bones.get(`hand_${sd}`), mid = bones.get(`middle_01_${sd}`), idx = bones.get(`index_01_${sd}`), pk = bones.get(`pinky_01_${sd}`), th = bones.get(`thumb_02_${sd}`);
+    if (!hand || !mid || !idx || !pk || !th) continue;
+    const dir = wp(mid.name).sub(wp(hand.name)).normalize();
+    const across = wp(idx.name).sub(wp(pk.name)).normalize();
+    let n = new THREE.Vector3().crossVectors(dir, across).normalize();
+    if (n.dot(wp(th.name).sub(wp(hand.name))) < 0) n.negate();
+    palmLocal.set(sd, n.applyQuaternion(hand.getWorldQuaternion(new THREE.Quaternion()).invert()));
+  }
+  const child = (b: THREE.Bone) => b.children.find((c) => (c as THREE.Bone).isBone) as THREE.Bone | undefined;
+  const order = [...bones.values()]; // traverse order: parents before children
+
+  /** Turn bone `b` so the direction to its first child is `to` (world). */
+  const aimTo = (b: THREE.Bone, to: THREE.Vector3) => {
+    const c = child(b);
+    if (!c) return;
+    const from = c.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+    const delta = new THREE.Quaternion().setFromUnitVectors(from, to.clone().normalize());
+    const world = b.getWorldQuaternion(new THREE.Quaternion()).premultiply(delta);
+    b.quaternion.copy((b.parent as THREE.Object3D).getWorldQuaternion(new THREE.Quaternion()).invert().multiply(world));
+    b.updateMatrixWorld(true);
+  };
+  /**
+   * Where a hand holds what it grips (world): on a bar, just off the
+   * knuckles on the palm side by the bar's radius (inside the curled
+   * fingers); on the floor, under the middle of the palm.
+   */
+  const anchor = (sd: 'l' | 'r'): THREE.Vector3 => {
+    const hand = bones.get(`hand_${sd}`)!, mid = bones.get(`middle_01_${sd}`), pl = palmLocal.get(sd);
+    if (!mid || !pl) return wp(hand.name);
+    const P = pl.clone().applyQuaternion(hand.getWorldQuaternion(new THREE.Quaternion()));
+    if (onFloor) return wp(hand.name).lerp(wp(mid.name), 0.5).addScaledVector(P, 0.015);
+    return wp(mid.name).addScaledVector(P, barR + 0.02);
+  };
+  /** Point a hand and face its palm, then curl the fingers toward the palm. */
+  const poseHand = (sd: 'l' | 'r', h: NonNullable<PoseSpec['hands']>, frame: THREE.Quaternion) => {
+    const hand = bones.get(`hand_${sd}`), mid = bones.get(`middle_01_${sd}`), pl = palmLocal.get(sd);
+    if (!hand || !mid || !pl) return;
+    const m = (d: Dir): Dir => (sd === 'l' ? d : [-d[0], d[1], d[2]]);
+    const D = toModel(m(h.dir)).applyQuaternion(frame);
+    const P = toModel(m(h.palm)).applyQuaternion(frame);
+    P.addScaledVector(D, -P.dot(D)).normalize();
+    // 1) the hand's length onto D
+    const Q = hand.getWorldQuaternion(new THREE.Quaternion());
+    const cur = wp(mid.name).sub(wp(hand.name)).normalize();
+    const q1 = new THREE.Quaternion().setFromUnitVectors(cur, D);
+    // 2) then roll about D until the palm faces P
+    const palm = pl.clone().applyQuaternion(Q).applyQuaternion(q1);
+    palm.addScaledVector(D, -palm.dot(D)).normalize();
+    const ang = Math.atan2(new THREE.Vector3().crossVectors(palm, P).dot(D), palm.dot(P));
+    const q2 = new THREE.Quaternion().setFromAxisAngle(D, ang);
+    const world = Q.clone().premultiply(q1).premultiply(q2);
+    hand.quaternion.copy((hand.parent as THREE.Object3D).getWorldQuaternion(new THREE.Quaternion()).invert().multiply(world));
+    hand.updateMatrixWorld(true);
+    // Fingers: each joint bends further toward the palm.
+    for (const f of ['index', 'middle', 'ring', 'pinky']) {
+      for (let k = 1; k <= 3; k++) {
+        const b = bones.get(`${f}_0${k}_${sd}`);
+        if (!b) continue;
+        const a = h.curl * k * 0.95;
+        aimTo(b, D.clone().multiplyScalar(Math.cos(a)).addScaledVector(P, Math.sin(a)));
+      }
+    }
+    for (let k = 2; k <= 3; k++) {
+      const b = bones.get(`thumb_0${k}_${sd}`);
+      if (!b) continue;
+      const tc = b.children.find((c) => (c as THREE.Bone).isBone);
+      if (!tc) continue;
+      const cur2 = tc.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+      aimTo(b, cur2.multiplyScalar(Math.cos(h.curl * 0.5)).addScaledVector(P, Math.sin(h.curl * 0.5)));
+    }
+  };
+
+  const apply = (pose0: PoseSpec, pitch: number, spread = 0) => {
+    // `spread` pushes both arms outward (x) to reach grips wider than the pose's.
+    const pose: PoseSpec = spread ? { ...pose0, aim: { ...pose0.aim } } : pose0;
+    if (spread) {
+      for (const [bone, d] of Object.entries(pose0.aim)) {
+        if (!/^(upperarm|lowerarm)_/.test(bone)) continue;
+        const out = bone.endsWith('_l') ? 1 : -1;
+        pose.aim[bone] = [d[0] + out * spread, d[1], d[2]];
+      }
+    }
+    restore();
+    const bodyFrame = new THREE.Quaternion().setFromAxisAngle(pitchAxis, pitch);
+    if (pitch) {
+      const pq = new THREE.Quaternion().setFromAxisAngle(pitchAxis, pitch);
+      // Pitch about the hips: rotate the root, then put the pelvis back where it was.
+      const hip = wp('pelvis');
+      root.quaternion.premultiply(pq);
+      model.updateMatrixWorld(true);
+      root.position.add(hip.sub(wp('pelvis')));
+      model.updateMatrixWorld(true);
+    }
+    for (const b of order) {
+      const target = pose.aim[b.name];
+      if (!target) continue;
+      const c = child(b);
+      if (!c) continue;
+      const from = c.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+      const delta = new THREE.Quaternion().setFromUnitVectors(from, toModel(target).applyQuaternion(bodyFrame));
+      const world = b.getWorldQuaternion(new THREE.Quaternion()).premultiply(delta);
+      const parentWorld = (b.parent as THREE.Object3D).getWorldQuaternion(new THREE.Quaternion());
+      b.quaternion.copy(parentWorld.invert().multiply(world));
+      b.updateMatrixWorld(true);
+    }
+    if (pose.hands) for (const sd of ['l', 'r'] as const) poseHand(sd, pose.hands, bodyFrame);
+    // Grip: move the body so the bar's centre sits where each hand holds it.
+    const y = (anchor('l').y + anchor('r').y) / 2;
+    root.position.y += gripY - y;
+    if (alignForward) {
+      // The bar is straight above (or in front of) the spot: hold it there
+      // front-to-back too, so the body swings under it and never through it.
+      root.position.z -= (anchor('l').z + anchor('r').z) / 2;
+    }
+    model.updateMatrixWorld(true);
+  };
+
+  /** Push-ups: the pitch that puts toes on the floor when hands are. */
+  const solvePitch = (pose: PoseSpec) => {
+    let best = 1.4, bestErr = Infinity;
+    for (let p = 1.0; p <= 1.62; p += 0.02) {
+      apply(pose, p);
+      const toes = Math.min(wp('ball_l').y, wp('ball_r').y);
+      const err = Math.abs(toes - gripY);
+      if (err < bestErr) { bestErr = err; best = p; }
+    }
+    return best;
+  };
+
+  const spec = EXERCISES[kind];
+  const times: number[] = [];
+  const qs = new Map<string, number[]>();
+  const rootPos: number[] = [];
+  for (const k of spec.keys) {
+    const pitch = spec.grip === 'floor' ? solvePitch(k.pose) : (k.pose.pitch ?? 0);
+    let spread = 0;
+    if (gripHalf) {
+      // Widen the arms until each palm sits over its bar.
+      const half = () => Math.abs(anchor('l').x - anchor('r').x) / 2;
+      let lo = -0.4, hi = 2.5;
+      for (let i = 0; i < 24; i++) {
+        spread = (lo + hi) / 2;
+        apply(k.pose, pitch, spread);
+        if (half() < gripHalf) lo = spread; else hi = spread;
+      }
+    }
+    apply(k.pose, pitch, spread);
+    times.push(k.t);
+    for (const r of rest) {
+      const arr = qs.get(r.bone.name) ?? [];
+      arr.push(r.bone.quaternion.x, r.bone.quaternion.y, r.bone.quaternion.z, r.bone.quaternion.w);
+      qs.set(r.bone.name, arr);
+    }
+    rootPos.push(root.position.x, root.position.y, root.position.z);
+  }
+  restore();
+  const tracks: THREE.KeyframeTrack[] = [];
+  for (const [bone, values] of qs) tracks.push(new THREE.QuaternionKeyframeTrack(`${bone}.quaternion`, times, values));
+  tracks.push(new THREE.VectorKeyframeTrack(`${root.name}.position`, times, rootPos));
+  return new THREE.AnimationClip(name, times[times.length - 1], tracks);
+}
+
+/** Repetitions completed after `seconds` of a looping exercise. */
+export function repsDone(kind: ExerciseKind, seconds: number): number {
+  const keys = EXERCISES[kind].keys;
+  return Math.floor(seconds / keys[keys.length - 1].t);
+}

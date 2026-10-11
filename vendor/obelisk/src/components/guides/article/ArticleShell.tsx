@@ -1,0 +1,101 @@
+import Container from '@/components/ui/layout/Container';
+import Link from '@/components/ui/navigation/Link';
+import type { ReactNode } from 'react';
+import type { Locale } from '@/i18n';
+import type { GuideFrontmatter } from '@/services/guides/guides';
+import { formatDate } from '@/utils/format/format';
+import { useTranslations } from 'next-intl';
+import { HERO_REGISTRY } from '@/assets/illustrations/guides';
+import Heading from '@/components/ui/layout/Heading';
+import Text from '@/components/ui/layout/Text';
+
+interface Props {
+  frontmatter: GuideFrontmatter;
+  locale: Locale;
+  slug: string;
+  readMinutes: number;
+  backHref: string;
+  backLabel: string;
+  readTimeLabel: string;
+  updatedLabel: string;
+  children: ReactNode;
+}
+
+export default function ArticleShell({
+  frontmatter,
+  locale,
+  readMinutes,
+  backHref,
+  backLabel,
+  readTimeLabel,
+  updatedLabel,
+  children,
+}: Props) {
+  const t = useTranslations();
+  const Hero = HERO_REGISTRY[frontmatter.heroComponent];
+  const published = new Date(frontmatter.publishedAt);
+  const updated = new Date(frontmatter.updatedAt || frontmatter.publishedAt);
+
+  return (
+    <Container width="3xl" as="article" className="px-6 pt-28 pb-24" data-testid="article-shell">
+      <Link
+        href={backHref}
+        variant="text" className="inline-flex items-center gap-2 text-sm font-medium mb-6"
+      >
+        <span aria-hidden="true">←</span> {backLabel}
+      </Link>
+
+      <header className="mb-8">
+        <div className="flex items-center gap-2 flex-wrap mb-4">
+          {frontmatter.tags?.map((t) => (
+            <span
+              key={t}
+              className="text-[11px] px-2 py-0.5 rounded-full bg-lc-olive-dark text-lc-green font-mono"
+            >
+              #{t}
+            </span>
+          ))}
+        </div>
+        <Heading as="h1" variant="page" className="leading-tight">
+          {frontmatter.title}
+        </Heading>
+        <Text as="p" variant="lead" className="mt-4 leading-relaxed">{frontmatter.description}</Text>
+
+        <div className="mt-6 flex items-center gap-4 text-xs text-lc-muted flex-wrap">
+          <span>
+            {readMinutes} {readTimeLabel}
+          </span>
+          <span aria-hidden="true">·</span>
+          <Text as="time" dateTime={updated.toISOString()}>
+            {updatedLabel} {formatDate(locale, updated, {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            })}
+          </Text>
+        </div>
+      </header>
+
+      {Hero && (
+        <div className="mb-10 rounded-xl overflow-hidden border border-lc-border bg-lc-dark">
+          <Hero />
+        </div>
+      )}
+
+      <div className="guide-prose">{children}</div>
+
+      <footer className="mt-16 pt-8 border-t border-lc-border text-sm text-lc-muted">
+        <Text as="time" dateTime={published.toISOString()}>
+          {/*
+            One key with a {date} slot, not the word "Published" glued onto a
+            formatted date: Spanish and Portuguese both need the date
+            somewhere English doesn't put it.
+          */}
+          {t('guides.publishedOn', {
+            date: formatDate(locale, published, { year: 'numeric', month: 'long', day: 'numeric' }),
+          })}
+        </Text>
+      </footer>
+    </Container>
+  );
+}

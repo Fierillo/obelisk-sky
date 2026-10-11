@@ -1,0 +1,57 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": false,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "next-intl": [
+        "client/src/shims/next-intl.ts"
+      ],
+      "@/i18n/navigation": [
+        "client/src/shims/navigation.ts"
+      ],
+      "@/hooks/session/useSession": [
+        "client/src/shims/session/useSession.ts"
+      ],
+      "@/services/common/clipboard": [
+        "client/src/shims/clipboard.ts"
+      ],
+      "@/services/media/blossom": [
+        "client/src/shims/blossom.ts"
+      ],
+      "@/services/nostr-bridge": [
+        "client/src/shims/bridge.ts"
+      ],
+      "@/components/media/library/LazyMediaLibraryModal": [
+        "client/src/shims/chat/LazyMediaLibraryModal.tsx"
+      ],
+      "@/services/wot/engine": [
+        "client/src/shims/wot-engine.ts"
+      ],
+      "@/*": [
+        "vendor/obelisk/src/*"
+      ]
+    }
+  },
+  "include": [
+    "server",
+    "client/src",
+    "client/vite.config.ts"
+  ]
+}

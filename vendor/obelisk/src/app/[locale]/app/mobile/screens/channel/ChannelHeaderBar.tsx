@@ -1,0 +1,56 @@
+'use client';
+
+import Button from '@/components/ui/buttons/Button';
+import MobileSigningIndicator from '@/components/feedback/MobileSigningIndicator';
+import { useTranslations } from 'next-intl';
+import BackButton from '@/components/ui/buttons/BackButton';
+import { GearIcon, SearchIcon, UsersIcon } from '@/assets/icons';
+
+/** The phone channel header: category line, back, name, and the search / settings / members buttons. */
+export function ChannelHeaderBar({ header, back, onSearch, isChannelAdmin, onOpenSettings, openMembers }: {
+  header: { category: string | null; channel: string };
+  back: () => void;
+  onSearch: () => void;
+  isChannelAdmin: boolean;
+  onOpenSettings: () => void;
+  openMembers: () => void;
+}) {
+  const t = useTranslations();
+  return (
+    <div className="chat-header chat-header-compact">
+      {/* The category rides its own line, so the ellipsis lands here
+          rather than on the channel name. */}
+      {header.category && (
+        <div className="chat-breadcrumb" data-testid="channel-category">
+          <span className="space-name-bc">{header.category}</span>
+        </div>
+      )}
+      <div className="chat-row">
+        <div className="chat-title-block">
+          <BackButton onClick={back} />
+          <div className="chat-channel" data-testid="channel-name"><span className="hash">#</span>{header.channel}</div>
+        </div>
+        <div className="chat-actions">
+          <MobileSigningIndicator />
+          <Button variant="mobileIcon" className="action-search" onClick={onSearch} aria-label={t('common.search')}>
+            <SearchIcon size={null} />
+          </Button>
+          {isChannelAdmin && (
+            <Button
+              variant="mobileIcon"
+              className="action-menu"
+              onClick={onOpenSettings}
+              aria-label={t('shell.desktop.channel.settings')}
+              data-testid="mobile-channel-settings-btn"
+            >
+              <GearIcon size={null} strokeWidth={1.5} />
+            </Button>
+          )}
+          <Button variant="mobileIcon" className="action-members" onClick={openMembers} aria-label={t('mobile.members.members')}>
+            <UsersIcon size={null} />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

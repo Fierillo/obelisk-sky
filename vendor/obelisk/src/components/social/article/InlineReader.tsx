@@ -1,0 +1,60 @@
+'use client';
+
+import Text from '@/components/ui/layout/Text';
+
+/**
+ * A thread or an article, opened in place of the feed rather than on top of
+ * it.
+ *
+ * Threads and articles used to open in a modal whenever the host had no
+ * pane to hand them to: on a phone, in a split pane, on a profile. A modal
+ * is the wrong shape for both: an article is a page of prose that wants the
+ * full column and its own scrollbar, and a thread is a conversation you
+ * scroll and reply in. Boxing either inside a centred card with a dimmed
+ * backdrop gave it less room than the feed it came from and made the feed
+ * behind it look reachable when it wasn't.
+ *
+ * This takes over the surface it was opened from, with the back control
+ * where the reader already looks for it, and the OS back gesture wired to
+ * the same exit.
+ */
+
+import { useHistoryDismiss } from '@/hooks/common/useHistoryDismiss';
+import { useTranslations } from 'next-intl';
+import Button from '@/components/ui/buttons/Button';
+import { ChevronLeftIcon } from '@/assets/icons';
+
+export default function InlineReader({
+  title,
+  onBack,
+  children,
+  testId = 'inline-reader',
+}: {
+  title: string;
+  onBack: () => void;
+  children: React.ReactNode;
+  testId?: string;
+}) {
+  const t = useTranslations();
+  const dismiss = useHistoryDismiss(true, onBack);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid={testId}>
+      {/* `h-14`/`px-5`: the app's header contract, same as every other one. */}
+      <div className="lc-header-surface flex h-14 shrink-0 items-center gap-2 border-b border-lc-border px-5">
+        <Button
+          variant="toolIcon"
+          onClick={dismiss} className="-ml-1"
+          aria-label={t('common.back')}
+          title={t('common.back')}
+          data-testid="inline-reader-back"
+        >
+          <ChevronLeftIcon size={20} strokeWidth={2.5} />
+        </Button>
+        <Text size="sm" weight="semibold" tone="default" truncate="truncate" className="min-w-0">{title}</Text>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </div>
+  );
+}

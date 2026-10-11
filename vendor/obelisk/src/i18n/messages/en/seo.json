@@ -1,0 +1,120 @@
+{
+  "site": {
+    "title": "Obelisk: the Discord alternative with Nostr login",
+    "description": "Obelisk is the Discord alternative for crypto and privacy communities. Log in with your Nostr keys, no email or password: servers, voice and encrypted DMs.",
+    "jsonLd": {
+      "websiteDescription": "Discord alternative with Nostr login: no email, no password. Group chat for crypto and privacy communities.",
+      "appDescription": "Discord alternative powered by Nostr identity. Log in with your keys: no email, no password. Includes servers, channels, voice, encrypted DMs and Web of Trust spam resistance."
+    }
+  },
+  "app": {
+    "title": "Open the app: group chat signed with your keys",
+    "description": "Open Obelisk in your browser: group chat, voice channels and encrypted DMs over Nostr relays, signed with your own keys. No email, no password, no account."
+  },
+  "voice": {
+    "title": "Voice room: test a peer-to-peer call on Nostr",
+    "description": "Join a test voice room on Obelisk: pick a room name, open it on two devices with two Nostr keys and talk peer to peer over WebRTC, signaling on the relay."
+  },
+  "features": {
+    "title": "Features: Nostr group chat, calls and games",
+    "description": "NIP-29 groups, voice messages, sticker packs, relay-native games, a mobile app, P2P video and large SFU calls, all on Nostr with portable profiles you own."
+  },
+  "help": {
+    "title": "Help: Nostr login, relays, communities, zaps",
+    "description": "Help with Obelisk: logging in with Nostr keys, joining and running relay-based communities, privacy, Lightning payments and Bitcoin zaps, in plain words."
+  },
+  "helpLocalData": {
+    "title": "Help: what Obelisk keeps on your device",
+    "description": "What Obelisk stores in your browser and why, how to remove each part from Settings or from the browser, and what clearing your device does not remove."
+  },
+  "mediaKit": {
+    "title": "Media kit: Obelisk logos, banners and colors",
+    "description": "The Obelisk press and media kit: logos, banners, icons, brand colors, ready-made copy and HTML banners you can embed, free to use when you write about it."
+  },
+  "guides": {
+    "title": "Guides to Obelisk, Nostr and relay communities",
+    "description": "Long-form guides to Obelisk: how Nostr identity works, running a relay community, Web of Trust spam resistance, Bitcoin zaps, games and what comes next."
+  },
+  "notFound": {
+    "title": "Page not found: it never existed or it moved",
+    "description": "There is no page at this address on Obelisk. It may have moved or never existed; head back to the home page to find the guides, the help pages and the app."
+  },
+  "desktop": {
+    "title": "Desktop tour: a Discord alternative on Nostr",
+    "description": "A tour of Obelisk on desktop: NIP-29 group chat, publications, voice channels over an SFU, encrypted DMs and Lightning zaps. No email and no password.",
+    "gallery": {
+      "name": "Obelisk on desktop: screenshot tour",
+      "description": "Screenshots of Obelisk, a Nostr-powered Discord alternative, captured in a desktop browser.",
+      "shot": "Obelisk desktop: {name}"
+    },
+    "shots": {
+      "chat": "Group chat with member list on desktop",
+      "publications": "NIP-29 publications on desktop",
+      "voice": "Large voice channel via SFU on desktop"
+    }
+  },
+  "mobile": {
+    "title": "Mobile tour: Discord-style group chat on Nostr",
+    "description": "Obelisk on your phone: NIP-29 group chat, voice channels, encrypted DMs and Lightning zaps, installable as an app. No email, no password, just your keys.",
+    "gallery": {
+      "name": "Obelisk on mobile: screenshot tour",
+      "description": "Screenshots of Obelisk, a Nostr-powered Discord alternative, captured on a phone.",
+      "shot": "Obelisk mobile: {name}"
+    },
+    "shots": {
+      "channels": "Servers and channels on mobile",
+      "voice": "Voice channel with video on mobile (SFU)",
+      "login": "Sign in with Nostr on mobile",
+      "profile": "Your Nostr profile on mobile"
+    }
+  },
+  "relay": {
+    "ogTagline": "No emails. No passwords. Cryptographic identity.",
+    "fallbackTitle": "Obelisk relay",
+    "fallbackSubtitle": "Nostr group chat",
+    "pageTitle": "Join this Nostr relay on Obelisk group chat",
+    "fallbackDescription": "Someone shared a Nostr relay with you. Open it in Obelisk to join its group chat: log in with your Nostr keys, no email and no password, and start talking.",
+    "laCrypta": {
+      "title": "La Crypta on Obelisk: Nostr group chat",
+      "description": "Join La Crypta on Obelisk: the La Crypta community's group chat on its own Nostr relay. Log in with your keys, no email and no password, and start talking.",
+      "ogSubtitle": "on Obelisk - Nostr group chat"
+    }
+  },
+  "notes": {
+    "notFound": "Note not found",
+    "title": "{name} on Obelisk",
+    "untitledArticle": "Untitled article",
+    "sharedMedia": "Shared media"
+  },
+  "profile": {
+    "notFound": "Profile not found",
+    "onNostr": "{name} on Nostr"
+  },
+  "tag": {
+    "notFound": "Tag not found",
+    "description": "Notes tagged #{tag} on Nostr, via Obelisk."
+  },
+  "manifest": {
+    "description": "Discord-style group chat with Nostr cryptographic identity. No emails, no passwords."
+  },
+  "card": {
+    "alt": "Obelisk preview card: {title}",
+    "label": {
+      "landing": "Group chat on Nostr",
+      "app": "The app",
+      "features": "Features",
+      "desktop": "Desktop tour",
+      "mobile": "Mobile tour",
+      "help": "Help",
+      "helpLocalData": "Help: your data",
+      "mediaKit": "Media kit",
+      "guides": "Guides",
+      "guide": "Guide",
+      "note": "Note on Nostr",
+      "profile": "Nostr profile",
+      "tag": "Hashtag",
+      "relay": "Nostr relay",
+      "voice": "Voice room"
+    }
+  }
+}

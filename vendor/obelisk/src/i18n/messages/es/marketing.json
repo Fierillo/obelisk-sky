@@ -1,0 +1,342 @@
+{
+  "nav": {
+    "features": "Funciones",
+    "howItWorks": "Cómo funciona",
+    "roadmap": "Roadmap",
+    "guides": "Guías",
+    "faq": "FAQ",
+    "launchApp": "Entrar",
+    "app": "App",
+    "disconnect": "Desconectar",
+    "profile": "Perfil",
+    "anon": "Anónimo"
+  },
+  "learn": {
+    "heading": "Aprendé",
+    "subtitle": "Cómo funciona un cliente 100% Nostr, qué son los grupos NIP-29 y cómo usar tu propio relay.",
+    "cta": "Ver todas las guías",
+    "card": {
+      "whatIsObelisk": {
+        "title": "¿Qué es Obelisk?",
+        "desc": "Chat grupal estilo Discord sin backend. Solo tus claves Nostr y los relays que vos elegís."
+      },
+      "howObeliskWorks": {
+        "title": "Cómo funciona",
+        "desc": "Solo frontend, eventos firmados, grupos NIP-29. Sin base de datos, sin servidores, sin cuentas."
+      },
+      "webOfTrust": {
+        "title": "Usá tu propio relay",
+        "desc": "Vos elegís los relays. Cambialos, sumá más o corré el tuyo. La app sigue siendo la misma."
+      },
+      "futureNostrRelays": {
+        "title": "Qué ya salió y qué viene",
+        "desc": "Canales de voz, login con app firmante (NIP-46), cifrado NIP-44 y la app instalable ya están. Lo próximo: un build estático y notificaciones push."
+      },
+      "bitcoinZaps": {
+        "title": "Zaps de Bitcoin en el chat",
+        "desc": "Mandá sats desde cualquier mensaje con zaps NIP-57, pagados con Nostr Wallet Connect o una extensión del navegador. Sin plataforma, sin comisiones."
+      },
+      "adminCli": {
+        "title": "Admins y roles NIP-29",
+        "desc": "Manejá una comunidad desde la app: ajustes del canal para los admins, ajustes del servidor para el operador del relay. Cada acción es un evento NIP-29 que el relay hace cumplir."
+      }
+    }
+  },
+  "faq": {
+    "heading": "Preguntas frecuentes",
+    "subtitle": "Respuestas cortas sobre el nuevo Obelisk, ahora 100% Nostr.",
+    "q1": {
+      "question": "¿Qué es Obelisk?",
+      "answer": "Obelisk es un cliente de chat grupal estilo Discord, de código abierto, que funciona completamente sobre Nostr. No hay backend ni base de datos: cada mensaje es un evento Nostr firmado que se publica directo en los relays que vos elegís. Los grupos son grupos NIP-29, los DMs son mensajes directos cifrados de Nostr y tu cuenta es un par de claves Nostr."
+    },
+    "q2": {
+      "question": "¿Me tengo que registrar en algún servidor?",
+      "answer": "No. Obelisk es un frontend. No hay registro, ni email, ni contraseña, ni cuenta de Obelisk. Entrás con una clave Nostr y la app habla directo con los relays que tengas configurados: Obelisk no tiene backend de aplicación ni base de datos. Los mensajes viven en los relays. Obelisk opera dos relays públicos; todos los demás los controla su propio operador."
+    },
+    "q3": {
+      "question": "¿Qué relays usa Obelisk?",
+      "answer": "Los que vos le digas. Por ahora, las instalaciones nuevas incluyen wss://public.obelisk.ar y wss://lacrypta-relay.obelisk.ar, los dos operados por Obelisk. Podés agregar, quitar o reemplazar relays desde la barra de relays. Todos los demás son independientes y los controla su propio operador."
+    },
+    "q4": {
+      "question": "¿Necesito email o número de teléfono?",
+      "answer": "No. Obelisk no tiene formulario de registro. Entrás con una clave Nostr: con una extensión del navegador (NIP-07), con una app firmante como Amber o nsec.app por NIP-46 (escaneás un código QR o pegás un link de bunker), o pegando tu nsec. La pantalla de login también puede generarte una clave nueva."
+    },
+    "q5": {
+      "question": "¿Cómo están implementados los grupos?",
+      "answer": "Obelisk usa NIP-29: grupos administrados por el relay. Canales, miembros, admins y expulsiones son eventos NIP-29 estándar que el relay hace cumplir. Sirve cualquier relay compatible con NIP-29. Podés montar tu propio relay, correr uno privado para tu comunidad o usar uno público."
+    },
+    "q6": {
+      "question": "¿Mis mensajes están cifrados?",
+      "answer": "Los mensajes directos están cifrados de punta a punta. Obelisk manda por defecto mensajes NIP-17 con gift wrap, así los relays no pueden ver con quién hablás, y podés volver una conversación a NIP-04 si el cliente de la otra persona lo necesita. La protección post-cuántica viene activada: cada vez que tu firmante y la otra persona tienen claves post-cuánticas, el mensaje además va sellado con un sobre post-cuántico (la podés desactivar en la configuración). Los mensajes de grupo están firmados pero son públicos en el relay: cualquiera a quien el relay deje entrar los puede leer, igual que en un canal de Discord. Si necesitás un grupo cerrado, corré un relay privado."
+    },
+    "q7": {
+      "question": "¿Puedo hostear Obelisk por mi cuenta?",
+      "answer": "Sí. Obelisk es una app de Next.js sin base de datos que mantener ni servicio de backend propio: su parte de servidor es chica y sirve las páginas, pone los encabezados de seguridad, arma las vistas previas de links y muestra las páginas públicas de notas y perfiles. Correla en local con `npm run dev`, desplegala en cualquier host de Node con `npm run build` y `npm start`, o exponela con un túnel. Un build estático para GitHub Pages, S3 o un CDN estático sigue en el roadmap."
+    },
+    "q8": {
+      "question": "¿Cómo obtengo una clave Nostr?",
+      "answer": "Podés generar una desde la pantalla de login. Si querés un firmante aparte, instalá una extensión NIP-07 como Alby o nos2x, o en el celular usá Amber (Android) o nsec.app. Cuidá bien tu nsec: es tu cuenta y nadie puede recuperarla por vos."
+    },
+    "q9": {
+      "question": "¿Y los canales de voz?",
+      "answer": "La voz ya está. Los canales de voz usan WebRTC con señalización por eventos Nostr, así que no hay servidor Socket.io ni servidor de Obelisk en el medio. Las salas chicas conectan los navegadores directo (una malla entre participantes de hasta cuatro personas); los canales de voz para salas grandes pasan por un SFU mediasoup que elige el admin del canal, para mucha más gente. Los dos tienen audio, cámara y pantalla compartida."
+    },
+    "q10": {
+      "question": "¿Funciona en el celular?",
+      "answer": "Sí. Obelisk es una web app responsive que funciona en cualquier navegador móvil moderno, y la podés instalar en la pantalla de inicio como PWA desde el menú del navegador, sin tienda de apps. En el celular, entrá con una app firmante por NIP-46 (Amber, nsec.app), generá una clave nueva o pegá tu nsec."
+    },
+    "q11": {
+      "question": "¿Qué guarda Obelisk en mi dispositivo y cómo lo borro?",
+      "answer": "Para abrir rápido y acordarse de dónde estabas, Obelisk guarda en tu navegador una copia de canales, mensajes y perfiles, tus posiciones de lectura, tus preferencias, tu login y los mensajes directos que abriste (los dos cifrados) y los archivos de la propia app. Nada de esto se manda a un servidor de Obelisk: no hay servidor de cuentas, y lo que publicás vive en los relays (la única excepción es Google Analytics, que el sitio carga solo si lo permitís y que podés apagar cuando quieras). Borrá lo que quieras en Ajustes > Datos en este dispositivo, o todo junto con Borrar todo de este dispositivo. También podés cerrar sesión, borrar los datos del sitio obelisk.ar desde la configuración del navegador, o usar una ventana privada, que no guarda nada cuando la cerrás. Borrar tu dispositivo no elimina lo que publicaste: borrá un mensaje desde su menú para mandar un pedido de borrado (NIP-09), que cada relay puede cumplir o no. Paso a paso: obelisk.ar/es/help/local-data."
+    }
+  },
+  "hero": {
+    "title": "Tus comunidades,",
+    "titleHighlight": "bajo tu control",
+    "subtitle": "Chat grupal estilo Discord, construido directamente sobre relays Nostr.",
+    "trustLine": "Sin cuentas. Sin backend. Tus claves, tus relays.",
+    "launchApp": "Entrar",
+    "github": "GitHub"
+  },
+  "features": {
+    "heading": "Por qué Obelisk",
+    "subtitle": "Todo el chat. Ningún servidor. Tus claves, tus relays, eventos firmados.",
+    "nostrIdentity": {
+      "title": "Login Nostr: tus claves, tu cuenta",
+      "desc": "Entrá con una extensión del navegador (NIP-07), una app firmante por NIP-46 o tu nsec. No hay cuenta de Obelisk que crear. Tu clave Nostr es la cuenta, en todos lados."
+    },
+    "realtimeChat": {
+      "title": "Grupos NIP-29",
+      "desc": "Canales, miembros, admins y expulsiones son eventos NIP-29 estándar en el relay. Protocolo abierto, sin formato propietario, sin lock-in."
+    },
+    "encryptedDMs": {
+      "title": "DMs cifrados",
+      "desc": "Los mensajes directos son DMs de Nostr cifrados de punta a punta, con gift wrap NIP-17 por defecto y NIP-04 cuando la conversación lo necesita. Solo vos y el destinatario los pueden leer."
+    },
+    "voice": {
+      "title": "Canales de voz P2P sobre Nostr",
+      "desc": "Hablá con cualquiera en un canal sin un servidor de medios en el medio. La voz es WebRTC peer-to-peer; la señalización viaja en eventos Nostr, igual que cualquier otro mensaje."
+    },
+    "selfHosted": {
+      "title": "Sin backend, sin base de datos",
+      "desc": "Obelisk es un frontend. No hay Postgres, ni servidor Socket.io, ni servicio de autenticación. Cada mensaje es un evento firmado que va directo al relay."
+    },
+    "spamResistant": {
+      "title": "Hosteo propio simple",
+      "desc": "Hostearlo vos mismo es correr una sola app de Next.js. Sin base de datos que operar, sin Docker obligatorio. Correlo desde tu notebook, detrás de un túnel o en cualquier host de Node."
+    },
+    "zaps": {
+      "title": "Zaps de Bitcoin en el chat",
+      "desc": "Mandá sats desde cualquier mensaje con zaps NIP-57, pagados por una billetera que conectás con Nostr Wallet Connect (NIP-47) o por una extensión WebLN del navegador. Sin custodio, sin comisión de plataforma, sin intermediarios."
+    },
+    "games": {
+      "title": "Juegos sobre el relay",
+      "desc": "Chain Reaction, Vesta y Stacker corren dentro de un canal, sin servidor de juego. Cada jugada es un evento firmado, y todos los clientes reproducen el mismo log y llegan al mismo tablero."
+    },
+    "adminCli": {
+      "title": "Código abierto",
+      "desc": "Licencia AGPL-3.0, todo el código en GitHub. Leelo, forkealo, auditalo, correlo. Toda la app es el cliente que estás viendo."
+    },
+    "eyebrow": "El regreso",
+    "headline": "Chat comunitario estilo Discord.",
+    "headlineAccent": "Nativo de relays.",
+    "subhead": "Tu clave Nostr es tu cuenta. El navegador habla directo con los relays: sin email, sin contraseña, sin backend de chat ni base de datos de plataforma.",
+    "openApp": "Abrir Obelisk",
+    "viewSource": "Ver el código",
+    "number": "Función {n}",
+    "ctaTitle": "Traé tus claves. Quedate con tu identidad.",
+    "ctaBody": "Sumate al relay público o apuntá Obelisk a otra comunidad NIP-29.",
+    "ctaButton": "Abrir la app",
+    "item": {
+      "groups": {
+        "title": "Grupos sobre relays Nostr",
+        "description": "Servidores, canales, membresía, moderación, mensajes y reacciones son eventos NIP-29. Obelisk no tiene backend de chat ni base de datos privada entre vos y el relay.",
+        "alt": "Chat grupal NIP-29 de Obelisk en la computadora, con canales y lista de miembros"
+      },
+      "voiceMessages": {
+        "title": "Mensajes de voz",
+        "description": "Grabá y mandá notas de voz desde el editor de mensajes. El audio se sube a Blossom y llega como un mensaje Nostr firmado, con su duración intacta.",
+        "alt": "Editor de mensajes de Obelisk en la computadora, donde se graban notas de voz"
+      },
+      "stickers": {
+        "title": "Mercado de stickers",
+        "description": "Descubrí packs, guardá favoritos, creá tus propios stickers y dejá que los operadores del relay publiquen colecciones de emojis, GIFs y stickers para todo el servidor.",
+        "alt": "Mercado de stickers, emojis y GIFs de Obelisk en la computadora"
+      },
+      "games": {
+        "title": "Juegos en el canal",
+        "description": "Chain Reaction, Vesta y Stacker corren dentro de un canal sin servidor de juego: cada jugada es un evento Nostr firmado y todos los clientes reproducen el mismo log y llegan al mismo tablero. Los relojes de turno, los lugares y los resultados salen de ese log.",
+        "alt": "Tres juegos de Obelisk corriendo sobre un relay Nostr: un tablero de Chain Reaction, una isla de Vesta y un pozo de Stacker"
+      },
+      "pwa": {
+        "title": "PWA móvil",
+        "description": "Instalá Obelisk desde el navegador y usá la app completa y responsiva: relays, canales, DMs, perfiles, notificaciones y llamadas.",
+        "alt": "PWA móvil de Obelisk mostrando login, canales, una videollamada y un perfil Nostr"
+      },
+      "p2p": {
+        "title": "Videollamadas peer-to-peer",
+        "description": "Los canales de voz chicos conectan los navegadores directamente con WebRTC para audio, cámara y pantalla compartida. Nostr lleva la señalización; el audio y el video van directo entre los participantes.",
+        "alt": "Canal de voz y video de Obelisk en la computadora"
+      },
+      "sfu": {
+        "title": "Llamadas grandes con SFU",
+        "description": "Los canales de voz para salas grandes pasan por un SFU mediasoup en vez de una malla. El admin del canal elige qué servidor SFU usar o monta el suyo. El audio y el video siguen cifrados en el transporte con DTLS-SRTP, y se evita una malla completa entre todos los participantes.",
+        "alt": "Canal de voz grande de Obelisk en la computadora, con un SFU mediasoup"
+      },
+      "profiles": {
+        "title": "Explorador de perfiles Nostr",
+        "description": "Abrí la identidad portable kind-0 de cualquier miembro, seguilo, mirá su nombre NIP-05 y empezá un DM sin crear otra cuenta.",
+        "alt": "Interfaz de Obelisk con perfiles Nostr portables"
+      }
+    }
+  },
+  "steps": {
+    "1": {
+      "title": "Iniciá sesión con Nostr",
+      "desc": "Usá una extensión NIP-07, una app firmante por NIP-46 o pegá una nsec. Sin formularios, sin email, sin contraseña."
+    },
+    "2": {
+      "title": "Elegí un relay",
+      "desc": "El relay de grupos por defecto ya viene cargado. Agregá cualquier relay NIP-29 que quieras: cada uno aparece como un 'servidor' en la barra de relays."
+    },
+    "3": {
+      "title": "Chateá",
+      "desc": "Sumate a grupos NIP-29, mandá mensajes, reaccioná, respondé, mandá DMs. Cada acción es un evento Nostr firmado que va directo al relay."
+    },
+    "heading": "Tres pasos",
+    "subtitle": "Sin formularios. Sin verificación de email. Solo claves y relays."
+  },
+  "roadmap": {
+    "heading": "Roadmap",
+    "subtitle": "Construyendo en público. De un cliente 100% Nostr hoy a un cliente más completo y portable mañana.",
+    "done": "Listo",
+    "inProgress": "En curso",
+    "upcoming": "Próximamente",
+    "phase0": {
+      "title": "Identidad",
+      "items": "Login con extensión NIP-07|Login con nsec|Editor de perfil (kind 0)"
+    },
+    "phase1": {
+      "title": "Grupos NIP-29",
+      "items": "Crear y editar los metadatos del grupo|Canales, respuestas, reacciones|Admins, miembros, expulsiones (aplicados por el relay)"
+    },
+    "phase1_5": {
+      "title": "UX multi-relay",
+      "items": "Agregar y quitar relays desde la barra|Cambiar el relay activo por grupo|Favicon y metadatos por relay"
+    },
+    "phase2": {
+      "title": "DMs cifrados",
+      "items": "DMs cifrados NIP-04|DMs con gift wrap NIP-17|Bandeja de DMs por relays de inbox NIP-17"
+    },
+    "phase3": {
+      "title": "Zaps Lightning",
+      "items": "Pedidos de zap NIP-57|Billeteras Nostr Wallet Connect (NIP-47) y WebLN|Montos de zap por mensaje"
+    },
+    "phase6": {
+      "title": "Quitar el backend",
+      "items": "Eliminar PostgreSQL y Prisma|Eliminar el servidor Socket.io|El frontend habla directo con los relays"
+    },
+    "phase4": {
+      "title": "Mejoras de login y cifrado",
+      "items": "Bunker NIP-46 (firmante remoto)|Cifrado NIP-44 v2 para los DMs"
+    },
+    "phase5": {
+      "title": "Voz y PWA",
+      "items": "Canales de voz P2P con señalización por relay|PWA instalable|Mensajes recientes guardados en el dispositivo"
+    },
+    "phase7": {
+      "title": "Lo próximo",
+      "items": "Build estático exportable (sin Node)|Notificaciones Web Push con la app cerrada"
+    },
+    "phaseLabel": "Fase {n}"
+  },
+  "stack": {
+    "heading": "Stack tecnológico",
+    "subtitle": "Moderno, open source, sin backend propietario.",
+    "item": {
+      "nextjs": "Framework de React (solo frontend)",
+      "nostrTools": "SimplePool, firmas, cifrado",
+      "nip29": "Grupos administrados por el relay",
+      "nip17": "DMs con gift wrap",
+      "nostrWot": "Perfiles, WoT, gift wrap, post-cuántico",
+      "zaps": "Zaps Lightning por NWC o WebLN",
+      "zustand": "Estado del cliente",
+      "tailwind": "Estilos"
+    }
+  },
+  "cta": {
+    "heading": "Listo para chatear sin servidor",
+    "subtitle": "Abrí la app, entrá con tus claves Nostr, elegí un relay. Eso es todo.",
+    "button": "Entrar a Obelisk"
+  },
+  "footer": {
+    "tagline": "Obelisk: un cliente 100% Nostr. ",
+    "brandBlurb": "Chat grupal estilo Discord sin backend. Tus claves, tus relays, eventos Nostr firmados.",
+    "col": {
+      "guides": "Guías",
+      "product": "Producto",
+      "community": "Comunidad",
+      "legal": "Legal"
+    },
+    "allGuides": "Todas las guías",
+    "launchApp": "Entrar a la app",
+    "faq": "FAQ",
+    "help": "Ayuda",
+    "github": "GitHub",
+    "lacrypta": "La Crypta",
+    "nostr": "Nostr",
+    "license": "Licencia",
+    "abuse": "Abuso y retiros",
+    "security": "Seguridad",
+    "analytics": "Tu elección sobre Google Analytics"
+  },
+  "landing": {
+    "video": {
+      "heading": "Mirá el recorrido",
+      "subtitle": "Dos minutos en un relay real: entrá con tus claves, sumate a un grupo, hablá, mandá un zap.",
+      "title": "Video de recorrido por Obelisk"
+    },
+    "preview": {
+      "heading": "Miralo en acción",
+      "subtitle": "El mismo cliente 100% Nostr, pensado para tu notebook y para tu celular. Hacé el recorrido en el dispositivo que realmente usás.",
+      "desktop": {
+        "badge": "Escritorio",
+        "title": "Chat estilo Discord, sobre el stack abierto de Nostr",
+        "desc": "Barra de servidores, canales por categoría, publicaciones, lista de miembros, voz con SFU. El espacio de trabajo completo en tu navegador.",
+        "alt": "Captura de Obelisk en la computadora: General Chat con la barra de servidores, la lista de canales, los mensajes y la lista de miembros.",
+        "cta": "Recorrer la versión de escritorio"
+      },
+      "mobile": {
+        "badge": "Celular",
+        "title": "Servidores y canales pensados para el celular",
+        "desc": "Recorré servidores, categorías, voz y publicaciones. Instalala como PWA, sin tienda de apps.",
+        "alt": "Captura de Obelisk en el celular: íconos de servidores, General Chat, canales de publicaciones anidados, canal de voz y lista sin categoría.",
+        "cta": "Recorrer la versión para celular"
+      }
+    },
+    "showcase": {
+      "heading": "Un solo cliente, todas las pantallas",
+      "subtitle": "Salas de voz con video en tiempo real, canales en el bolsillo. El mismo cliente 100% Nostr, sin app nativa ni backend.",
+      "desktop": {
+        "alt": "Captura de Obelisk en la computadora: canal de voz con un participante SFU que transmite un patrón de prueba de color."
+      },
+      "mobile": {
+        "alt": "Captura de Obelisk en el celular: lista de servidores con canales por categoría y una sala de voz en vivo."
+      }
+    },
+    "voiceLive": "Voz en vivo"
+  },
+  "pqc": {
+    "heading": "Mensajes post-cuánticos",
+    "subtitle": "Los mensajes cifrados que mandás hoy se pueden grabar ahora y leer dentro de unos años, cuando una computadora cuántica rompa el intercambio de claves en el que se apoya Nostr. Es la única parte del problema que se puede resolver de antemano.",
+    "status": "Ya funciona en Obelisk. Los mensajes directos van con gift wrap por defecto, y suman un sello post-cuántico cuando la protección post-cuántica está activada (viene así) y tanto tu firmante como la otra persona tienen claves post-cuánticas. Las claves viven en la extensión Nostr WoT y en la librería @nostr-wot/pq.",
+    "collab": "Creado en colaboración con",
+    "nostrwot": {
+      "desc": "Identidad, firmante y claves post-cuánticas derivadas de una única frase de recuperación de 24 palabras."
+    },
+    "quantakrypto": {
+      "desc": "Criptografía post-cuántica aplicada: diseño, especificación y revisión criptográfica."
+    },
+    "guide": "Leé la guía: cómo blindar tus DMs contra la computación cuántica"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+_dl/
+.env
+.env.*
+*.png
+!client/public/**/*.png
+.swc-native-cache/
+.vite/

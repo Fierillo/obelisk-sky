@@ -1,0 +1,376 @@
+{
+  "preferences": {
+    "backup": {
+      "advanced": "Advanced",
+      "action": "Download account backup",
+      "description": "Events, profile, follows, media packs, favorites, and recoverable uploaded media. Private keys are never included.",
+      "working": "Preparing backup…",
+      "done": "Backup downloaded.",
+      "partial": "Backup downloaded. {count} media file(s) could not be embedded; their URLs and Blossom hashes are still included.",
+      "error": "Backup failed."
+    },
+    "relays": {
+      "status": {
+        "active": "active",
+        "switch": "switch"
+      }
+    },
+    "activity": {
+      "label": "Show activity indicator",
+      "description": "Bottom-right notifications for login, signing, and relay publishing."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "sounds": {
+        "label": "Notification sounds",
+        "description": "Chime when someone mentions you, replies to you, or sends you a DM."
+      },
+      "desktop": {
+        "label": "Browser notifications",
+        "description": "System notifications for mentions, replies and DMs: they ring even when Obelisk is in another tab. Your browser asks for permission on your first click. DM text is never shown.",
+        "denied": "Blocked in your browser. Allow notifications for this site in the browser's site settings (the icon left of the address bar), then come back.",
+        "unsupported": "This browser doesn't support notifications."
+      },
+      "background": {
+        "label": "Listen on recent relays",
+        "description": "Stay connected to the last 3 relays you used and notify you of mentions and replies there too."
+      },
+      "test": "Test sound",
+      "ringtone": {
+        "label": "Ringtone",
+        "crystal": {
+          "label": "Crystal",
+          "hint": "Glassy bell with a shimmer"
+        },
+        "marimba": {
+          "label": "Marimba",
+          "hint": "Warm wooden tap"
+        },
+        "aurora": {
+          "label": "Aurora",
+          "hint": "Soft, airy pad"
+        },
+        "bubble": {
+          "label": "Bubble",
+          "hint": "Playful water drop"
+        }
+      }
+    },
+    "mobile": {
+      "app": "App",
+      "theme": "Theme",
+      "version": "Version"
+    },
+    "language": {
+      "label": "Language",
+      "description": "Choose the language used by the app UI."
+    },
+    "directMessages": {
+      "label": "Direct messages",
+      "description": "Allow this device to open Nostr encrypted DM subscriptions and display conversations.",
+      "mobileDescription": "Nostr encrypted DMs on this device"
+    },
+    "profileFeed": {
+      "title": "Profile feed relays",
+      "description": "Public Nostr relays for your feed and profiles. Cached locally for instant loading.",
+      "relay": "Profile feed relay",
+      "invalid": "Enter three different valid wss:// relay URLs.",
+      "saved": "Saved"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "reset": "Reset appearance",
+      "accent": {
+        "label": "Accent",
+        "description": "Highlights, links, active states"
+      },
+      "background": {
+        "label": "Background",
+        "description": "Main app backdrop"
+      },
+      "buttons": {
+        "label": "Buttons",
+        "description": "Primary actions"
+      },
+      "bubbles": {
+        "label": "Bubbles",
+        "description": "Animated background chat bubbles"
+      },
+      "bubbleMotion": {
+        "label": "Bubble motion",
+        "description": "Animation style for the decorative background bubbles",
+        "aria": "Bubble animation style",
+        "float": "Float up",
+        "drift": "Slow drift",
+        "orbit": "Orbit",
+        "still": "Still"
+      },
+      "colorAria": "{label} color",
+      "hexAria": "{label} hex color"
+    },
+    "socialRelays": {
+      "title": "Feed relays",
+      "description": "Public Nostr relays for your feed and profiles, separate from the group relays in the rail. Between 1 and 8.",
+      "relay": "Feed relay",
+      "add": "Add relay",
+      "remove": "Remove",
+      "import": "Import from NIP-65",
+      "importing": "Importing…",
+      "importEmpty": "No relay list found for your account.",
+      "reset": "Reset to defaults",
+      "invalid": "Enter at least one valid wss:// relay URL.",
+      "suggested": "Suggested relays",
+      "added": "Added",
+      "preset": {
+        "general": "General purpose",
+        "index": "Large index, fast",
+        "search": "Search and archive",
+        "paid": "Paid, low spam",
+        "profiles": "Profiles only"
+      }
+    }
+  },
+  "profileEditor": {
+    "setupTitle": "Set up your profile",
+    "setupDesc": "Add a name and picture so others can recognize you.",
+    "randomName": "Generate a random name",
+    "nameRequired": "Required",
+    "nameRequiredHint": "You need a name to continue. Tap the dice to generate one.",
+    "editTitle": "Edit Nostr Profile",
+    "displayName": "Display Name",
+    "namePlaceholder": "How others will see you",
+    "picture": "Profile Picture",
+    "clickToUpload": "Click to upload or drag & drop an image",
+    "imageOnly": "Only image files are allowed",
+    "fileTooLarge": "Image must be under 10 MB",
+    "uploading": "Uploading to Blossom...",
+    "picturePlaceholder": "https://example.com/avatar.jpg",
+    "aboutLabel": "About",
+    "aboutPlaceholder": "A short bio...",
+    "invalidUrl": "Could not load image from this URL",
+    "publish": "Publish to Nostr",
+    "publishing": "Publishing...",
+    "publishError": "Failed to publish profile. Try again.",
+    "skip": "Skip for now",
+    "cancel": "Cancel",
+    "confirmTitle": "Confirm profile changes",
+    "confirmDesc": "This will publish your updated profile (kind 0) to Nostr relays. Your other profile fields (NIP-05, Lightning, etc.) will be preserved.",
+    "confirmPublish": "Publish changes",
+    "changed": "updated",
+    "avatarAlt": "Avatar"
+  },
+  "you": "You",
+  "profile": "Profile",
+  "preferencesTitle": "Preferences",
+  "group": {
+    "user": "User settings",
+    "app": "App settings"
+  },
+  "section": {
+    "profile": {
+      "label": "Profile",
+      "desc": "Your name, picture, banner and links, published to Nostr as your kind-0 profile."
+    },
+    "general": {
+      "label": "General",
+      "desc": "Language and the activity indicator."
+    },
+    "appearance": {
+      "label": "Appearance",
+      "desc": "Accent, background, button and bubble colours."
+    },
+    "notifications": {
+      "label": "Notifications",
+      "desc": "Sounds, ringtone, browser notifications and background listening."
+    },
+    "relays": {
+      "label": "Relays",
+      "desc": "The public relays your feeds and profiles are read from."
+    },
+    "privacy": {
+      "label": "Privacy & safety",
+      "desc": "Direct messages, post-quantum protection, muted and blocked people, and web of trust."
+    },
+    "media": {
+      "label": "Emoji & stickers",
+      "desc": "Your packs and favourites."
+    },
+    "advanced": {
+      "label": "Advanced",
+      "desc": "Backups and developer tools."
+    },
+    "wallet": {
+      "label": "Wallet",
+      "desc": "Connect a Lightning wallet with Nostr Wallet Connect to zap and pay invoices."
+    },
+    "data": {
+      "label": "Data on this device",
+      "desc": "What Obelisk keeps in this browser and why. Remove any of it here."
+    }
+  },
+  "openPreferences": "Preferences",
+  "editProfile": "Edit profile",
+  "postQuantum": "Post-quantum protection",
+  "postQuantumHint": "Seal direct messages with post-quantum keys when you and the other person both have them and your signer can use them. Anything that cannot be sealed still sends, with ordinary encryption. While this is on, each conversation also shows whether it is quantum-safe.",
+  "postQuantumChecking": "Checking for post-quantum keys…",
+  "postQuantumDetected": "Post-quantum keys detected on this account.",
+  "postQuantumReady": "Your signer can send post-quantum messages. While this setting is on, conversations with people who also publish post-quantum keys get the extra seal.",
+  "postQuantumSignerUnknown": "Your signer does not report post-quantum support, so messages keep going out with ordinary encryption. Obelisk starts using post-quantum on its own once the signer reports it.",
+  "postQuantumNotDetected": "No post-quantum keys detected on this account.",
+  "postQuantumSetupLink": "Set up post-quantum keys",
+  "profileAppearance": {
+    "changeBanner": "Change banner",
+    "addBanner": "Add banner",
+    "changeAvatar": "Change profile picture",
+    "notImage": "That file isn't an image.",
+    "tooLarge": "Images must be under 10 MB.",
+    "fileSelected": "File selected, saves on publish"
+  },
+  "moderation": {
+    "title": "Muted & blocked",
+    "empty": "You haven't muted or blocked anyone.",
+    "muted": "Muted",
+    "blocked": "Blocked"
+  },
+  "developer": {
+    "title": "Developer settings",
+    "relayLogs": "Developer relay logs",
+    "console": "Browser console.",
+    "signatureHelp": "Request mock signatures for every event kind Obelisk uses. Signed events are discarded and never published.",
+    "section": "Developer",
+    "relayLogsHelp": "Log relay calls to the console.",
+    "mockContent": "Obelisk mock signature test for kind {kind}. This event is not published.",
+    "mockAlt": "Developer signature permission test",
+    "requestAll": "Request all {count} signatures",
+    "waiting": "Waiting · {done}/{total}",
+    "results": "{accepted} accepted · {rejected} rejected"
+  },
+  "wot": {
+    "title": "Web of Trust",
+    "help": "Drop events authored by accounts outside your social graph before they reach the cache.",
+    "maxHops": "Max hops",
+    "minPaths": "Min trust paths",
+    "channelColors": "Channel colors",
+    "outOfGraph": "Out of WoT or unresolved",
+    "resolvedAllow": "resolved allow",
+    "resolvedDeny": "resolved deny",
+    "status": {
+      "configured": "Extension detected",
+      "error": "Extension error",
+      "missing": "No nostr-wot extension"
+    },
+    "recheck": "re-check",
+    "hopsHelp": "1° = direct follows only · 2° = friends of follows · higher = wider net.",
+    "pathsHelp": "Require this many independent follow paths before trusting a pubkey. Higher values reject single-shill follows; only effective when the extension reports path counts.",
+    "pending": "pending",
+    "tier": {
+      "you": "You",
+      "direct": "Direct follow",
+      "friend": "Friend of a follow",
+      "three": "Three hops away",
+      "far": "Far / unresolved"
+    }
+  },
+  "calls": {
+    "title": "Calls",
+    "from": {
+      "label": "Who can call you",
+      "contacts": "People you follow",
+      "anyone": "Anyone"
+    },
+    "fromHint": "Calls from anyone else are ignored without ringing.",
+    "ip": {
+      "label": "Hide my IP address",
+      "auto": "With people I don't follow",
+      "always": "Always",
+      "never": "Never"
+    },
+    "ipHint": "A direct call shows each side the other's IP address. Relaying through our TURN server hides it, at some cost in quality.",
+    "relays": "Call relays",
+    "relaysHint": "Where the call is set up. They only ever see two throwaway keys exchanging encrypted data, so they must accept events from unknown keys: a whitelist relay can't carry a call.",
+    "relay": "Call relay",
+    "addRelay": "Add relay",
+    "removeRelay": "Remove",
+    "reset": "Reset to defaults",
+    "saved": "Saved",
+    "invalid": "Only wss:// relay addresses"
+  },
+  "relayShare": {
+    "invalid": "Invalid relay share link.",
+    "failed": "Failed to add relay."
+  },
+  "wallet": {
+    "title": "Lightning wallet",
+    "intro": "Connect a wallet with Nostr Wallet Connect (NIP-47) to zap and pay invoices from any browser or phone, no extension needed. Your wallet's app gives you the connection link.",
+    "warning": "Connecting lets Obelisk spend from that wallet, up to the limits you set in the wallet. Anyone with this link can do the same, so keep it private and set a budget in your wallet.",
+    "uriLabel": "Connection link",
+    "uriPlaceholder": "nostr+walletconnect://…",
+    "show": "Show link",
+    "hide": "Hide link",
+    "connect": "Connect wallet",
+    "connecting": "Checking the wallet…",
+    "connectFailed": "Could not connect the wallet.",
+    "connected": "Connected with Nostr Wallet Connect",
+    "walletLabel": "Wallet",
+    "relayLabel": "Relay",
+    "addressLabel": "Lightning address",
+    "budget": "Spending limit: {used} of {total} sats used",
+    "budgetRenews": "Spending limit: {used} of {total} sats used, renews {period}",
+    "renewal": {
+      "daily": "every day",
+      "weekly": "every week",
+      "monthly": "every month",
+      "yearly": "every year"
+    },
+    "noBudget": "Your wallet did not share a spending limit for this app. Check it in your wallet.",
+    "remembered": "Stored encrypted in this browser, for this account only. Logging out removes it.",
+    "notRemembered": "This browser cannot store the connection safely, so it lasts only until you close or reload this page.",
+    "precedence": "While a wallet is connected here, it pays for zaps and invoices, even if a browser extension (WebLN) is also installed.",
+    "disconnect": "Disconnect wallet",
+    "disconnected": "Wallet disconnected.",
+    "current": {
+      "label": "Payments now use: {wallet}",
+      "nwc": "This connected wallet",
+      "webln": "Your browser extension (WebLN)",
+      "none": "No wallet yet"
+    }
+  },
+  "localData": {
+    "intro": "Obelisk keeps these in this browser to open quickly and remember where you were. None of it is sent to an Obelisk server, and removing it does not touch what you published to relays.",
+    "size": "About {size}",
+    "present": "Stored",
+    "empty": "Nothing stored",
+    "remove": "Remove",
+    "removing": "Removing...",
+    "learnMore": "Why it is there, and other ways to remove it",
+    "analytics": {
+      "title": "Google Analytics",
+      "granted": "Allowed. Google receives the pages you open (in the app, which relay and channel you are in) and your approximate location from your IP address, and keeps a cookie with an identifier for this device. Choose \"Don't allow\" to stop it now; its cookies are deleted at once.",
+      "denied": "Not allowed. Nothing from Google loads, and no Analytics cookie is kept.",
+      "unset": "Not answered yet. Nothing from Google loads until you allow it."
+    },
+    "removeAll": {
+      "title": "Remove everything from this device",
+      "description": "Logs you out, deletes your encrypted login and everything listed above, then reloads.",
+      "button": "Remove everything"
+    },
+    "confirm": {
+      "action": "Remove",
+      "titleAll": "Remove everything from this device?",
+      "actionAll": "Remove everything",
+      "all": "Everything Obelisk keeps here is deleted: your login, the wallet connection, cached messages and profiles, read positions and alerts, preferences, mutes, blocks and saved stickers, offline files, your language choice, your Google Analytics answer and its cookies. You are logged out and the page reloads. To log in again you need your key, your browser extension or your signer app. What you published to relays is not affected.",
+      "channels": "Cached channels and messages are deleted from this device and the page reloads. Everything loads again from the relays; nothing you published is affected.",
+      "profiles": "Saved names and pictures are deleted and the page reloads. They load again from the relays.",
+      "readState": "Read positions, unread counts and alerts on this device are deleted and the page reloads. Read positions synced through your relays come back; alerts do not.",
+      "dmMessages": "The encrypted copy of your direct messages is deleted from this device and the page reloads. Your messages are downloaded from the relays again, and your signer is asked to decrypt each one.",
+      "dms": "Your encryption choice for each person is forgotten and the page reloads. Your messages are not affected.",
+      "preferences": "Your settings, layout and recent items go back to the defaults and the page reloads.",
+      "personal": "Mutes, blocks, channel notification choices and saved stickers made on this device are deleted for good and the page reloads. They are not stored anywhere else.",
+      "login": "You are logged out on this device and the page reloads. To log in again you need your key, your browser extension or your signer app. Cached channels and messages and the wallet connection are cleared too.",
+      "wallet": "The wallet connection is deleted from this device and the page reloads. To zap or pay again from Obelisk, paste the connection link from your wallet's app. The wallet itself and its funds are not affected.",
+      "offline": "The saved app files are deleted. Obelisk downloads them again the next time it loads, and will not open offline until then.",
+      "language": "Obelisk forgets the language you picked and goes back to your browser's language. The page reloads.",
+      "analytics": "Your answer about Google Analytics and its cookies are deleted. Analytics stops, and Obelisk asks again; nothing from Google loads unless you allow it."
+    }
+  }
+}

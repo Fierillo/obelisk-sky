@@ -1,0 +1,214 @@
+import { topHashtags } from '@nostr-wot/data';
+/**
+ * Public note viewer - Obelisk's own njump.
+ *
+ * This is a **server component on purpose**, which is a deliberate exception
+ * to the app's client-only architecture. The reason is link previews: a
+ * client-rendered page hands crawlers an empty shell, so pasting a shared
+ * note into any chat app produces a blank card. njump renders server-side
+ * precisely so the preview works, and matching it means resolving the event
+ * before the HTML goes out.
+ *
+ * The interactive rendering still happens on the client (`NoteViewerClient`),
+ * which also re-fetches if the server's bounded query came up empty - a slow
+ * relay shouldn't turn into a permanent 404.
+ */
+
+import IntlScope from '@/i18n/IntlScope';
+import BridgeRoute from '@/components/common/BridgeRoute';
+import List from '@/components/ui/layout/List';
+import Link from '@/components/ui/navigation/Link';
+import Heading from '@/components/ui/layout/Heading';
+import { NOSTR_CLIENTS } from '@/services/social/clients';
+import Container from '@/components/ui/layout/Container';
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { getLocale, getTranslations } from 'next-intl/server';
+import { noindexMetadata, renderedTitle } from '@/utils/seo/page';
+import { ogImage } from '@/utils/seo/og';
+import { parseIdentifier } from '@/services/social/identifier';
+import {
+  displayNameFor,
+  fetchAuthorFollows,
+  fetchAuthorForViewer,
+  fetchAuthorNotes,
+  fetchAuthorRelays,
+  fetchEventForViewer,
+  fetchProfilesForViewer,
+} from '@/services/server/viewer/nostr-fetch';
+import { buildNotePreview } from '@/services/server/viewer/note-preview';
+import ViewerHeader from '@/components/social/viewer/ViewerHeader';
+import NoteViewerClient from './NoteViewerClient';
+import AuthorDetails from '@/components/social/viewer/AuthorDetails';
+import Text from '@/components/ui/layout/Text';
+
+export const runtime = 'nodejs';
+/** Request-specific CSP nonces require a fresh document. */
+export const dynamic = 'force-dynamic';
+
+type Params = { params: Promise<{ id: string }> };
+
+/**
+ * Someone else's note, read from relays: kept out of search (`noindex,
+ * follow`), because the text is theirs, already public on every Nostr
+ * client, and a search engine would otherwise index any note anyone links.
+ * What this page is for is the card a chat app shows for a pasted link.
+ */
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const locale = await getLocale();
+  const t = await getTranslations({ locale });
+  const { id } = await params;
+  const target = parseIdentifier(id);
+  if (!target) notFound();
+
+  const path = `/notes/${id}`;
+  const note = await fetchEventForViewer(target);
+  // Not found on the relays this time; it may be there on the next request.
+  if (!note) {
+    const title = t('seo.notes.notFound');
+    return noindexMetadata({ locale, path, title, image: ogImage(t, locale, { live: 'note', id }, renderedTitle(title)) });
+  }
+
+  const author = await fetchAuthorForViewer(note.pubkey);
+  const preview = buildNotePreview(note, displayNameFor(author), {
+    noteTitle: (name) => t('seo.notes.title', { name }),
+    untitledArticle: t('seo.notes.untitledArticle'),
+    sharedMedia: t('seo.notes.sharedMedia'),
+  });
+  return noindexMetadata({
+    locale,
+    path,
+    title: preview.title,
+    description: preview.description,
+    type: preview.isArticle ? 'article' : 'website',
+    // Its own card, drawn on request, not the note's picture: a picture in a
+    // note can be any size or format (WebP, a tall screenshot) and most
+    // previews drop it.
+    image: ogImage(t, locale, { live: 'note', id }, renderedTitle(preview.title)),
+  });
+}
+
+export default async function NoteViewerPage({ params }: Params) {
+  const t = await getTranslations();
+  const { id } = await params;
+  const target = parseIdentifier(id);
+  // Not a note identifier at all: a real 404, sent before anything streams.
+  if (!target) notFound();
+  const note = await fetchEventForViewer(target);
+
+  // Author context, in parallel - a bare note is a fragment, and four
+  // sequential relay round-trips would be slower than the note itself.
+  const [author, authorNotes, followPubkeys, relays] = note
+    ? await Promise.all([
+      fetchAuthorForViewer(note.pubkey),
+      fetchAuthorNotes(note.pubkey, { excludeId: note.id, limit: 5 }),
+      fetchAuthorFollows(note.pubkey, 12),
+      fetchAuthorRelays(note.pubkey),
+    ])
+    : [null, [], [], { read: [], write: [] }];
+
+  const follows = followPubkeys.length ? await fetchProfilesForViewer(followPubkeys) : [];
+  // The author's own recent notes are the honest signal of what they write
+  // about; nobody declares a topic list.
+  const hashtags = topHashtags(note ? [note, ...authorNotes] : authorNotes);
+
+  return (
+    <IntlScope scope="viewer">
+      <BridgeRoute>
+        <main className="min-h-screen bg-lc-black text-lc-white">
+          <ViewerHeader maxWidth="max-w-6xl" />
+
+          {/*
+            The server-rendered fallback is what a crawler and a no-JS reader see.
+            Plain on purpose - its job is to carry the text, not to look like the
+            app.
+          */}
+          <noscript>
+            {note && (
+              <Container width="2xl" className="px-5 py-6">
+                <Text as="p" size="sm" className="whitespace-pre-wrap leading-relaxed">{note.content}</Text>
+              </Container>
+            )}
+          </noscript>
+
+          {/*
+            Two columns from `lg` up: the note reads on the left at a comfortable
+            measure, and everything about its author lives in a rail on the right
+            rather than being buried a screen below the fold. Below `lg` the grid
+            collapses and the rail simply follows the note.
+          */}
+          <Container width="6xl" className="grid grid-cols-1 gap-x-10 px-0 lg:grid-cols-[minmax(0,1fr)_21rem] lg:px-5">
+            <div className="min-w-0 lg:border-x lg:border-lc-border">
+              <NoteViewerClient target={target} initialNote={note} />
+            </div>
+
+            {note && (
+              <aside
+                className="min-w-0 border-t border-lc-border px-5 py-8 lg:border-t-0 lg:px-0 lg:py-8"
+                data-testid="note-sidebar"
+              >
+                {/*
+                  Sticky so the context stays reachable while a long article
+                  scrolls past. `max-h`/`overflow-y` keep a long rail from
+                  becoming unreachable when it is taller than the viewport.
+                */}
+                {/*
+                  `min-w-0` plus `overflow-x-hidden`: making this a scroll
+                  container means anything wider than the rail - an npub, a relay
+                  host, a long display name - spills out to the right instead of
+                  being clipped, and the vertical scrollbar eats width the layout
+                  hasn't accounted for. `scrollbar-gutter: stable` reserves that
+                  width up front so the content doesn't shift when it appears,
+                  and the right padding keeps text off the scrollbar.
+                */}
+                <div
+                  className="min-w-0 space-y-8 overflow-x-hidden [overflow-wrap:anywhere] lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-2"
+                  style={{ scrollbarGutter: 'stable' }}
+                >
+                  <section className="min-w-0" data-testid="open-in-clients">
+                    <Heading as="h2" variant="label" className="mb-3">
+                      {t('social.note.openIn')}
+                    </Heading>
+                    {/*
+                      Wraps on a narrow rail and stays a single flowing row on mobile, so
+                      one list works in both places without a second layout.
+                    */}
+                    <List marker="none" spacing="none" className="flex flex-wrap gap-2">
+                      {NOSTR_CLIENTS.map((client) => (
+                        <li key={client.id}>
+                          <Link
+                            href={client.event(decodeURIComponent(id).replace(/^nostr:/i, ''))}
+                            // A `nostr:` URI has to stay in this tab for the OS handler to
+                            // claim it; opening a new tab would just fail to navigate.
+                            {...(client.isHandler ? {} : { target: '_blank', rel: 'noreferrer noopener' })}
+                            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                              client.isHandler
+                                ? 'border-lc-green/40 bg-lc-green/10 text-lc-green hover:bg-lc-green/20'
+                                : 'border-lc-border bg-lc-dark text-lc-white hover:border-lc-green/40'
+                            }`}
+                            data-testid={`open-in-${client.id}`}
+                          >
+                            {client.nameKey ? t(client.nameKey) : client.name}
+                          </Link>
+                        </li>
+                      ))}
+                    </List>
+                  </section>
+                  {author && (
+                    <AuthorDetails
+                      author={author}
+                      notes={authorNotes}
+                      hashtags={hashtags}
+                      follows={follows.slice(0, 9)}
+                      relays={relays}
+                    />
+                  )}
+                </div>
+              </aside>
+            )}
+          </Container>
+        </main>
+      </BridgeRoute>
+    </IntlScope>
+  );
+}

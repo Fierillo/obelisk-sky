@@ -1,0 +1,124 @@
+/**
+ * Chain Reaction: one orb too many, and the cell hands its neighbours the
+ * problem. The hero draws the moment of the split - a critical cell mid-burst
+ * with four orbs leaving it, over a board that has already changed colour.
+ */
+
+import { useTranslations } from 'next-intl';
+import { settledOrbs, type ChainCell } from '@/utils/guides/hero-art';
+
+const SEATS = ['#ff4d5e', '#b4f953', '#38bdf8'];
+
+/** A board that looks played rather than generated: fixed, not random. */
+const CELLS: ChainCell[] = [
+  { col: 0, row: 0, count: 1, seat: 0 }, { col: 2, row: 0, count: 2, seat: 1 },
+  { col: 5, row: 0, count: 1, seat: 2 }, { col: 1, row: 1, count: 3, seat: 1 },
+  { col: 4, row: 1, count: 1, seat: 0 }, { col: 6, row: 1, count: 2, seat: 2 },
+  { col: 0, row: 2, count: 2, seat: 2 }, { col: 3, row: 2, count: 1, seat: 1 },
+  { col: 6, row: 2, count: 1, seat: 0 }, { col: 2, row: 3, count: 1, seat: 2 },
+  { col: 5, row: 3, count: 3, seat: 0 }, { col: 7, row: 3, count: 1, seat: 1 },
+];
+
+const X0 = 60;
+const Y0 = 96;
+const SIZE = 54;
+
+export default function ChainReactionHero() {
+  const t = useTranslations();
+  const settled = settledOrbs(CELLS, SEATS, X0, Y0, SIZE);
+  return (
+    <svg
+      viewBox="0 0 800 400"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-labelledby="hero-chain-reaction-title hero-chain-reaction-desc"
+      className="w-full h-auto"
+    >
+      <title id="hero-chain-reaction-title">{t('guides.art.chainReaction.title')}</title>
+      <desc id="hero-chain-reaction-desc">{t('guides.art.chainReaction.desc')}</desc>
+
+      <defs>
+        <radialGradient id="bg-chain-reaction" cx="0.5" cy="0.45" r="0.75">
+          <stop offset="0%" stopColor="#1a1216" />
+          <stop offset="100%" stopColor="#0a0a0a" />
+        </radialGradient>
+        <radialGradient id="cr-burst-glow" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stopColor="#b4f953" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#b4f953" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      <rect width="800" height="400" fill="url(#bg-chain-reaction)" />
+
+      {/* the grid */}
+      <g stroke="#b4f953" strokeOpacity="0.18" fill="none">
+        {Array.from({ length: 8 }, (_, c) =>
+          Array.from({ length: 4 }, (_, r) => (
+            <rect
+              key={`${c}-${r}`}
+              x={X0 + c * SIZE}
+              y={Y0 + r * SIZE}
+              width={SIZE}
+              height={SIZE}
+            />
+          )),
+        )}
+      </g>
+
+      {/* settled orbs */}
+      {settled.map((cell) => (
+        <g key={cell.key}>
+          {cell.orbs.map((orb, i) => (
+            <circle key={i} cx={orb.cx} cy={orb.cy} r="7" fill={orb.fill} fillOpacity="0.9" />
+          ))}
+        </g>
+      ))}
+
+      {/* the cell that just went critical, and the four orbs leaving it */}
+      <g>
+        <circle cx={X0 + 3 * SIZE + SIZE / 2} cy={Y0 + 1 * SIZE + SIZE / 2} r="52" fill="url(#cr-burst-glow)" />
+        <circle
+          cx={X0 + 3 * SIZE + SIZE / 2}
+          cy={Y0 + 1 * SIZE + SIZE / 2}
+          r="20"
+          fill="none"
+          stroke="#b4f953"
+          strokeWidth="2.5"
+          strokeOpacity="0.9"
+        />
+        {[[0, -SIZE], [0, SIZE], [-SIZE, 0], [SIZE, 0]].map(([dx, dy], i) => (
+          <circle
+            key={i}
+            cx={X0 + 3 * SIZE + SIZE / 2 + dx * 0.55}
+            cy={Y0 + 1 * SIZE + SIZE / 2 + dy * 0.55}
+            r="8"
+            fill="#b4f953"
+          />
+        ))}
+      </g>
+
+      {/* the right-hand column: what the move actually is on the wire */}
+      <g fontWeight="600">
+        <text x="540" y="118" fill="#fafafa" fontSize="15">{t('guides.art.chainReaction.headline')}</text>
+        <text x="540" y="140" fill="#a3a3a3" fontSize="11">{t('guides.art.chainReaction.spread')}</text>
+        <text x="540" y="156" fill="#a3a3a3" fontSize="11">{t('guides.art.chainReaction.burst')}</text>
+
+        <g fontFamily="ui-monospace, monospace">
+          <rect x="540" y="186" width="216" height="58" rx="10" fill="#171717" stroke="#262626" />
+          <text x="558" y="210" fill="#b4f953" fontSize="12">kind 2390</text> {/* i18n-exempt: protocol term, the event kind */}
+          <text x="558" y="230" fill="#a3a3a3" fontSize="11">{'{"op":"move","cell":11}'}</text>
+        </g>
+        <text x="540" y="266" fill="#a3a3a3" fontSize="11">{t('guides.art.chainReaction.replayed')}</text>
+        <text x="540" y="282" fill="#a3a3a3" fontSize="11">{t('guides.art.chainReaction.neverPublished')}</text>
+
+        {/* seat legend */}
+        {SEATS.map((hex, i) => (
+          <g key={hex}>
+            <circle cx={548} cy={316 + i * 22} r="6" fill={hex} />
+            <text x={564} y={320 + i * 22} fill="#a3a3a3" fontSize="11">{t('guides.art.chainReaction.seat', { n: i + 1 })}</text>
+          </g>
+        ))}
+      </g>
+    </svg>
+  );
+}
