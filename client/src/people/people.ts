@@ -74,17 +74,28 @@ function load(file: string): Promise<GLTF> {
   return p;
 }
 
-function skinTexture(body: BodyType, tone: 'light' | 'dark'): THREE.Texture {
+const skinLoads = new Map<string, Promise<THREE.Texture>>();
+
+/** A skin tone's texture for a body; loaded with the look (see loadLook). */
+function loadSkin(body: BodyType, tone: 'light' | 'dark'): Promise<THREE.Texture> {
   const key = `skin-${body}-${tone}.webp`;
-  let t = textures.get(key);
-  if (!t) {
+  let p = skinLoads.get(key);
+  if (!p) {
     // ?v: Cloudflare cached the first deploy's wrong content type for a year.
-    t = new THREE.TextureLoader().load(`${BASE}${key}?v=2`);
-    t.flipY = false; // glTF UV convention
-    t.colorSpace = THREE.SRGBColorSpace;
-    textures.set(key, t);
+    p = new THREE.TextureLoader().loadAsync(`${BASE}${key}?v=2`).then((t) => {
+      t.flipY = false; // glTF UV convention
+      t.colorSpace = THREE.SRGBColorSpace;
+      textures.set(key, t);
+      return t;
+    });
+    p.catch(() => skinLoads.delete(key));
+    skinLoads.set(key, p);
   }
-  return t;
+  return p;
+}
+
+function skinTexture(body: BodyType, tone: 'light' | 'dark'): THREE.Texture | null {
+  return textures.get(`skin-${body}-${tone}.webp`) ?? null;
 }
 
 /** Every file a look needs. */
@@ -101,16 +112,21 @@ export function preloadPeople(progress?: (done: number, total: number) => void):
     ...FILES.anims, ...Object.values(FILES.body), ...Object.values(FILES.brows),
     ...Object.values(FILES.outfit), ...Object.values(FILES.hair),
   ];
+  const skins = (['m', 'f'] as const).flatMap((b) => (['light', 'dark'] as const).map((t) => () => loadSkin(b, t)));
   let n = 0;
-  return Promise.all(all.map((f) => load(f).catch(() => null).finally(() => progress?.(++n, all.length))));
+  const total = all.length + skins.length;
+  return Promise.all([
+    ...all.map((f) => load(f).catch(() => null).finally(() => progress?.(++n, total))),
+    ...skins.map((go) => go().catch(() => null).finally(() => progress?.(++n, total))),
+  ]);
 }
 
 export function lookReady(look: PersonLook): boolean {
-  return filesFor(look).every((f) => done.has(f));
+  return filesFor(look).every((f) => done.has(f)) && !!skinTexture(look.body, look.skin);
 }
 
 export function loadLook(look: PersonLook): Promise<unknown> {
-  return Promise.all(filesFor(look).map(load));
+  return Promise.all([...filesFor(look).map(load), loadSkin(look.body, look.skin)]);
 }
 
 let clipCache: THREE.AnimationClip[] | null = null;
@@ -164,8 +180,12 @@ function garmentLuma(m: THREE.Mesh, base: THREE.MeshStandardMaterial, key: strin
       sampler.width = sampler.height = size;
       ctx.drawImage(img, 0, 0, size, size);
       const px = ctx.getImageData(0, 0, size, size).data;
-      const uvs = new Float32Array(uv.count * 2);
-      for (let i = 0; i < uv.count; i++) { uvs[i * 2] = uv.getX(i); uvs[i * 2 + 1] = uv.getY(i); }
+      // Only the vertices this mesh draws (the face keeps a few of the body's).
+      const index = m.geometry.index;
+      const ids = index ? [...new Set(Array.from({ length: index.count }, (_, i) => index.getX(i)))] : null;
+      const n = ids ? ids.length : uv.count;
+      const uvs = new Float32Array(n * 2);
+      for (let i = 0; i < n; i++) { const v = ids ? ids[i] : i; uvs[i * 2] = uv.getX(v); uvs[i * 2 + 1] = uv.getY(v); }
       const l = meanLinearLuma(px, size, size, uvs);
       if (l > 0.002) luma = l;
     }
@@ -244,6 +264,15 @@ export function headAndNeck(geo: THREE.BufferGeometry, boneNames: string[]): THR
 /** The face texture's average skin colour, per body and tone (sampled from the textures). */
 const SKIN_BASE: Record<string, string> = { 'm-light': '#d9a37e', 'm-dark': '#8a5638', 'f-light': '#e0ae8c', 'f-dark': '#8f5c3e' };
 
+/** How much of the face is the dyed tone (the rest is the painted texture). */
+const SKIN_DYE = 0.8;
+
+/** A look's skin colour: the base tone of its body and texture, tinted. */
+function skinTone(look: PersonLook): string {
+  const tone = new THREE.Color(SKIN_BASE[`${look.body}-${look.skin}`]).multiply(new THREE.Color(look.skinTint));
+  return `#${tone.getHexString()}`;
+}
+
 export interface Person {
   /** The model, its feet at y = 0, MODEL_HEIGHT tall (scale it to fit). */
   root: THREE.Object3D;
@@ -294,12 +323,16 @@ export function buildPerson(look: PersonLook): Person | null {
     if (!m.isMesh) return;
     m.castShadow = true;
     m.frustumCulled = false;
-    const mat = (m.material as THREE.MeshStandardMaterial).clone();
+    let mat = (m.material as THREE.MeshStandardMaterial).clone();
     if (/Superhero/i.test(mat.name)) {
       mat.map = skinTexture(look.body, look.skin);
-      mat.color.set(look.skinTint);
       const sk = (m as THREE.SkinnedMesh).skeleton;
       if (sk) m.geometry = headAndNeck(m.geometry, sk.bones.map((b) => b.name));
+      // The face dyed to the same tone as the hands (outfit "Regular" parts),
+      // at the texture's own average brightness: the painted skin alone is
+      // half as bright as dyed clothes and read as a dark face next to them.
+      // A little of the painting stays for lips and cheeks.
+      mat = tintable(mat, skinTone(look), SKIN_DYE, garmentLuma(m, mat, `skin-${look.body}-${look.skin}`));
     } else if (/Hair/i.test(mat.name)) {
       mat.color.set(look.hairColor);
     }
@@ -324,8 +357,7 @@ export function buildPerson(look: PersonLook): Person | null {
     const n = m.name.toLowerCase();
     if (/regular/i.test(base.name)) {
       // The outfit's own hands and wrists: dyed to the face's skin tone.
-      const tone = new THREE.Color(SKIN_BASE[`${look.body}-${look.skin}`]).multiply(new THREE.Color(look.skinTint));
-      m.material = tintable(base, `#${tone.getHexString()}`, 1, garmentLuma(m, base, `${look.body}-${look.outfit}:${m.name}`));
+      m.material = tintable(base, skinTone(look), 1, garmentLuma(m, base, `${look.body}-${look.outfit}:${m.name}`));
       return;
     }
     if (n.includes('hood') && !look.hood) { m.visible = false; return; }
