@@ -11,6 +11,7 @@
 // feet don't slide.
 
 import * as THREE from 'three';
+import { GRAVITY, JUMP_SPEED } from '../player/controller';
 import { buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, type PersonLook } from '../people/people';
 import { hashStr, type Vec2 } from './layout';
 
@@ -178,6 +179,8 @@ export class Character {
   private lookKey = '';
   /** Height of your feet (viewer-driven only): a jump, or standing on a bench. */
   jumpY = 0;
+  /** A remote person's jump (from their motion event): its vertical speed. */
+  private hopVy = 0;
   /** Raised ground under someone the world walks (stairs, a floor up a
    *  storey); the viewer's comes with jumpY instead. Set by world.ts. */
   groundY = 0;
@@ -320,6 +323,14 @@ export class Character {
 
   /** Set while the viewer steers this character (it ignores paths). */
   external: { moving: boolean; running: boolean } | null = null;
+
+  /** Jump where you stand (someone jumping in another browser): the same
+   *  take-off speed and gravity as the player's controller. */
+  jump(): void {
+    if (this.external || this.activity === 'sit' || this.exercise) return;
+    if (this.jumpY > 0.02) return;
+    this.hopVy = JUMP_SPEED;
+  }
 
   /** Viewer-driven movement: position and heading come from the controller. */
   drive(x: number, z: number, heading: number, moving: boolean, running: boolean, jumpY = 0, airborne = jumpY > 0.015): void {
@@ -476,6 +487,12 @@ export class Character {
       this.body.rotation.z = THREE.MathUtils.damp(this.body.rotation.z, moving || this.external?.moving ? -diff * 0.12 : 0, 6, dt);
     }
 
+    // A remote jump in flight.
+    if (!this.external && (this.hopVy !== 0 || this.jumpY > 0)) {
+      this.hopVy -= GRAVITY * dt;
+      this.jumpY = Math.max(0, this.jumpY + this.hopVy * dt);
+      if (this.jumpY === 0 && this.hopVy < 0) { this.hopVy = 0; this.landFor = 0.28; }
+    }
     // Lift (balloon arrivals) eases down.
     if (this.lift > 0) this.lift = Math.max(0, this.lift - dt * 1.6);
     this.root.position.y = this.lift + this.seatY + this.jumpY + this.groundY;
@@ -608,9 +625,12 @@ export class Character {
     const k = CHAR_HEIGHT / 0.72; // world units per "village person"
     const hold = v(chest).addScaledVector(fwd, 0.09 * k).addScaledVector(side, 0.03 * k).addScaledVector(upW, -0.09 * k);
     const lips = v(head).addScaledVector(fwd, 0.04 * k).addScaledVector(upW, 0.02 * k);
-    // Sip: up in 0.5 s, 0.8 s at the lips, down in 0.5 s, every 6 s.
-    const t = this.sipClock % 6;
+    // Sip: up in 0.5 s, 0.8 s at the lips, down in 0.5 s, every 6 s (a
+    // marshmallow: held out over the fire, eaten every 9 s).
+    const roast = !!this.mate?.userData.roast;
+    const t = this.sipClock % (roast ? 9 : 6);
     const s01 = this.mate ? (t < 0.5 ? t / 0.5 : t < 1.3 ? 1 : t < 1.8 ? 1 - (t - 1.3) / 0.5 : 0) : 0;
+    if (roast) hold.addScaledVector(fwd, 0.13 * k).addScaledVector(upW, 0.05 * k);
     const sip = s01 * s01 * (3 - 2 * s01);
     // At the lips the hand sits a mate's height below them (the bombilla on top).
     const tip = (this.mate?.userData.mouth as THREE.Vector3 | undefined)?.y ?? 0.1;

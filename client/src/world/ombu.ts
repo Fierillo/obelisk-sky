@@ -1,21 +1,28 @@
-// A voice channel's place: a great shade tree (an ombú) with chairs round
-// its trunk, where the people in the call sit together. The plaza's benches
-// stand round the one nearest the plaza (world.ts `placeBenches`).
+// A voice channel's place: a great shade tree (an ombú) with a campfire in
+// the clearing in front, logs round it where people sit, roast marshmallows
+// and talk (the people in the call gather there). The plaza's benches stand
+// round the fire of the tree nearest the plaza (world.ts `placeBenches`).
 
 import * as THREE from 'three';
 import { rng, type Vec2 } from './layout';
+import { buildCampfire, type Campfire } from './campfire';
 
 export interface TreeSeat {
   /** Local to the slot (door side, +z). */
   pos: Vec2;
   face: number;
   y: number;
+  /** What you hold there: a marshmallow over the fire. */
+  prop: 'marshmallow';
 }
 
 export interface VoiceTree {
   group: THREE.Group;
-  /** The chairs round the trunk, facing out. */
+  /** The logs round the fire, facing it. */
   seats: TreeSeat[];
+  /** The fire (flickers in `update`). */
+  fire: Campfire;
+  update(t: number, night: number): void;
   /** Where benches can stand, facing the tree (local). */
   benchSpots: { pos: Vec2; face: number }[];
   /** The trunk: the only thing you can't walk through (local centre 0,0). */
@@ -76,42 +83,43 @@ export function buildVoiceTree(w: number, accent: number, seed = 1): VoiceTree {
   ground.receiveShadow = true;
   group.add(ground);
 
-  // Chairs round the trunk, backs to it, facing out.
+  // The campfire, in the clearing in front of the trunk.
+  const fire = buildCampfire(seed);
+  const fc = { x: 0, z: trunkR + 0.75 * k };
+  fire.group.position.set(fc.x, 0, fc.z);
+  group.add(fire.group);
+  // Logs round it, facing the flames; none on the trunk's side.
   const seats: TreeSeat[] = [];
-  const chairR = trunkR + 0.42 * k;
-  const n = w >= 2 ? 8 : 5;
-  const wood = flat(0x8a5a33), cushion = flat(accent);
+  const logR = 0.62;
+  const logMat = flat(0x7a5236), cut = flat(0xc8a274);
+  const n = w >= 2 ? 6 : 4;
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + Math.PI / n;
-    const pos = { x: Math.cos(a) * chairR, z: Math.sin(a) * chairR };
-    const face = Math.atan2(Math.cos(a), Math.sin(a));
-    group.add(chair(pos, face, wood, cushion));
-    seats.push({ pos, face, y: 0.2 });
+    // Round the fire from −30° to 210° (from +x; the trunk is at −90°).
+    const ang = (-30 + (240 * i) / (n - 1)) * (Math.PI / 180);
+    const pos = { x: fc.x + Math.cos(ang) * logR, z: fc.z + Math.sin(ang) * logR };
+    const face = Math.atan2(fc.x - pos.x, fc.z - pos.z);
+    const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.08, 0.36, 8), logMat);
+    lg.rotation.z = Math.PI / 2;
+    lg.rotation.y = -face;
+    lg.position.set(pos.x, 0.08, pos.z);
+    lg.castShadow = lg.receiveShadow = true;
+    group.add(lg);
+    for (const s of [-1, 1]) {
+      const end = new THREE.Mesh(new THREE.CircleGeometry(0.074, 8), cut);
+      end.position.set(pos.x + Math.cos(face) * 0.181 * s, 0.08, pos.z - Math.sin(face) * 0.181 * s);
+      end.rotation.y = -face + (s > 0 ? Math.PI / 2 : -Math.PI / 2);
+      group.add(end);
+    }
+    seats.push({ pos, face, y: 0.16, prop: 'marshmallow' });
   }
+  void accent;
 
-  // Bench places: an outer ring on the yard side, facing the tree.
-  const benchR = Math.min(w * 0.5 + 0.35, crown * 1.05);
+  // Bench places: an outer ring round the fire on the yard side, facing it.
+  const benchR = logR + 0.55;
   const benchSpots = [-0.95, 0, 0.95].map((da) => {
     const a = Math.PI / 2 + da;
-    return { pos: { x: Math.cos(a) * benchR, z: Math.sin(a) * benchR }, face: Math.atan2(-Math.cos(a), -Math.sin(a)) };
+    const pos = { x: fc.x + Math.cos(a) * benchR, z: fc.z + Math.sin(a) * benchR };
+    return { pos, face: Math.atan2(fc.x - pos.x, fc.z - pos.z) };
   });
-  return { group, seats, benchSpots, trunkR: trunkR * 1.45, height: 2.6 * k };
-}
-
-/** A small wooden chair at `pos` facing `face`, its seat 0.2 up. */
-function chair(pos: Vec2, face: number, wood: THREE.Material, cushion: THREE.Material): THREE.Group {
-  const g = new THREE.Group();
-  g.position.set(pos.x, 0, pos.z);
-  g.rotation.y = face;
-  const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-    b.position.set(x, y, z);
-    b.castShadow = true;
-    g.add(b);
-  };
-  box(0.2, 0.025, 0.2, wood, 0, 0.18, 0);
-  box(0.19, 0.02, 0.19, cushion, 0, 0.2, 0);
-  box(0.2, 0.2, 0.025, wood, 0, 0.3, -0.09);
-  for (const [x, z] of [[-0.085, -0.085], [0.085, -0.085], [-0.085, 0.085], [0.085, 0.085]]) box(0.025, 0.18, 0.025, wood, x, 0.09, z);
-  return g;
+  return { group, seats, benchSpots, fire, update: (t, night) => fire.update(t, night), trunkR: trunkR * 1.45, height: 2.6 * k };
 }

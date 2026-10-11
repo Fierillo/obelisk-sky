@@ -138,12 +138,22 @@ function renderRelayName(): void {
   setTimeout(() => void relayIdentity(hub, relay).then((id) => {
     if (relayShown !== relay) return;
     if (id.name) ($('relay-name') as HTMLElement).textContent = id.name;
-    if (!id.icon) return;
-    const img = document.createElement('img');
-    img.alt = '';
-    img.referrerPolicy = 'no-referrer';
-    img.onload = () => { if (relayShown === relay) { btn.querySelector('.relay-ico')?.prepend(img); btn.classList.add('has-icon'); } };
-    img.src = id.icon;
+    // The first icon that actually loads (a dead branding link falls back).
+    const tryIcon = (i: number): void => {
+      if (i >= id.icons.length || relayShown !== relay) return;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.onload = () => {
+        if (relayShown !== relay) return;
+        btn.querySelector('.relay-ico img')?.remove();
+        btn.querySelector('.relay-ico')?.prepend(img);
+        btn.classList.add('has-icon');
+      };
+      img.onerror = () => tryIcon(i + 1);
+      img.src = id.icons[i];
+    };
+    tryIcon(0);
   }), 0);
 }
 
@@ -354,6 +364,9 @@ function startReadState(): void {
 
 session.onChange((s) => {
   renderAccount(s);
+  // Logged in, the relay's own branding can be read: look again.
+  relayShown = '';
+  renderRelayName();
   startReadState();
   renderBell();
   if (world.cam.firstPerson) toggleFirstPerson();
@@ -559,6 +572,8 @@ function stepPlayer(dt: number): void {
     standPlayer();
     controller.path = path;
   }
+  // Steering by keys: the walk-to pin goes.
+  if (Math.hypot(mv.x, mv.y) > 0.05) world.clearWalkTarget();
   // Running laps: round your lane at a run until you steer or jump off it.
   const lane = world.laneOf(pk!);
   let mvNow = mv;
@@ -576,7 +591,10 @@ function stepPlayer(dt: number): void {
   }
   if (world.isSeated(pk!)) { world.cam.played(); return; }
   const before = { ...controller.pos };
+  const vyBefore = controller.vy;
   controller.step(dt, mvNow, world.cameraYaw());
+  // Took off this frame: tell the others (nostr/motion.ts `j`).
+  if (controller.vy > 0 && vyBefore <= 0) pendingJump = performance.now();
   c.drive(controller.pos.x, controller.pos.z, controller.heading, controller.moving, controller.running, controller.height, controller.airborne);
   world.cam.setFeel({
     speed: dt > 0 ? Math.hypot(controller.pos.x - before.x, controller.pos.z - before.z) / dt : 0,
@@ -636,7 +654,9 @@ world.hooks.onGroundClick = (p) => {
   if (!controller) return;
   // Walking somewhere else ends your laps.
   if (world.playerPk && world.laneOf(world.playerPk) !== null) world.stopTraining(world.playerPk);
-  controller.walkTo(p);
+  const ok = controller.walkTo(p);
+  // A pin where you're going (red if there's no way there).
+  world.showWalkTarget(ok ? controller.path[controller.path.length - 1] ?? p : p, ok);
   world.cam.played();
 };
 
@@ -742,7 +762,7 @@ function seatHintCompute(hint: { hidden: boolean; textContent: string }): void {
   }
   hint.hidden = false;
   if (seat?.prop && seat.prop !== 'mate') {
-    const what = seat.prop === 'coffee' ? 'work with a coffee' : seat.prop === 'asado' ? 'eat asado' : 'join the table';
+    const what = seat.prop === 'coffee' ? 'work with a coffee' : seat.prop === 'asado' ? 'eat asado' : seat.prop === 'marshmallow' ? 'roast marshmallows by the fire' : 'join the table';
     hint.textContent = touch ? `Sit and ${what}` : `Press E to sit and ${what}`;
     return;
   }
@@ -808,7 +828,8 @@ const side = new SidePanel($('app'), {
   profile: (pk) => { const p = world.profiles.get(pk); return { name: p?.name ?? world.nameOf(pk), avatar: p?.avatar ?? null, nip05: p?.nip05 ?? null }; },
   colorOf: (pk) => pubkeyColor(pk),
   me: () => session.current?.pubkey ?? null,
-  onChannel: (id) => { showGroup(id); const slot = world.slotFor(id); if (controller && slot) { controller.walkTo(slot.yard); world.cam.played(); } },
+  // Show its house and open its chat right here: no need to walk over.
+  onChannel: (id) => openChannel(id),
   onMember: (pk) => showPerson(pk),
 });
 const renderTabs = (): void => {
@@ -818,6 +839,20 @@ const renderTabs = (): void => {
 $('tab-channels').addEventListener('click', () => { side.toggle('channels'); renderTabs(); });
 $('tab-members').addEventListener('click', () => { side.toggle('members'); renderTabs(); });
 side.el.querySelector('.chat-min')?.addEventListener('click', renderTabs);
+
+/** Open a channel from a list: the camera goes to its house and its chat
+ *  opens on the right, fully usable, wherever your character is. */
+function openChannel(id: string): void {
+  const g = groups.find((x) => x.id === id);
+  if (!g) return;
+  if (dmPanel.isOpen) dmPanel.close();
+  chat.el.hidden = false;
+  chat.open(g, 'user');
+  chat.setMinimised(false);
+  chatHint = null;
+  $('card').hidden = true;
+  world.cam.focus(world.groupAnchor(id), 9);
+}
 
 // ── private messages and calls (obelisk-dex's NIP-17 DMs and 1:1 calls) ──
 
@@ -1096,20 +1131,27 @@ const motionBeacon = new MotionBeacon();
 let motionBusy = false;
 
 /** Send your movement when the beacon says so (one publish in flight at a time). */
+/** When you last took off (performance.now()), until the jump is sent. */
+let pendingJump = 0;
+
 function tickMotion(): void {
   const s = session.current;
   const pk = world.playerPk;
   // A remote signer (bunker) can't sign this often; it still shares activities.
   if (!s || !pk || !controller || motionBusy || s.method === 'nip46' || !prefs.get().shareMotion) return;
   const path = controller.path;
+  // A jump is sent while it's fresh (within ~0.6 s of take-off), else dropped.
+  if (pendingJump && performance.now() - pendingJump > 600) pendingJump = 0;
   const send = motionBeacon.update({
     p: controller.pos,
     moving: controller.moving,
     run: controller.running,
     dest: path.length ? path[path.length - 1] : null,
     heading: controller.heading,
+    jumped: pendingJump > 0,
   }, Date.now());
   if (!send) return;
+  if (send.jump) pendingJump = 0;
   motionBusy = true;
   publishToGroup(hub, (t) => session.sign(t), motionTemplate(send))
     .then((out) => (out.ok ? motionBeacon.ok() : motionBeacon.fail()))
@@ -1574,12 +1616,14 @@ function loop(): void {
     if (on || roofLit.has(id)) setRoofPing(b, on, performance.now() / 1000);
     if (on) roofLit.add(id); else roofLit.delete(id);
   }
-  // Standing in a channel with its chat open for a second reads it.
-  if (place && readState && chat.groupId === place && !chat.minimised) {
+  // A channel's chat open (and not folded) for a second reads it, wherever
+  // you stand: opened from the channel list counts as much as walking in.
+  const reading = chat.groupId && !chat.el.hidden && !chat.minimised ? chat.groupId : null;
+  if (reading && readState) {
     placeDwell += dt;
     if (placeDwell > 1) {
-      const latest = msgsOf(place).at(-1);
-      if (latest) readState.markRead(place, latest.createdAt * 1000);
+      const latest = msgsOf(reading).at(-1);
+      if (latest) readState.markRead(reading, latest.createdAt * 1000);
     }
   } else placeDwell = 0;
   requestAnimationFrame(loop);
@@ -1881,9 +1925,13 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
       case 'sound':
         prefs.set({ sound: !prefs.get().sound });
         break;
-      case 'settings':
-        openSettings($('app'), prefs, () => world.post.level);
+      case 'settings': {
+        // Pressed again: close it.
+        const open = $('app').querySelector('.settings');
+        if (open) open.remove();
+        else openSettings($('app'), prefs, () => world.post.level);
         break;
+      }
       case 'districts':
         if (!themes) break;
         openThemeEditor($('app'), {
@@ -1903,9 +1951,12 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
         if (world.playerPk) toggleFirstPerson();
         else toast('Log in to walk around as yourself.');
         break;
-      case 'help':
-        openControlsGuide($('app'));
+      case 'help': {
+        const open = $('app').querySelector('.guide');
+        if (open) open.remove();
+        else openControlsGuide($('app'));
         break;
+      }
       case 'fullscreen':
         if (document.fullscreenElement) void document.exitFullscreen();
         else void document.documentElement.requestFullscreen?.();

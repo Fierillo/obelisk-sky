@@ -15,7 +15,7 @@ import { buildNostrWotHq } from './nostrwot';
 export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla';
 
 /** What a seat at a landmark puts in your hand. */
-export type SeatProp = 'mate' | 'coffee' | 'asado' | 'none';
+export type SeatProp = 'mate' | 'coffee' | 'asado' | 'none' | 'marshmallow';
 
 export interface LandmarkSeat {
   pos: Vec2; face: number; y: number; prop: SeatProp;

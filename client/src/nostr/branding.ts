@@ -7,7 +7,11 @@ import type { Event as NostrEvent } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import { fetchRelayInfo, faviconFor, operatorPubkeyFromRelayInfo } from '@/services/relay/relay-info';
 
-export interface RelayIdentity { name: string | null; icon: string | null }
+export interface RelayIdentity {
+  name: string | null;
+  /** Icons to try in order (branding, NIP-11, favicon): the first that loads wins. */
+  icons: string[];
+}
 
 /** The branding tags, as obelisk-dex reads them (services/relay/relay-branding.ts). */
 export function parseBranding(ev: NostrEvent): { icon: string; name: string } {
@@ -25,16 +29,21 @@ const https = (u: string | null | undefined): string | null => (u && /^https:\/\
 export async function relayIdentity(hub: RelayHub, relay: string): Promise<RelayIdentity> {
   const info = await fetchRelayInfo(relay).catch(() => null);
   let name = info?.name?.trim() || null;
-  let icon = https(info?.icon) ?? https(faviconFor(relay));
+  const icons = [https(info?.icon), https(faviconFor(relay))];
   const op = operatorPubkeyFromRelayInfo(info);
   if (op) {
-    const r = await hub.query({ relays: [relay], filters: [{ kinds: [30078], authors: [op], '#d': [`obelisk:branding:${relay}`] }], maxWaitMs: 4000, label: 'sky-branding' }).catch(() => null);
+    // The hub throws (synchronously) before anyone is logged in: no
+    // identity to read with yet. NIP-11 alone does then; main.ts asks again
+    // after login.
+    const r = await Promise.resolve()
+      .then(() => hub.query({ relays: [relay], filters: [{ kinds: [30078], authors: [op], '#d': [`obelisk:branding:${relay}`] }], maxWaitMs: 4000, label: 'sky-branding' }))
+      .catch(() => null);
     const ev = r?.events.filter((e) => e.pubkey === op).sort((a, b) => b.created_at - a.created_at)[0];
     if (ev) {
       const b = parseBranding(ev);
       name = b.name.trim() || name;
-      icon = https(b.icon) ?? icon;
+      icons.unshift(https(b.icon));
     }
   }
-  return { name: name ? name.slice(0, 40) : null, icon };
+  return { name: name ? name.slice(0, 40) : null, icons: [...new Set(icons.filter((u): u is string => !!u))] };
 }

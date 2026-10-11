@@ -24,6 +24,8 @@ import { fbm2 } from './noise';
 import { CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
 import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
 import { Flock } from './nostrich';
+import { WalkPin } from './walkPin';
+import { buildMarshmallow } from './campfire';
 import { mergeStatic } from './merge';
 import { chooseLights, lightBudget, type LightSpot } from './lightBudget';
 import { buildObelisk, type Obelisk } from './obelisk';
@@ -162,6 +164,9 @@ export class World {
   private gymId: string | null = null;
   private gym: GymBuild | null = null;
   private gymSolids: Solid[] = [];
+  /** Where your click-to-walk is heading. */
+  private walkPin: { pin: WalkPin; at: Vec2 } | null = null;
+  private fadingPins: WalkPin[] = [];
   /** Wild nostriches running about the island. */
   private flock: Flock | null = null;
   private frustum = new THREE.Frustum();
@@ -265,7 +270,7 @@ export class World {
       if (gym) this.setGym(b as GymBuild, g.id, slot);
       // A house is dozens of little pieces: draw them as a handful (the roof
       // lights up for mentions and the windows at night, so they stay apart).
-      else this.meshesMerged += mergeStatic(b.group, (m) => m.name === 'roof' || b.windows.includes(m));
+      else this.meshesMerged += mergeStatic(b.group, (m) => m.name === 'roof' || b.windows.includes(m) || underCampfire(m));
       this.setTreeSeats(g.id, slot, b.tree ?? null);
       b.group.userData = { groupId: g.id, tier, kind: g.kind, district, gym };
       this.buildingRoot.add(b.group);
@@ -760,6 +765,31 @@ export class World {
     }
   }
 
+  /** Mark where a click-to-walk is going (`ok`: a path was found). */
+  showWalkTarget(p: Vec2, ok: boolean): void {
+    this.clearWalkTarget();
+    const pin = new WalkPin(ok);
+    pin.group.position.set(p.x, this.groundAt(p), p.z);
+    this.scene.add(pin.group);
+    if (ok) this.walkPin = { pin, at: { ...p } };
+    else this.fadingPins.push(pin);
+  }
+
+  /** Steering by keys (or a new destination): the pin goes. */
+  clearWalkTarget(): void {
+    if (!this.walkPin) return;
+    this.walkPin.pin.dismiss();
+    this.fadingPins.push(this.walkPin.pin);
+    this.walkPin = null;
+  }
+
+  private updateWalkPins(dt: number): void {
+    const me = this.playerPk ? this.people.get(this.playerPk) : null;
+    if (this.walkPin && me && dist(me.pos, this.walkPin.at) < 0.35) this.clearWalkTarget();
+    this.walkPin?.pin.update(dt);
+    this.fadingPins = this.fadingPins.filter((p) => { const alive = p.update(dt); if (!alive) p.dispose(); return alive; });
+  }
+
   /** Keep only a budget of point and spot lights on, nearest where you look (lightBudget.ts). */
   private budgetLights(): void {
     if (this.elapsed - this.lightsCollectedAt > 3) {
@@ -977,7 +1007,7 @@ export class World {
     const solids: Solid[] = [];
     for (const ch of tree.seats) {
       const pos = this.buildingToWorld(slot, ch.pos);
-      this.seats.push({ pos, face: ch.face + slot.rot, y: ch.y, taken: null, prop: 'mate', bench: `tree:${id}`, tree: id, managed: true });
+      this.seats.push({ pos, face: ch.face + slot.rot, y: ch.y, taken: null, prop: ch.prop, tree: id, managed: true });
       const r = 0.1;
       const so = { minX: pos.x - r, maxX: pos.x + r, minZ: pos.z - r, maxZ: pos.z + r, top: ch.y };
       this.solids.push(so);
@@ -1935,7 +1965,7 @@ export class World {
       // hand and lifts it to sip or bite (Character.update).
       const prop = seat.prop ?? 'mate';
       if (prop !== 'none') {
-        c.mate = prop === 'coffee' ? buildCup() : prop === 'asado' ? buildChoripan() : buildMate();
+        c.mate = prop === 'coffee' ? buildCup() : prop === 'asado' ? buildChoripan() : prop === 'marshmallow' ? buildMarshmallow() : buildMate();
         // A little larger than life so it reads at village distance.
         c.mate.scale.setScalar(0.75);
         c.body.add(c.mate);
@@ -2391,6 +2421,8 @@ export class World {
     if (c.opacity < 0.5 && c.targetOpacity === 1) { go(); return; }
     if (dist(c.pos, now) > MOVER_BLINK_M) this.blink(c, now, go);
     else { c.targetOpacity = 1; go(); }
+    // They jumped (and it's fresh): jump here too.
+    if (m.jump && ageS < 1.2) c.jump();
   }
 
   /** Forget movers whose movement went quiet: back to local life, or gone if they only came to move. */
@@ -2580,6 +2612,8 @@ export class World {
 
     for (const p of this.pets.values()) p.update(dt, (q) => this.groundAt(q));
     this.updateRounds(dt);
+    this.updateWalkPins(dt);
+    for (const b of this.buildings.values()) b.tree?.update(this.elapsed, night01);
     this.gym?.group.userData.setNight?.(night01);
     this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projView);
@@ -2621,6 +2655,12 @@ export class World {
     this.post.render(dt);
     return dt;
   }
+}
+
+/** A campfire's flames flicker every frame: never merged away. */
+function underCampfire(o: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p.name === 'campfire') return true;
+  return false;
 }
 
 /** Grass tufts for a quality level (0: none). */

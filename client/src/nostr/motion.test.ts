@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
 import {
-  IDLE_HEARTBEAT_MS, KEYS_CORRECTION_MS, KIND_SKY_MOTION, MIN_GAP_MS, MOTION_STALE_MS, PATH_CORRECTION_MS,
+  IDLE_HEARTBEAT_MS, JUMP_GAP_MS, KEYS_CORRECTION_MS, KIND_SKY_MOTION, MIN_GAP_MS, MOTION_STALE_MS, PATH_CORRECTION_MS,
   MotionBeacon, MotionStore, extrapolate, motionTemplate, parseMotion, type Motion, type PlayerMotionState,
 } from './motion';
 
@@ -120,5 +120,29 @@ describe('MotionBeacon', () => {
     expect(b.slowdown).toBe(8);
     b.ok(); b.ok(); b.ok();
     expect(b.slowdown).toBe(1);
+  });
+});
+
+describe('jumps', () => {
+  it('go out at once with j: 1, and parse back', () => {
+    const b = new MotionBeacon();
+    const base = { p: { x: 1, z: 2 }, moving: false, run: false, dest: null, heading: 0 };
+    b.update(base, 0); // the first event
+    const sent = b.update({ ...base, jumped: true }, JUMP_GAP_MS + 1);
+    expect(sent?.jump).toBe(true);
+    const ev = { ...motionTemplate(sent!), pubkey: 'a'.repeat(64), id: 'x', sig: 'y' };
+    expect(JSON.parse(ev.content).j).toBe(1);
+    expect(parseMotion(ev as never)?.jump).toBe(true);
+  });
+  it('still respect a minimum gap', () => {
+    const b = new MotionBeacon();
+    const base = { p: { x: 0, z: 0 }, moving: false, run: false, dest: null, heading: 0 };
+    b.update(base, 0);
+    expect(b.update({ ...base, jumped: true }, JUMP_GAP_MS - 50)).toBeNull();
+  });
+  it('are absent from ordinary events', () => {
+    const ev = { ...motionTemplate({ t: 1, p: { x: 0, z: 0 }, moving: false, run: false, dest: null, heading: null }), pubkey: 'a'.repeat(64), id: 'x', sig: 'y' };
+    expect(JSON.parse(ev.content).j).toBeUndefined();
+    expect(parseMotion(ev as never)?.jump).toBe(false);
   });
 });

@@ -43,6 +43,8 @@ export interface Motion {
   dest: Vec2 | null;
   /** Heading while walking by keys (radians, atan2(dx, dz)). */
   heading: number | null;
+  /** They just jumped (content `j: 1`): everyone plays the same jump. */
+  jump?: boolean;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -54,6 +56,7 @@ export function motionTemplate(m: Motion, at = Math.floor(m.t / 1000)): EventTem
   const c: Record<string, unknown> = { v: 1, t: Math.round(m.t), p: [r2(m.p.x), r2(m.p.z)] };
   if (m.moving) c.mv = 1;
   if (m.run) c.run = 1;
+  if (m.jump) c.j = 1;
   if (m.moving && m.dest) c.d = [r2(m.dest.x), r2(m.dest.z)];
   else if (m.moving && m.heading !== null) c.h = Math.round(m.heading * 1000) / 1000;
   return {
@@ -75,7 +78,7 @@ export function parseMotion(ev: NostrEvent): (Motion & { pk: string }) | null {
   const moving = j.mv === 1;
   const dest = moving ? point(j.d) : null;
   const heading = moving && !dest && finite(j.h, 10) ? j.h : null;
-  return { pk: ev.pubkey, t: j.t, p, moving: moving && (!!dest || heading !== null), run: j.run === 1, dest, heading };
+  return { pk: ev.pubkey, t: j.t, p, moving: moving && (!!dest || heading !== null), run: j.run === 1, dest, heading, jump: j.j === 1 };
 }
 
 /** Where someone walking by keys should be `seconds` after their event. */
@@ -140,7 +143,10 @@ export class MotionStore {
 }
 
 /** The viewer's movement this frame, as the controller sees it. */
-export interface PlayerMotionState { p: Vec2; moving: boolean; run: boolean; dest: Vec2 | null; heading: number }
+export interface PlayerMotionState { p: Vec2; moving: boolean; run: boolean; dest: Vec2 | null; heading: number; jumped?: boolean }
+
+/** A jump goes out at once, but never closer than this to the last event (ms). */
+export const JUMP_GAP_MS = 400;
 
 /**
  * When to publish the viewer's movement. Pure: feed it the state every frame;
@@ -154,6 +160,12 @@ export class MotionBeacon {
   update(s: PlayerMotionState, nowMs: number): Motion | null {
     const sig = signature(s);
     const since = nowMs - this.lastSent;
+    // A take-off is worth sending right away (within a tighter limit).
+    if (s.jumped && since >= JUMP_GAP_MS * this.backoff) {
+      this.lastSig = sig;
+      this.lastSent = nowMs;
+      return { t: nowMs, p: { ...s.p }, moving: s.moving, run: s.moving && s.run, dest: s.moving && s.dest ? { ...s.dest } : null, heading: s.moving && !s.dest ? s.heading : null, jump: true };
+    }
     if (since < MIN_GAP_MS * this.backoff) return null;
     const due = sig !== this.lastSig
       || (s.moving && since >= (s.dest ? PATH_CORRECTION_MS : KEYS_CORRECTION_MS) * this.backoff)
