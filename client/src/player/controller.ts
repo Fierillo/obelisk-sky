@@ -21,6 +21,10 @@ export interface Solid { minX: number; maxX: number; minZ: number; maxZ: number;
 
 /** You step onto anything this low without jumping (a kerb, a mat). */
 export const STEP_UP = 0.06;
+/** Raised ground (a bridge's arch, a ramp) is climbed and descended by the
+ *  distance you move, up to this slope, so a long step (a slow frame, a
+ *  run) doesn't stall on it or hop off it. */
+export const MAX_RAMP_SLOPE = 0.9;
 
 /** The highest solid under p (0 = the ground). */
 export function surfaceAt(solids: readonly Solid[], p: Vec2, pad = 0): number {
@@ -54,10 +58,14 @@ export class PlayerController {
   private jumpBuffered = 0;
   /** Set on the frame you land, for a landing squash. */
   landed = false;
+  /** How far the last step moved you (for following ramps). */
+  private lastMove = 0;
+  private prevPos: Vec2 | null = null;
 
   get airborne(): boolean {
-    // Just stepped down a stair (snapped on the next step): still on your feet.
-    const slack = this.sinceGrounded === 0 ? STEP_UP : 1e-4;
+    // Just stepped down a stair or a ramp (snapped on the next step): still on your feet.
+    const moved = this.prevPos ? dist(this.pos, this.prevPos) : 0;
+    const slack = this.sinceGrounded === 0 ? STEP_UP + moved * MAX_RAMP_SLOPE : 1e-4;
     return this.height > this.floorAt(this.pos, 0.02) + slack || this.vy > 0;
   }
 
@@ -88,6 +96,8 @@ export class PlayerController {
    * on the keyboard walks away from the camera.
    */
   step(dt: number, input: MoveInput, cameraYaw: number): void {
+    this.lastMove = this.prevPos ? dist(this.pos, this.prevPos) : 0;
+    this.prevPos = { ...this.pos };
     this.stepVertical(dt, !!input.jump);
     const mag = Math.hypot(input.x, input.y);
     this.running = input.run;
@@ -129,7 +139,7 @@ export class PlayerController {
     // `height` is your feet's height: the ground is 0, a bench its seat.
     const floor = this.floorAt(this.pos, 0.02);
     // Walking down a slope or stairs keeps your feet on it (no little falls).
-    if (this.sinceGrounded === 0 && this.vy <= 0 && this.height > floor && this.height - floor <= STEP_UP) this.height = floor;
+    if (this.sinceGrounded === 0 && this.vy <= 0 && this.height > floor && this.height - floor <= STEP_UP + this.lastMove * MAX_RAMP_SLOPE) this.height = floor;
     const grounded = this.height <= floor + 1e-4 && this.vy <= 0;
     this.sinceGrounded = grounded ? 0 : this.sinceGrounded + dt;
     if (this.jumpBuffered > 0 && this.sinceGrounded <= COYOTE_TIME && this.vy <= 0) {
@@ -158,7 +168,13 @@ export class PlayerController {
     // (Inside one already, say after a teleport, you can always walk out.)
     // Raised ground is a ramp: each step rises a little, well under STEP_UP.
     const here = this.floorAt(this.pos, 0.12);
-    const tooHigh = (p: Vec2) => { const t = this.floorAt(p, 0.12); return t > this.height + STEP_UP && t > here; };
+    const tooHigh = (p: Vec2) => {
+      const t = this.floorAt(p, 0.12);
+      if (t <= here) return false;
+      // Ground (not furniture) rises with the distance: you walk up it.
+      const ramp = this.ground(p) >= t - 1e-6 ? Math.hypot(p.x - this.pos.x, p.z - this.pos.z) * MAX_RAMP_SLOPE : 0;
+      return t > this.height + STEP_UP + ramp;
+    };
     const walk = (p: Vec2) => g.isWalkable(p) || this.extraWalkable(p);
     const ok = (p: Vec2) => walk(p)
       && walk({ x: p.x + Math.sign(dx) * pad, z: p.z })

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PlayerController, placeAt, WALK_SPEED } from './controller';
 import { NavGrid } from '../world/layout';
+import { archHeight, BRIDGE_RISE } from '../world/bridge';
 
 function grid() {
   const g = new NavGrid(10);
@@ -152,6 +153,20 @@ describe('raised ground (stairs, a raised floor)', () => {
     for (let i = 0; i < 90; i++) { step(c, 1, { x: 0, y: 1, run: true }, -Math.PI / 2); expect(c.airborne).toBe(false); }
     expect(c.pos.x).toBeLessThan(0);
     expect(c.height).toBe(0);
+  });
+  it('runs up and over a bridge arch even at 10 fps, never stalling or hopping', () => {
+    const arch = (p: { x: number; z: number }) => archHeight((p.x - 2) / 1.6);
+    const c = new PlayerController(() => new NavGrid(10), { x: -0.5, z: 0 }, () => [], () => false, arch);
+    let peak = 0;
+    for (let i = 0; i < 40; i++) {
+      c.step(0.1, { x: 0, y: 1, run: true }, Math.PI / 2);
+      peak = Math.max(peak, c.height);
+      expect(c.airborne).toBe(false);
+      // Height settles at the start of the next step: at most one step behind.
+      expect(Math.abs(c.height - arch(c.pos))).toBeLessThan(0.26 * 0.9);
+    }
+    expect(c.pos.x).toBeGreaterThan(4);
+    expect(peak).toBeGreaterThan(BRIDGE_RISE * 0.9);
   });
   it('still blocks a ledge higher than a step', () => {
     const ledge = (p: { x: number; z: number }) => (p.x > 1 ? 0.4 : 0);

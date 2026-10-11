@@ -13,6 +13,7 @@ import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises
 import { buildPerson } from '../people/people';
 import type { Command } from './director';
 import { buildIsland, type IslandMeshes } from './island';
+import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bridge';
 import {
   assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
@@ -87,6 +88,7 @@ export class World {
   private island!: IslandMeshes;
   private grid!: NavGrid;
   private bridges: Vec2[] = [];
+  private bridgeSpecs: BridgeSpec[] = [];
   private pathCells = new Set<number>();
   private staticRoot = new THREE.Group();
   private buildingRoot = new THREE.Group();
@@ -378,15 +380,9 @@ export class World {
     const pondIdx = rp.reduce((best, p, i) => (dist(p, plan.pond.c) < dist(rp[best], plan.pond.c) ? i : best), 0);
     const bridgeIdx = [Math.floor(pondIdx * 0.45), Math.floor(pondIdx + (rp.length - pondIdx) * 0.45)];
     this.bridges = bridgeIdx.map((i) => rp[i]);
-    for (const i of bridgeIdx) {
-      const a = rp[i - 2], b = rp[i + 2], p = rp[i];
-      const along = Math.atan2(b.x - a.x, b.z - a.z);
-      const br = model('nature/bridge_wood');
-      br.position.set(p.x, -0.12, p.z);
-      br.rotation.y = along;
-      br.scale.set(1.9, 1.3, 1.5);
-      this.staticRoot.add(br);
-    }
+    // Arched footbridges: their deck is raised ground (groundAt).
+    this.bridgeSpecs = bridgeSpecs(plan, this.bridges);
+    for (const b of this.bridgeSpecs) this.staticRoot.add(buildBridge(b));
 
     this.grid = buildNavGrid(plan, this.gridSlots(), this.bridges);
     this.markLandmarks(this.grid);
@@ -538,9 +534,10 @@ export class World {
   }
 
   /** How high the ground is at p: raised where a landmark has stairs or a
-   *  floor up a storey (La Crypta's steps and living room), else 0. */
+   *  floor up a storey (La Crypta's steps and living room), on the arch of a
+   *  bridge, else 0. */
   groundAt(p: Vec2): number {
-    let h = 0;
+    let h = bridgeHeightAt(this.bridgeSpecs, p);
     for (const [id, b] of this.landmarks) {
       if (!b.groundAt) continue;
       const l = this.toLandmarkLocal(id, p);
@@ -2125,7 +2122,7 @@ export class World {
     }
     this.post.setNight(night01);
 
-    for (const p of this.pets.values()) p.update(dt);
+    for (const p of this.pets.values()) p.update(dt, (q) => this.groundAt(q));
     for (const [pk, then] of [...this.blinks]) {
       const c = this.people.get(pk);
       if (!c) this.blinks.delete(pk);

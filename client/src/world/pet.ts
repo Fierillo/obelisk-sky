@@ -55,7 +55,8 @@ export class Pet {
     this.current = a;
   }
 
-  update(dt: number): void {
+  /** `groundAt`: raised ground (a bridge's arch, steps) the pet walks on. */
+  update(dt: number, groundAt: (p: { x: number; z: number }) => number = () => 0): void {
     const o = this.owner.root.position;
     const p = this.root.position;
     // Heel position: a little behind and to the side of the owner.
@@ -83,15 +84,15 @@ export class Pet {
       this.root.rotation.y = Math.atan2(dx, dz);
       this.play(speed > 2 ? 'run' : 'walk');
       // A little hop while moving.
-      p.y = o.y * 0 + Math.abs(Math.sin(performance.now() / 110)) * 0.04;
+      p.y = groundAt(p) + Math.abs(Math.sin(performance.now() / 110)) * 0.04;
     } else {
-      p.y = 0;
+      p.y = groundAt(p);
       this.play(this.danceFor > 0 ? 'dance' : 'idle');
     }
     // The owner jumps: the pet jumps along, a beat later and a bit lower.
     this.hopY = THREE.MathUtils.damp(this.hopY, this.owner.jumpY * 0.6, 14, dt);
     p.y += this.hopY;
-    if (d > 8) p.set(heel.x, 0, heel.z); // teleported owner: catch up at once
+    if (d > 8) p.set(heel.x, groundAt(heel), heel.z); // teleported owner: catch up at once
     this.mixer?.update(dt);
   }
 

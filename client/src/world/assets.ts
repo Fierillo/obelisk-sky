@@ -86,7 +86,7 @@ export const NATURE = [
   'flower_redA', 'flower_yellowA', 'flower_purpleA', 'flower_redB', 'flower_yellowB', 'flower_purpleB',
   'rock_largeA', 'rock_largeB', 'rock_tallA', 'rock_smallA', 'rock_smallB', 'stone_smallA', 'stone_tallB',
   'mushroom_red', 'mushroom_redGroup', 'log', 'log_stack', 'stump_round', 'campfire_stones', 'campfire_logs',
-  'tent_detailedOpen', 'bridge_wood', 'lily_large', 'lily_small', 'sign', 'statue_obelisk', 'hanging_moss',
+  'tent_detailedOpen', 'lily_large', 'lily_small', 'sign', 'statue_obelisk', 'hanging_moss',
   'crops_cornStageD', 'crops_wheatStageB', 'pot_large',
 ].map((n) => `nature/${n}`);
 
