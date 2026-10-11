@@ -190,8 +190,11 @@ void (async () => {
   world.post.holdLevel(true);
   world.buildGround();
   world.cam.holdTopDown(ISLAND_R);
+  // The preview renders until the frame loop takes over (it keeps going
+  // through the warm-up below, so the island never freezes behind the bar).
+  let looping = false;
   const preview = (): void => {
-    if (ready) return;
+    if (looping) return;
     world.frame();
     requestAnimationFrame(preview);
   };
@@ -201,12 +204,16 @@ void (async () => {
   applyPrefs(prefs.get()); // again: grass needs the island built
   await preloadPeople((d, t) => loading.setProgress(0.7 + (d / t) * 0.3));
   ready = true;
-  world.post.holdLevel(false);
+  // Everything that arrived while loading (houses, people) is built and its
+  // shaders compiled while the loading screen still covers it: otherwise the
+  // first frames of the swing stall and it jumps.
   for (const m of pending) handle(m);
   pending = [];
+  await world.renderer.compileAsync(world.scene, world.camera).catch(() => {});
+  looping = true;
   requestAnimationFrame(loop);
-  loading.done();
   $('app').classList.remove('booting');
+  await loading.done();
   world.cam.playIntro();
 })();
 
@@ -1184,8 +1191,11 @@ window.addEventListener('beforeunload', () => { void call.leave(); });
 let signTimer = 0;
 const pinged = new Set<string>();
 let placeDwell = 0;
+let qualityHeld = true;
 function loop(): void {
   const dt = world.frame();
+  // "auto" quality waits until the intro has landed: a step down mid-swing recompiles and stutters.
+  if (qualityHeld && !world.cam.inIntro) { qualityHeld = false; world.post.holdLevel(false); }
   stepPlayer(dt);
   tickActivity();
   renderSeatHint();

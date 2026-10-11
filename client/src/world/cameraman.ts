@@ -23,6 +23,16 @@ export function topDownHeight(radius: number, fovDeg: number, aspect: number): n
 }
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+/** The intro's curve: eases in like `easeInOut`, but spends longer landing. */
+export const introEase = (t: number) => easeInOut(1 - (1 - t) ** 1.4);
+/** The intro never advances more than one 30 fps frame at a time: a stalled
+ *  frame (models, shaders) slows the swing instead of skipping part of it. */
+const INTRO_MAX_STEP = 1 / 30;
+/** How fast the intro's landing pose follows a new one (s). */
+const INTRO_RETARGET_TAU = 0.35;
+/** Input finishes the intro over this long, from wherever it is. */
+const INTRO_SKIP_SECONDS = 0.9;
+const SKIP_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'shift']);
 
 interface Pose { target: THREE.Vector3; pos: THREE.Vector3 }
 
@@ -32,6 +42,8 @@ interface Intro {
   radius: number;
   /** null while holding the top-down view. */
   to: Pose | null;
+  /** Where the swing is heading right now: eases towards `to` when that changes. */
+  cur: Pose | null;
   /** The end pose belongs to your character: keep following it afterwards. */
   toPlayer: boolean;
   t: number;
@@ -116,7 +128,7 @@ export class Cameraman {
     camera.position.copy(HOME_TARGET).add(HOME_OFFSET);
     // Any input during the intro's swing finishes it quickly.
     for (const ev of ['pointerdown', 'wheel'] as const) dom.addEventListener(ev, () => this.skipIntro(), { passive: true });
-    window.addEventListener('keydown', () => this.skipIntro());
+    window.addEventListener('keydown', (e) => { if (SKIP_KEYS.has(e.key.toLowerCase())) this.skipIntro(); });
     this.controls.addEventListener('start', () => {
       if (this.intro) return;
       this.userUntil = performance.now() + 20_000;
@@ -143,10 +155,9 @@ export class Cameraman {
     const elev = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)), 0.45, 1.1);
     const nd = flat.multiplyScalar(Math.cos(elev)).setY(Math.sin(elev));
     if (this.intro) {
-      // Mid-intro the swing lands there instead (quickly, if it's already flying).
+      // Mid-intro the swing bends there instead of jumping.
       this.intro.to = { target: target.clone(), pos: target.clone().addScaledVector(nd, distance) };
       this.intro.toPlayer = false;
-      this.skipIntro();
       return;
     }
     this.tween = {
@@ -188,16 +199,17 @@ export class Cameraman {
   holdTopDown(radius: number): void {
     this.tween = null;
     this.follow = null;
-    this.intro = { radius, to: null, toPlayer: false, t: 0, rate: 0 };
+    this.intro = { radius, to: null, cur: null, toPlayer: false, t: 0, rate: 0 };
     this.applyIntro();
   }
 
   /** Swing from the top-down view to your character (if you're on the
    *  island) or the whole-island view, over `dur` seconds. */
-  playIntro(dur = 2.8): void {
+  playIntro(dur = 3.4): void {
     if (!this.intro) return;
     const p = this.player?.();
     this.intro.to ??= p ? this.followPose(p) : { target: HOME_TARGET.clone(), pos: HOME_TARGET.clone().add(HOME_OFFSET) };
+    this.intro.cur ??= { target: this.intro.to.target.clone(), pos: this.intro.to.pos.clone() };
     this.intro.toPlayer ||= !!p;
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.intro.rate = reduce ? 1e3 : 1 / dur;
@@ -205,7 +217,7 @@ export class Cameraman {
 
   /** 0 → 1 over the intro; 1 when there is none. */
   get introProgress(): number {
-    return this.intro ? easeInOut(this.intro.t) : 1;
+    return this.intro ? introEase(this.intro.t) : 1;
   }
 
   get inIntro(): boolean {
@@ -215,7 +227,7 @@ export class Cameraman {
   private skipIntro(): void {
     const it = this.intro;
     if (!it || !it.rate) return;
-    it.rate = Math.max(it.rate, (1 - it.t) / 0.4);
+    it.rate = Math.max(it.rate, (1 - it.t) / INTRO_SKIP_SECONDS);
   }
 
   /** Place the camera along the swing: target, distance, elevation and
@@ -223,8 +235,8 @@ export class Cameraman {
   private applyIntro(): void {
     const it = this.intro!;
     const h = topDownHeight(it.radius, this.camera.fov, this.camera.aspect);
-    const k = easeInOut(it.t);
-    const to = it.to;
+    const k = introEase(it.t);
+    const to = it.cur;
     const target = new THREE.Vector3();
     let dist = h, polar = 0, bearing = 0;
     if (to) {
@@ -250,12 +262,19 @@ export class Cameraman {
     const it = this.intro!;
     this.intro = null;
     this.camera.up.set(0, 1, 0);
-    if (it.to) {
-      this.controls.target.copy(it.to.target);
-      this.camera.position.copy(it.to.pos);
+    if (it.cur) {
+      this.controls.target.copy(it.cur.target);
+      this.camera.position.copy(it.cur.pos);
     }
     this.camera.lookAt(this.controls.target);
+    // No leftover damping from before the intro: it would nudge the first frame.
+    this.controls.enableDamping = false;
     this.controls.update();
+    this.controls.enableDamping = true;
+    // The landing pose moved late: glide the rest of the way rather than snap.
+    if (it.to && it.cur && (it.to.pos.distanceTo(it.cur.pos) > 0.01 || it.to.target.distanceTo(it.cur.target) > 0.01)) {
+      this.tween = { fromT: it.cur.target.clone(), toT: it.to.target.clone(), fromP: it.cur.pos.clone(), toP: it.to.pos.clone(), t: 0, dur: 0.6 };
+    }
     this.lastCut = performance.now();
     if (it.toPlayer) this.playingUntil = performance.now() + 30_000;
   }
@@ -298,7 +317,14 @@ export class Cameraman {
 
   update(dt: number): void {
     if (this.intro) {
-      this.intro.t = Math.min(1, this.intro.t + dt * this.intro.rate);
+      const it = this.intro;
+      const step = Math.min(dt, INTRO_MAX_STEP);
+      it.t = Math.min(1, it.t + step * it.rate);
+      if (it.to && it.cur) {
+        const a = 1 - Math.exp(-step / INTRO_RETARGET_TAU);
+        it.cur.target.lerp(it.to.target, a);
+        it.cur.pos.lerp(it.to.pos, a);
+      }
       this.applyIntro();
       if (this.intro.t >= 1) this.endIntro();
       return;

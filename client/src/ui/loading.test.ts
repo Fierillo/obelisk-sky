@@ -40,7 +40,7 @@ describe('LoadingScreen', () => {
     document.body.innerHTML = '<div id="loading" class="loading"><div class="loading-inner"><div class="loading-title"></div><div class="loading-bar"><div id="loading-fill"></div></div></div></div>';
     root = document.getElementById('loading')!;
   });
-  it('shows the stage and the bar as models arrive, then lets the island through', () => {
+  it('shows the stage and the bar as models arrive, then lets the island through', async () => {
     const l = new LoadingScreen(root, planIsland());
     expect(root.querySelector('svg.loading-map')).not.toBeNull();
     expect(root.querySelector('.loading-title')!.textContent).toBe(STAGES[0].label);
@@ -50,7 +50,19 @@ describe('LoadingScreen', () => {
     expect((root.querySelector('#loading-fill') as HTMLElement).style.width).toBe('50%');
     l.showWorld();
     expect(root.classList.contains('world')).toBe(true);
-    l.done();
+    const faded = l.done(20);
     expect(root.classList.contains('done')).toBe(true);
+    await faded; // no CSS transitions in jsdom: the fallback resolves it
+  });
+
+  it('resolves when its own opacity fade ends', async () => {
+    const l = new LoadingScreen(root, planIsland());
+    let resolved = false;
+    const faded = l.done(10_000).then(() => { resolved = true; });
+    const ev = new Event('transitionend') as TransitionEvent;
+    Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+    root.dispatchEvent(ev);
+    await faded;
+    expect(resolved).toBe(true);
   });
 });

@@ -42,7 +42,7 @@ describe('the intro', () => {
     cam.playIntro(2);
     run(1);
     expect(cam.introProgress).toBeGreaterThan(0.2);
-    expect(cam.introProgress).toBeLessThan(0.8);
+    expect(cam.introProgress).toBeLessThan(0.85);
     run(1.2);
     expect(cam.inIntro).toBe(false);
     expect(camera.position.distanceTo(new THREE.Vector3(22, 20.5, 44))).toBeLessThan(1e-3);
@@ -62,24 +62,60 @@ describe('the intro', () => {
     expect(cam.playing).toBe(true);
   });
 
-  it('retargets to you if you arrive mid-swing', () => {
+  /** The largest camera move between two 30 fps frames over `seconds`. */
+  const maxStep = (seconds: number) => {
+    let last = camera.position.clone();
+    let max = 0;
+    for (let t = 0; t < seconds; t += 1 / 30) {
+      cam.update(1 / 30);
+      max = Math.max(max, camera.position.distanceTo(last));
+      last = camera.position.clone();
+    }
+    return max;
+  };
+
+  it('retargets to you if you arrive mid-swing, without a jump', () => {
+    cam.holdTopDown(ISLAND_R);
+    cam.playIntro(2);
+    const plain = maxStep(3); // the same swing with nothing changing
+    cam = new Cameraman(camera, document.createElement('div'));
     cam.holdTopDown(ISLAND_R);
     cam.playIntro(2);
     run(0.5);
     cam.followPlayer(() => new THREE.Vector3(-3, 0.5, 5));
-    run(2);
+    const bent = maxStep(3);
     expect(cam.controls.target.distanceTo(new THREE.Vector3(-3, 0.6, 5))).toBeLessThan(1e-3);
+    // Swapping the landing pose used to jump tens of metres in a frame.
+    expect(bent).toBeLessThan(plain * 1.25);
   });
 
-  it('finishes quickly on any input, and ignores director cuts meanwhile', () => {
+  it('never advances more than a 30 fps frame at once (a stalled frame slows it)', () => {
+    cam.holdTopDown(ISLAND_R);
+    cam.playIntro(2);
+    cam.update(1); // one long frame: shader compilation, a burst of events
+    expect(cam.introProgress).toBeLessThan(0.01);
+    expect(cam.inIntro).toBe(true);
+  });
+
+  it('finishes quickly on a movement key, and ignores director cuts meanwhile', () => {
     cam.holdTopDown(ISLAND_R);
     cam.playIntro(10);
     run(0.2);
     cam.interest([new THREE.Vector3(5, 0, 5)], true);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
-    run(0.5);
+    run(1);
     expect(cam.inIntro).toBe(false);
     expect(cam.controls.target.distanceTo(new THREE.Vector3(0, -0.5, 1))).toBeLessThan(1e-3);
+  });
+
+  it('keeps going on keys that are not movement (shortcuts, modifiers)', () => {
+    cam.holdTopDown(ISLAND_R);
+    cam.playIntro(10);
+    run(0.2);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm' }));
+    run(1);
+    expect(cam.inIntro).toBe(true);
   });
 
   it('ignores input while still loading', () => {

@@ -114,9 +114,21 @@ export class LoadingScreen {
     this.root.classList.add('world');
   }
 
-  done(): void {
+  /** Fade out; resolves once the fade has finished (or after `fallbackMs`,
+   *  if no transition runs: reduced motion, a hidden tab). */
+  done(fallbackMs = 900): Promise<void> {
     this.root.classList.add('done');
     window.removeEventListener('resize', this.fit);
     setTimeout(() => this.svg.remove(), 1200);
+    return new Promise((resolve) => {
+      const finish = (): void => {
+        clearTimeout(timer);
+        this.root.removeEventListener('transitionend', onEnd);
+        resolve();
+      };
+      const onEnd = (e: TransitionEvent): void => { if (e.target === this.root && e.propertyName === 'opacity') finish(); };
+      const timer = setTimeout(finish, fallbackMs);
+      this.root.addEventListener('transitionend', onEnd);
+    });
   }
 }
