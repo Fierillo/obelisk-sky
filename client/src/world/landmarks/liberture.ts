@@ -1,6 +1,7 @@
 // The Liberture house: a dark slate cube with an indigo neon cornice, a
 // glass front and, above the roof, the six pillars of the Liberture logo as
-// glowing orbs levitating on a slowly turning hexagon. Inside, one corner
+// glowing orbs going round an upright ring that swings like the nostr-wot
+// graph next door. Inside, one corner
 // per pillar (a desk for Work, a daybed for Sleep, a counter of greens for
 // Nutrition, cushions for Mind, a dumbbell rack for Exercise, a safe for
 // Finance), a habit heatmap on the back wall and the "pillar tower" (the
@@ -10,6 +11,7 @@
 
 import * as THREE from 'three';
 import type { LandmarkBuild, LandmarkSeat } from './index';
+import { bitcoinSign, canvasTexture } from './signs';
 
 /** The six pillars in Liberture's order, with the colours its tracker paints. */
 export const PILLARS = [
@@ -26,16 +28,23 @@ export const W = 2.6, D = 1.8, H = 1.5;
 const T = 0.07;
 /** Top of the roof slab. */
 export const ROOF = H + 0.08;
-const HEX_R = 0.72, ORB_R = 0.15;
-const HEX_C = { x: 0, z: -D / 2 };
+const RING_R = 0.55, ORB_R = 0.15;
+const RING_C = { x: 0, y: ROOF + 1.05, z: -D / 2 };
 
-/** Where pillar orb `i` floats at time `t` (local): the logo's hexagon, turning, each orb bobbing on its own phase. */
-export function orbPosition(i: number, t: number): THREE.Vector3 {
-  const a = Math.PI * 2 / 3 - i * (Math.PI / 3) + t * 0.22;
-  return new THREE.Vector3(
-    HEX_C.x + Math.cos(a) * HEX_R,
-    ROOF + 0.62 + Math.sin(t * 1.2 + i * 1.05) * 0.07,
-    HEX_C.z - Math.sin(a) * HEX_R,
+/** Which way the orbs' ring faces at time `t`: it swings like the
+ *  nostr-wot graph next door (radians about +y). */
+export const ringYaw = (t: number) => Math.sin(t * 0.25) * 0.6;
+
+/** Where pillar orb `i` floats at time `t` (local): on an upright ring (the
+ *  logo's hexagon stood on edge), going round, each orb bobbing a little on
+ *  its own phase, the ring swinging side to side. `out` is reused. */
+export function orbPosition(i: number, t: number, out = new THREE.Vector3()): THREE.Vector3 {
+  const a = Math.PI / 2 - i * (Math.PI / 3) + t * 0.22;
+  const u = Math.cos(a) * RING_R, yaw = ringYaw(t);
+  return out.set(
+    RING_C.x + u * Math.cos(yaw),
+    RING_C.y + Math.sin(a) * RING_R + Math.sin(t * 1.2 + i * 1.05) * 0.03,
+    RING_C.z - u * Math.sin(yaw),
   );
 }
 
@@ -43,19 +52,6 @@ const flat = (color: number, o: Partial<THREE.MeshStandardMaterialParameters> = 
   new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true, ...o });
 const neon = (color: number, k = 0.8) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k, roughness: 0.4 });
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
-
-/** A canvas texture; tests run without a 2D context, so drawing is skipped there. */
-function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  let g: CanvasRenderingContext2D | null = null;
-  try { g = c.getContext('2d'); } catch { /* no canvas (tests) */ }
-  if (g) draw(g);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
 
 const haloTexture = () => canvasTexture(64, 64, (g) => {
   const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -142,6 +138,11 @@ export function buildLibertureHouse(): LandmarkBuild {
     walls.push(box(b - a, H - WIN_Y1, T, slate, (a + b) / 2, (H + WIN_Y1) / 2, -T / 2));
   }
   walls.push(box(DOOR1 - DOOR0, H - DOOR_H, T, slate, 0, (H + DOOR_H) / 2, -T / 2));
+  // "Bitcoin accepted here" beside the door.
+  const btc = bitcoinSign();
+  btc.scale.setScalar(0.66);
+  btc.position.set((DOOR1 + 0.4) / 2, 0.66, 0.004);
+  g.add(btc);
 
   // Flat roof with a parapet, the neon cornice line, and the plinth the orbs rise from.
   const roofParts: THREE.Object3D[] = [];
@@ -155,12 +156,12 @@ export function buildLibertureHouse(): LandmarkBuild {
     box(0.02, 0.025, D + 0.1, indigo, W / 2 + 0.04, H - 0.02, -D / 2),
   ];
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.08, 6), trim);
-  plinth.position.set(HEX_C.x, ROOF + 0.04, HEX_C.z);
+  plinth.position.set(RING_C.x, ROOF + 0.04, RING_C.z);
   plinth.castShadow = true;
   g.add(plinth);
   const plinthRing = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.015, 4, 6), indigo);
   plinthRing.rotation.x = Math.PI / 2;
-  plinthRing.position.set(HEX_C.x, ROOF + 0.085, HEX_C.z);
+  plinthRing.position.set(RING_C.x, ROOF + 0.085, RING_C.z);
   g.add(plinthRing);
   roofParts.push(plinth, plinthRing);
   box(W + 0.04, 0.12, 0.05, trim, 0, 0.06, 0.02); // base
@@ -416,15 +417,16 @@ export function buildLibertureHouse(): LandmarkBuild {
   g.add(coreGlow);
   // The one light: night only, so by day it never takes a slot from the budget.
   const orbLight = new THREE.PointLight(0xa5a8ff, 0, 4.5, 1.5);
-  orbLight.position.set(HEX_C.x, ROOF + 0.6, HEX_C.z);
+  orbLight.position.set(RING_C.x, RING_C.y, RING_C.z);
   g.add(orbLight);
 
   let flare = 0;
   let nightNow = 0;
+  const orbAt = new THREE.Vector3();
   const place = (t: number) => {
     const swell = 1 + flare * 0.35;
     orbs.forEach((o, i) => {
-      const at = orbPosition(i, t);
+      const at = orbPosition(i, t, orbAt);
       o.mesh.position.copy(at);
       o.mesh.scale.setScalar(swell);
       o.glow.position.copy(at);
@@ -433,8 +435,7 @@ export function buildLibertureHouse(): LandmarkBuild {
       o.beam.position.set(at.x, ROOF + 0.08, at.z);
       o.beam.scale.y = at.y - ORB_R - ROOF - 0.08;
     });
-    const cy = ROOF + 0.72 + Math.sin(t * 0.9) * 0.05;
-    core.position.set(HEX_C.x, cy, HEX_C.z);
+    core.position.set(RING_C.x, RING_C.y + Math.sin(t * 0.9) * 0.03, RING_C.z);
     core.rotation.set(t * 0.4, t * 0.6, 0);
     coreGlow.position.copy(core.position);
     coreMat.emissiveIntensity = 0.8 + nightNow + flare * 1.5;

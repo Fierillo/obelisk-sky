@@ -89,7 +89,8 @@ export function mountJoystick(parent: HTMLElement, input: InputState): void {
   base.appendChild(knob);
   parent.appendChild(base);
   let id: number | null = null;
-  const R = 46;
+  // How far the knob travels (px): the base is 144 wide (styles.css).
+  const R = 58;
   const move = (e: PointerEvent) => {
     const r = base.getBoundingClientRect();
     let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
@@ -107,7 +108,7 @@ export function mountJoystick(parent: HTMLElement, input: InputState): void {
   jump.type = 'button';
   jump.className = 'jump-btn';
   jump.setAttribute('aria-label', 'Jump');
-  jump.textContent = 'Jump';
+  jump.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6 11l6-6 6 6"/></svg>';
   jump.addEventListener('pointerdown', (e) => { e.preventDefault(); input.pressJump(); });
   parent.appendChild(jump);
 }

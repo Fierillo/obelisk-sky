@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import type { ExerciseKind } from './anim/exercises';
+import { bitcoinSign } from './landmarks/signs';
 import type { Building } from './buildings';
 import type { LandmarkInterior } from './landmarks';
 import type { Slot, Vec2 } from './layout';
@@ -120,6 +121,9 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
   // Sliding glass door.
   const door = add(box(DOOR, H - 0.05, 0.03, glass), 0, F + (H - 0.05) / 2, D / 2 - T / 2);
   door.castShadow = false;
+  // "Bitcoin accepted here" stuck on the glass beside the door.
+  const btc = add(bitcoinSign(), DOOR / 2 + 0.2, F + 0.72, D / 2 - T * 0.3 + 0.004);
+  btc.castShadow = false;
   for (const x of [-W / 2, W / 2, -DOOR / 2, DOOR / 2]) walls.push(add(box(0.06, H, 0.06, frame), x, F + H / 2, D / 2 - T / 2));
 
   // Flat roof with a deep fascia in the channel's colour and a neon GYM sign.
@@ -258,12 +262,15 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
   const room = interior.rooms[0], doorway = interior.rooms[1];
   const groundAt = (l: Vec2): number => {
     if (l.x > room.minX && l.x < room.maxX && l.z > room.minZ && l.z < room.maxZ) return F;
+    // The concrete slab's rim (top 0.1) eases up from its edge.
+    const rim = Math.min(W / 2 + 0.1 - Math.abs(l.x), D / 2 + 0.1 - Math.abs(l.z));
+    const slab = rim > 0 ? 0.1 * Math.min(1, rim / 0.1) : 0;
     if (l.x > doorway.minX && l.x < doorway.maxX && l.z > doorway.minZ && l.z < doorway.maxZ) {
       // A gentle ramp over the threshold, up to the floor just inside.
       const k = (doorway.maxZ - l.z) / (doorway.maxZ - (D / 2 - 0.1));
-      return F * Math.min(1, Math.max(0, k));
+      return Math.max(slab, F * Math.min(1, Math.max(0, k)));
     }
-    return 0;
+    return slab;
   };
   return { group, windows, doorLocal: new THREE.Vector3(0, 0, D / 2 + 0.3), height: F + H + 0.5, roofColor, interior, stations, solids, groundAt };
 }

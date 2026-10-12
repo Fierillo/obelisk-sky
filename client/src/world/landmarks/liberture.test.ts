@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { buildLibertureHouse, orbPosition, PILLARS, ROOF } from './liberture';
+import { buildLibertureHouse, orbPosition, ringYaw, PILLARS, ROOF } from './liberture';
 import { LANDMARKS } from './index';
 
 // jsdom has no 2D canvas: the house draws its textures only when there is one.
@@ -23,10 +23,21 @@ describe('the Liberture house', () => {
     orbs.forEach((o, i) => expect(o.position.distanceTo(orbPosition(i, 4.2))).toBeLessThan(1e-6));
   });
 
-  it('keeps them on a hexagon: neighbours are as far apart as the radius', () => {
-    const p = [0, 1, 2, 3, 4, 5].map((i) => orbPosition(i, 1.3).setY(0));
-    const r = p[0].distanceTo(new THREE.Vector3(0, 0, p.reduce((s, q) => s + q.z, 0) / 6));
-    for (let i = 0; i < 6; i++) expect(p[i].distanceTo(p[(i + 1) % 6])).toBeCloseTo(r, 5);
+  it('stands them on an upright ring that swings like the nostr-wot graph', () => {
+    for (const t of [0, 3.1, 7.7, 19]) {
+      const yaw = ringYaw(t);
+      // The ring's plane is vertical, facing (sin yaw, 0, cos yaw): every orb is on it.
+      const n = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+      const p = [0, 1, 2, 3, 4, 5].map((i) => orbPosition(i, t));
+      const c = p.reduce((s, q) => s.add(q), new THREE.Vector3()).multiplyScalar(1 / 6);
+      for (const q of p) expect(Math.abs(q.clone().sub(c).dot(n))).toBeLessThan(1e-6);
+      // Neighbours as far apart as the radius (a hexagon), give or take the bob.
+      const r = p[0].distanceTo(c);
+      for (let i = 0; i < 6; i++) expect(Math.abs(p[i].distanceTo(p[(i + 1) % 6]) - r)).toBeLessThan(0.07);
+      // Upright: the ring spans height, not just width.
+      expect(Math.max(...p.map((q) => q.y)) - Math.min(...p.map((q) => q.y))).toBeGreaterThan(0.8);
+    }
+    expect(Math.abs(ringYaw(6.3))).toBeGreaterThan(0.5);
   });
 
   it('puts every indoor seat and piece of furniture inside the room, the door in the doorway', () => {

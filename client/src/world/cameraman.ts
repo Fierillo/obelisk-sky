@@ -76,6 +76,10 @@ export class Cameraman {
   /** First person's field of view; running widens it a little. */
   fpFov = 70;
   private feel = new FpFeel();
+  /** The first-person stride (phase, bob) and whether you're in the air. */
+  get feelState(): { phase: number; amp: number; airborne: boolean } {
+    return { ...this.feel.stride, airborne: this.feelIn.airborne };
+  }
   private feelIn: FeelInput = { speed: 0, running: false, airborne: false, landed: false, strafe: 0, turn: 0 };
   /** In first person but training or sitting: the camera steps out to watch
    *  you (you'd see nothing from your own eyes), and back in when you're done. */

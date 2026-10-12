@@ -44,6 +44,14 @@ function meshOf(pos: number[], uv: number[] | null, mat: THREE.Material): THREE.
   return new THREE.Mesh(g, mat);
 }
 
+/** The stepped plinth under an obelisk this tall: each step's half width
+ *  and the height of its top (people bump into it and can jump up it). */
+export function plinthSteps(height: number): { half: number; top: number }[] {
+  const { base } = obeliskShape(height);
+  let y = 0;
+  return ([[2.9, 0.16], [2.4, 0.16], [1.9, 0.18]] as const).map(([k, h]) => ({ half: (base * k) / 2, top: (y += h) }));
+}
+
 export function buildObelisk(height = 8): Obelisk {
   const { base, top, shaftH, apex } = obeliskShape(height);
   const group = new THREE.Group();
@@ -86,13 +94,13 @@ export function buildObelisk(height = 8): Obelisk {
   // Stepped plinth; the body sits on top of it.
   const plinthMat = new THREE.MeshStandardMaterial({ color: 0xd9d2c4, roughness: 0.8, flatShading: true });
   let y = 0;
-  for (const [w, h] of [[base * 2.9, 0.16], [base * 2.4, 0.16], [base * 1.9, 0.18]] as const) {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), plinthMat);
-    s.position.y = y + h / 2;
+  for (const st of plinthSteps(height)) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(st.half * 2, st.top - y, st.half * 2), plinthMat);
+    s.position.y = (y + st.top) / 2;
     s.castShadow = true;
     s.receiveShadow = true;
     group.add(s);
-    y += h;
+    y = st.top;
   }
   body.position.y = y;
   group.add(body);

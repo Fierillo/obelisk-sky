@@ -52,3 +52,34 @@ export function mergeStatic(root: THREE.Object3D, keep: (m: THREE.Mesh) => boole
   }
   return folded;
 }
+
+/**
+ * The meshes under `root` that change on their own: `poke` runs the thing's
+ * own hooks (its frame update at a few times, night, doors, going inside),
+ * and every mesh whose transform, visibility, shadow flag or geometry moved
+ * meanwhile, or sits under a node that did, is reported. Merge the rest.
+ */
+export function findDynamic(root: THREE.Object3D, poke: () => void): Set<THREE.Object3D> {
+  type Snap = { m: number[]; v: boolean; c: boolean; g: number };
+  const snap = new Map<THREE.Object3D, Snap>();
+  const read = (o: THREE.Object3D): Snap => {
+    const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+    const ver = g ? Object.values(g.attributes).reduce((s, a) => s + ((a as THREE.BufferAttribute).version ?? 0), 0) : 0;
+    o.updateMatrix();
+    return { m: o.matrix.elements.slice(), v: o.visible, c: o.castShadow, g: ver };
+  };
+  root.traverse((o) => { snap.set(o, read(o)); });
+  poke();
+  const changed = new Set<THREE.Object3D>();
+  root.traverse((o) => {
+    const a = snap.get(o);
+    if (!a) { changed.add(o); return; } // added by a hook
+    const b = read(o);
+    if (a.v !== b.v || a.c !== b.c || a.g !== b.g || a.m.some((x, i) => Math.abs(x - b.m[i]) > 1e-7)) changed.add(o);
+  });
+  const out = new Set<THREE.Object3D>();
+  root.traverse((o) => {
+    for (let p: THREE.Object3D | null = o; p && p !== root.parent; p = p.parent) if (changed.has(p) && p !== root) { out.add(o); break; }
+  });
+  return out;
+}

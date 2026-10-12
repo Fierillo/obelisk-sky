@@ -28,8 +28,9 @@ export interface FeelOffsets {
 
 /** Village people are 0.72 tall: a stride is about 0.33 of a step. */
 const STEP_LENGTH = 0.33;
-const BOB_WALK = 0.008;
-const BOB_RUN = 0.016;
+// Kept small: the eye already rides a body that walks (world.ts eyeOf).
+const BOB_WALK = 0.003;
+const BOB_RUN = 0.007;
 const LAND_KICK = 0.35;
 const SPRING_K = 170;
 const SPRING_DAMP = 2 * Math.sqrt(SPRING_K) * 0.75;
@@ -57,15 +58,20 @@ export class FpFeel {
     this.dipV += acc * dt;
     this.dip += this.dipV * dt;
     // A slight lean into strafes and turns.
-    const lean = Math.max(-0.045, Math.min(0.045, i.strafe * 0.02 + i.turn * 0.006));
+    const lean = Math.max(-0.02, Math.min(0.02, i.strafe * 0.02 + i.turn * 0.004));
     this.roll = damp(this.roll, lean, 8, dt);
     this.fov = damp(this.fov, i.running && i.speed > 1 ? RUN_FOV_KICK : 0, 4, dt);
     return {
       up: -this.amp * (1 - Math.cos(2 * this.phase)) * 0.5 + this.dip,
-      side: Math.sin(this.phase) * this.amp * 0.6,
-      roll: this.roll + Math.sin(this.phase) * this.amp * 0.6,
+      side: Math.sin(this.phase) * this.amp * 0.25,
+      roll: this.roll,
       fov: this.fov,
     };
+  }
+
+  /** Stride phase and bob amplitude now (the hands swing with them). */
+  get stride(): { phase: number; amp: number } {
+    return { phase: this.phase, amp: this.amp };
   }
 
   reset(): void {

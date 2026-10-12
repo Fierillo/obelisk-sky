@@ -6,6 +6,7 @@
 // Local frame: facade on z = 0 facing +z, the building behind it.
 
 import * as THREE from 'three';
+import { bitcoinSign } from './signs';
 import type { LandmarkBuild, LandmarkSeat } from './index';
 
 const flat = (color: number, o: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
@@ -78,6 +79,11 @@ export function buildCoffeeShop(): LandmarkBuild {
     box(WIN1 - WIN0, H - WIN_Y1, T, cream, (WIN0 + WIN1) / 2, (H + WIN_Y1) / 2, -T / 2),
     box(DOOR1 - DOOR0, H - DOOR_H, T, cream, (DOOR0 + DOOR1) / 2, (H + DOOR_H) / 2, -T / 2),
   ];
+  // "Bitcoin accepted here" between the window and the door.
+  const btc = bitcoinSign();
+  btc.scale.setScalar(0.92);
+  btc.position.set((WIN1 + DOOR0) / 2, 0.66, 0.004);
+  g.add(btc);
   const roofParts: THREE.Object3D[] = [];
   const ceiling = box(W, 0.04, D, cream, 0, H - 0.02, -D / 2);
   roofParts.push(ceiling);

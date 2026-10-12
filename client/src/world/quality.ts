@@ -71,3 +71,11 @@ export function adaptStep(a: Adapt, dt: number): Level | null {
   }
   return null;
 }
+
+/** On "low" and still slow (under 36 fps on average): 15 % fewer pixels a
+ *  step, down to 60 %; with plenty of headroom (over 57 fps) back up. */
+export function lowScaleStep(scale: number, avgDt: number): number {
+  if (avgDt > 1 / 36) return Math.max(0.6, Math.round(scale * 0.85 * 100) / 100);
+  if (avgDt < 1 / UP_ABOVE_FPS && scale < 1) return Math.min(1, Math.round((scale / 0.85) * 100) / 100);
+  return scale;
+}

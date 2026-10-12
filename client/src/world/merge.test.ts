@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { mergeStatic } from './merge';
@@ -49,5 +50,60 @@ describe('merging static pieces', () => {
     expect(mirrored.parent).toBe(root);
     expect(inst.parent).toBe(root);
     expect(a.parent).toBeNull();
+  });
+});
+
+describe('finding what moves', () => {
+  it('reports meshes a hook moves, hides or unshadows, and everything under a moving node', async () => {
+    const { findDynamic } = await import('./merge');
+    const root = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial();
+    const box = () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+    const still = box(), spun = box(), hidden = box(), wall = box();
+    const door = new THREE.Group();
+    const leaf = box(), knob = box();
+    door.add(leaf, knob);
+    wall.castShadow = true;
+    root.add(still, spun, hidden, wall, door);
+    const moving = findDynamic(root, () => {
+      spun.rotation.y = 1;
+      hidden.visible = false;
+      wall.castShadow = false;
+      door.rotation.y = 1.4;
+      mat.opacity = 0.3; // a material change is shared, merged or not
+    });
+    expect(moving.has(still)).toBe(false);
+    for (const m of [spun, hidden, wall, leaf, knob]) expect(moving.has(m)).toBe(true);
+  });
+
+  it('keeps every landmark whole: what it animates stays out of the merge', async () => {
+    const { findDynamic } = await import('./merge');
+    const { LANDMARKS } = await import('./landmarks');
+    const { vi } = await import('vitest');
+    // jsdom has no canvas: a 2D context that takes every call and draws nothing.
+    const noop: unknown = new Proxy(() => noop, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 0 }) : k === 'getImageData' ? () => ({ data: new Uint8ClampedArray(4) }) : noop), set: () => true, apply: () => noop });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noop as never);
+    for (const d of LANDMARKS) {
+      const b = d.build();
+      const poke = () => {
+        for (const t of [0.4, 2.9, 7.3, 13.1]) b.update?.(0.016, t);
+        b.setNight(1, 1);
+        b.interior?.setDoor(1);
+        b.interior?.setInside(true);
+        b.pulse?.();
+        b.update?.(0.5, 17);
+        b.interior?.setInside(false);
+        b.interior?.setDoor(0);
+        b.setNight(0, 1);
+      };
+      const moving = findDynamic(b.group, poke);
+      const before = meshes(b.group).length;
+      mergeStatic(b.group, (m) => moving.has(m) || m.name === 'roof');
+      expect(meshes(b.group).length).toBeLessThan(before);
+      // Every mesh the hooks still move survived the merge.
+      for (const m of moving) if ((m as THREE.Mesh).isMesh) expect(m.parent).not.toBeNull();
+      // And the hooks still run on what's left.
+      expect(poke).not.toThrow();
+    }
   });
 });

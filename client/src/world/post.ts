@@ -37,9 +37,8 @@ const TiltShift = (horizontal: boolean) => ({
     }`,
 });
 
-/** A light colour grade: a touch more saturation and contrast, soft vignette. */
 /**
- * Right after the scene: no pixel brighter than a bright highlight, and no
+ * Right after the scene (and again after the AO): no pixel brighter than a bright highlight, and no
  * NaN. The scene renders into half floats (max 65504), and a sun glint on
  * very smooth glass or metal (three's GGX peaks near 40000× the light) can
  * overflow to infinity; the bloom blur turns that into NaN and NaN spreads
@@ -60,6 +59,8 @@ export const SafeColor = {
     }`,
 };
 
+/** A light colour grade: a touch more saturation and contrast, soft vignette.
+ *  It drops NaN and clamps too, so the cheapest level needs no SafeColor pass. */
 const Grade = {
   uniforms: { tDiffuse: { value: null }, uSat: { value: 1.08 }, uContrast: { value: 1.04 }, uVignette: { value: 0.22 } },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -67,6 +68,7 @@ const Grade = {
     uniform sampler2D tDiffuse; uniform float uSat, uContrast, uVignette; varying vec2 vUv;
     void main(){
       vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb = clamp(c.rgb * vec3(greaterThanEqual(c.rgb, vec3(0.0))), 0.0, 8.0);
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, uSat);
       c.rgb = (c.rgb - 0.5) * uContrast + 0.5;
@@ -76,7 +78,7 @@ const Grade = {
     }`,
 };
 
-import { adaptStep, newAdapt, startLevel, type Adapt, type Level } from './quality';
+import { adaptStep, lowScaleStep, newAdapt, startLevel, type Adapt, type Level } from './quality';
 export type { Level };
 
 export interface PostSettings {
@@ -103,6 +105,15 @@ export class Post {
   private tiltH: ShaderPass;
   private tiltV: ShaderPass;
   private grade: ShaderPass;
+  private safeScene: ShaderPass;
+  private safeAo: ShaderPass;
+  /** A level change waiting for the start of the next frame (see render). */
+  private pendingLevel = false;
+  /** Below "low": the resolution "auto" gives up when even low is slow (phones). */
+  private lowScale = 1;
+  /** A touch device: smaller, less frequent shadows. */
+  private coarse = false;
+  private lowTimes: number[] = [];
   private fxaa: FXAAPass;
   level: Level = 'high';
   settings: PostSettings = { quality: 'auto', resolution: 1, shadows: true, ambientOcclusion: true, bloom: true, tiltShift: true };
@@ -121,8 +132,9 @@ export class Post {
   ) {
     // "Automatic" starts from a guess for this device, then follows the frame times.
     const nav = (typeof navigator === 'undefined' ? {} : navigator) as Navigator & { deviceMemory?: number };
+    this.coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     this.level = startLevel({
-      coarse: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
+      coarse: this.coarse,
       memory: nav.deviceMemory,
       cores: nav.hardwareConcurrency,
       short: typeof screen === 'undefined' ? 1080 : Math.min(screen.width, screen.height),
@@ -131,13 +143,17 @@ export class Post {
     this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, this.target);
     this.composer.addPass(new RenderPass(scene, camera));
-    this.composer.addPass(new ShaderPass(SafeColor));
+    this.safeScene = new ShaderPass(SafeColor);
+    this.composer.addPass(this.safeScene);
     this.gtao = new GTAOPass(scene, camera, 1, 1);
     this.gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.3, thickness: 1.5, scale: 1.1, samples: 12 });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
     // Soft: strong AO turns pets' bellies and people's undersides black.
     this.gtao.blendIntensity = 0.6;
     this.composer.addPass(this.gtao);
+    // GTAO divides by depths and normalises normals: it can make NaN of its own.
+    this.safeAo = new ShaderPass(SafeColor);
+    this.composer.addPass(this.safeAo);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.32, 0.5, 0.88);
     this.composer.addPass(this.bloom);
     this.tiltH = new ShaderPass(TiltShift(true));
@@ -164,11 +180,13 @@ export class Post {
   private applyLevel(): void {
     const L = LEVELS[this.level];
     const dpr = Math.min(window.devicePixelRatio || 1, L.pixelRatio);
-    this.renderer.setPixelRatio(Math.max(0.5, dpr * this.settings.resolution));
+    const ratio = Math.max(0.5, dpr * this.settings.resolution * (this.level === 'low' ? this.lowScale : 1));
+    if (this.renderer.getPixelRatio() !== ratio) this.renderer.setPixelRatio(ratio);
     this.renderer.shadowMap.enabled = this.settings.shadows && this.level !== 'low';
     this.sun.castShadow = this.renderer.shadowMap.enabled;
-    if (this.sun.shadow.mapSize.x !== L.shadowMap) {
-      this.sun.shadow.mapSize.set(L.shadowMap, L.shadowMap);
+    const mapSize = this.coarse ? Math.min(L.shadowMap, 1024) : L.shadowMap;
+    if (this.sun.shadow.mapSize.x !== mapSize) {
+      this.sun.shadow.mapSize.set(mapSize, mapSize);
       this.sun.shadow.map?.dispose();
       (this.sun.shadow as { map: THREE.WebGLRenderTarget | null }).map = null;
     }
@@ -202,13 +220,21 @@ export class Post {
   }
 
   render(dt: number): void {
+    // Resizing the canvas clears it: do it before drawing, never after (a
+    // level stepped at the end of a frame showed that frame blank, black).
+    if (this.pendingLevel) { this.pendingLevel = false; this.applyLevel(); }
     this.tiltH.enabled = this.tiltV.enabled = this.settings.tiltShift && this.level !== 'low';
     this.bloom.enabled = this.settings.bloom && this.level !== 'low';
-    // On medium the sun's shadows refresh every other frame (people move little in one).
+    // NaN only spreads through the blurs: guard what feeds them (Grade guards the rest).
+    this.safeScene.enabled = this.gtao.enabled || this.bloom.enabled;
+    this.safeAo.enabled = this.gtao.enabled && this.bloom.enabled;
+    // On medium the sun's shadows refresh every other frame (people move
+    // little in one), every third on a phone; on a phone, high skips one too.
     this.frameNo++;
     if (this.renderer.shadowMap.enabled) {
-      this.renderer.shadowMap.autoUpdate = this.level !== 'medium';
-      if (this.level === 'medium' && this.frameNo % 2 === 0) this.renderer.shadowMap.needsUpdate = true;
+      const every = this.level === 'medium' ? (this.coarse ? 3 : 2) : this.coarse && this.level === 'high' ? 2 : 1;
+      this.renderer.shadowMap.autoUpdate = every === 1;
+      if (every > 1 && this.frameNo % every === 0) this.renderer.shadowMap.needsUpdate = true;
     }
     this.composer.render(dt);
     this.adapt(dt);
@@ -220,13 +246,27 @@ export class Post {
     this.auto = newAdapt(this.level, this.auto.ceiling);
   }
 
+  /** Still slow on "low" (a phone): render fewer pixels, down to 60 %. */
+  private adaptLow(dt: number): void {
+    this.lowTimes.push(dt);
+    if (this.lowTimes.length < 120) return;
+    const avg = this.lowTimes.reduce((s, x) => s + x, 0) / this.lowTimes.length;
+    this.lowTimes = [];
+    const next = lowScaleStep(this.lowScale, avg);
+    if (next === this.lowScale) return;
+    this.lowScale = next;
+    this.pendingLevel = true;
+    console.info('[sky] resolution →', Math.round(next * 100) + '%');
+  }
+
   /** "auto": down a level when frames are slow, back up with plenty of headroom (quality.ts). */
   private adapt(dt: number): void {
     if (this.settings.quality !== 'auto' || this.held) return;
+    if (this.level === 'low') this.adaptLow(dt);
     const next = adaptStep(this.auto, dt);
     if (!next) return;
     this.level = next;
-    this.applyLevel();
+    this.pendingLevel = true;
     console.info('[sky] quality →', this.level);
     this.onLevel?.(this.level);
   }

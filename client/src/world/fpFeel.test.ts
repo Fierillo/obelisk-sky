@@ -18,7 +18,10 @@ describe('first-person feel', () => {
     const walk = run(new FpFeel(), 2, { speed: 0.78 }).slice(60);
     const sprint = run(new FpFeel(), 2, { speed: 2.6, running: true }).slice(60);
     const range = (xs: { up: number }[]) => Math.max(...xs.map((x) => x.up)) - Math.min(...xs.map((x) => x.up));
-    expect(range(walk)).toBeGreaterThan(0.004);
+    expect(range(walk)).toBeGreaterThan(0.002);
+    // Gentle: a few millimetres at a walk, under a centimetre flat out.
+    expect(range(walk)).toBeLessThan(0.004);
+    expect(range(sprint)).toBeLessThan(0.008);
     expect(range(sprint)).toBeGreaterThan(range(walk) * 1.5);
     expect(Math.max(...sprint.map((x) => x.up))).toBeLessThanOrEqual(1e-9);
   });
@@ -38,5 +41,10 @@ describe('first-person feel', () => {
     const o = run(new FpFeel(), 2, { speed: 2.6, running: true, strafe: 1 }).at(-1)!;
     expect(o.fov).toBeGreaterThan(RUN_FOV_KICK * 0.9);
     expect(Math.abs(o.roll)).toBeGreaterThan(0.01);
+  });
+
+  it('does not rock the horizon with every step', () => {
+    const rolls = run(new FpFeel(), 2, { speed: 2.6, running: true }).slice(60).map((x) => x.roll);
+    expect(Math.max(...rolls.map(Math.abs))).toBeLessThan(1e-6);
   });
 });

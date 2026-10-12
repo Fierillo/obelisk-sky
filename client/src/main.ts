@@ -23,6 +23,7 @@ import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
 import { openCreator } from './ui/creator';
 import { CallRoom, RECONNECT_DELAYS, awayCountdown } from './voice/callRoom';
 import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/controlsGuide';
+import { obeliskNoteUrl, obeliskProfileUrl } from './ui/obeliskLinks';
 import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
 import { SidePanel } from './ui/sidePanel';
 import { DmPanel } from './ui/dmPanel';
@@ -400,6 +401,7 @@ $('gate-login').addEventListener('click', () => $('login').click());
 function renderAccount(s: Session | null): void {
   $('login').hidden = !!s;
   $('account').hidden = !s;
+  (document.querySelector('.controls [data-act="logout"]') as HTMLElement).hidden = !s;
   if (!s) return;
   const prof = world.profiles.get(s.pubkey);
   ($('account-name') as HTMLElement).textContent = prof?.name ?? shortKey(s.pubkey);
@@ -648,6 +650,15 @@ world.hooks.onBubbleClick = (msgId) => {
   chat.setReply(m);
   const slot = world.slotFor(m.groupId);
   if (controller && slot && place !== m.groupId) { controller.walkTo(slot.yard); world.cam.played(); }
+};
+
+// A tap on the world puts an open card away first (on a phone that's all a
+// tap on the ground does then: the card covers half the screen, walking off
+// is a surprise). A tap on someone or something opens theirs right after.
+world.hooks.onTap = () => {
+  if ($('card').hidden) return false;
+  $('card').hidden = true;
+  return isTouch();
 };
 
 world.hooks.onGroundClick = (p) => {
@@ -1392,7 +1403,6 @@ async function loadOfficial(): Promise<NonNullable<typeof officialCache>> {
 function showOfficial(): void {
   const pk = NOSTR_WOT_PUBKEY;
   const prof = world.profiles.get(pk);
-  const npub = nip19.npubEncode(pk);
   openCard((body) => {
     body.append(cardBanner(NOSTR_WOT_BANNER, 'Nostr WoT'));
     if (prof?.avatar) {
@@ -1421,8 +1431,9 @@ function showOfficial(): void {
     site.href = NOSTR_WOT_SITE;
     site.target = '_blank';
     site.rel = 'noopener';
-    const profile = el('a', 'pill', 'Profile on Obelisk') as HTMLAnchorElement;
-    profile.href = `https://obelisk.ar/p/${npub}`;
+    const profile = el('a', 'pill', 'Interact on Obelisk ↗') as HTMLAnchorElement;
+    profile.href = obeliskProfileUrl(pk);
+    profile.title = 'Follow, like, repost and reply on Obelisk';
     profile.target = '_blank';
     profile.rel = 'noopener';
     const follow = el('button', 'pill', 'Follow with camera');
@@ -1438,7 +1449,12 @@ function showOfficial(): void {
         const row = el('div', 'official-note');
         const text = el('div', 'chat-text');
         renderContent(text, n.content, { nameOf: (p) => world.nameOf(p), images: [], emojis: {} });
-        row.append(el('div', 'chat-when', new Date(n.at * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })), text);
+        const open = el('a', 'note-open', 'Open on Obelisk ↗') as HTMLAnchorElement;
+        open.href = obeliskNoteUrl(n.id, pk, DEFAULT_SOCIAL_RELAYS);
+        open.target = '_blank';
+        open.rel = 'noopener';
+        open.title = 'Like, repost or reply on Obelisk';
+        row.append(el('div', 'chat-when', new Date(n.at * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })), text, open);
         notesBox.append(row);
       }
     });
@@ -1676,7 +1692,17 @@ function refreshSigns(): void {
 function setStatus(mode: string, text: string): void {
   const s = $('status');
   s.dataset.mode = mode;
-  (s.querySelector('.status-text') as HTMLElement).textContent = text;
+  s.title = `${text}: tap to switch between Live and History`;
+  // "HISTORY · pick a moment": the word, then the detail (dropped on a phone).
+  const [word, ...more] = text.split(' · ');
+  const t = s.querySelector('.status-text') as HTMLElement;
+  t.replaceChildren(word);
+  if (more.length) {
+    const m = document.createElement('span');
+    m.className = 'status-more';
+    m.textContent = ` · ${more.join(' · ')}`;
+    t.append(m);
+  }
 }
 
 function renderStatus(s: PlayerStatus): void {
@@ -1694,15 +1720,12 @@ function setHistory(on: boolean): void {
   player.history = on;
   $('timeline-panel').hidden = !on;
   document.querySelector('.controls [data-act="story"]')?.classList.toggle('on', on);
-  for (const [id, want] of [['mode-live', false], ['mode-history', true]] as const) {
-    $(id).classList.toggle('on', on === want);
-    $(id).setAttribute('aria-pressed', String(on === want));
-  }
+  $('status').setAttribute('aria-pressed', String(on));
   if (on) { drawTimeline(); player.status(); }
   else { player.seek(nowSec(), true); player.goLive(nowSec()); }
 }
-$('mode-live').addEventListener('click', () => setHistory(false));
-$('mode-history').addEventListener('click', () => setHistory(!historyOn));
+// The status pill is the switch: Live ⇄ History.
+$('status').addEventListener('click', () => setHistory(!historyOn));
 
 function addFeed(pk: string, groupId: string, text: string, to: string | null): void {
   const feed = $('feed');
@@ -1819,6 +1842,25 @@ function openCard(build: (body: HTMLElement) => void): void {
   if (window.matchMedia('(max-width: 720px)').matches) chat.setMinimised(true);
 }
 ($('card').querySelector('.card-close') as HTMLElement).addEventListener('click', () => { $('card').hidden = true; });
+// On a phone the card is a bottom sheet: drag its grip down to put it away.
+{
+  const card = $('card'), head = card.querySelector('.card-head') as HTMLElement;
+  let from: number | null = null;
+  head.addEventListener('pointerdown', (e) => { from = e.clientY; head.setPointerCapture(e.pointerId); });
+  head.addEventListener('pointermove', (e) => {
+    if (from === null) return;
+    card.style.transform = `translateY(${Math.max(0, e.clientY - from)}px)`;
+  });
+  const end = (e: PointerEvent) => {
+    if (from === null) return;
+    const dy = e.clientY - from;
+    from = null;
+    card.style.transform = '';
+    if (dy > 70) card.hidden = true;
+  };
+  head.addEventListener('pointerup', end);
+  head.addEventListener('pointercancel', end);
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -1874,7 +1916,12 @@ function showPerson(pk: string): void {
     }
     const follow = el('button', 'pill', 'Follow with camera');
     follow.addEventListener('click', () => world.cam.focus(world.personAnchor(pk), 6));
-    actions.append(follow);
+    const profile = el('a', 'pill', 'Profile on Obelisk ↗') as HTMLAnchorElement;
+    profile.href = obeliskProfileUrl(pk);
+    profile.target = '_blank';
+    profile.rel = 'noopener';
+    profile.title = 'Follow them, see their notes, like and reply on Obelisk';
+    actions.append(follow, profile);
     body.append(actions);
   });
   world.cam.focus(world.personAnchor(pk), 7);
@@ -1904,9 +1951,30 @@ function showGroup(id: string): void {
 // ── controls ─────────────────────────────────────────────────────────────
 
 
+// On a phone the bottom bar folds into the header's menu button: a sheet of
+// the same buttons, labelled. Toggles leave it open; anything else closes it.
+function setMenu(open: boolean): void {
+  document.body.classList.toggle('menu-open', open);
+  $('menu-btn').setAttribute('aria-expanded', String(open));
+}
+$('menu-btn').addEventListener('click', () => setMenu(!document.body.classList.contains('menu-open')));
+document.addEventListener('pointerdown', (e) => {
+  if (!document.body.classList.contains('menu-open')) return;
+  const t = e.target as Element;
+  if (!t.closest('.controls') && !t.closest('#menu-btn')) setMenu(false);
+});
+const MENU_TOGGLES = new Set(['director', 'time', 'signs', 'tilt', 'sound']);
+
 document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => {
   b.addEventListener('click', () => {
+    if (!MENU_TOGGLES.has(b.dataset.act ?? '')) setMenu(false);
     switch (b.dataset.act) {
+      case 'about':
+        window.open('/', '_blank', 'noopener');
+        break;
+      case 'logout':
+        void session.logout();
+        break;
       case 'director':
         prefs.set({ autoDirector: !prefs.get().autoDirector });
         break;
@@ -1971,5 +2039,5 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
 });
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') $('card').hidden = true;
+  if (e.key === 'Escape') { $('card').hidden = true; setMenu(false); }
 });

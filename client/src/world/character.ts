@@ -171,6 +171,8 @@ export class Character {
   reachK = 0;
   /** Out of view (world.ts): keep walking, skip posing; the mixer catches up when seen. */
   offscreen = false;
+  /** Lift that puts this body's soles on the ground (measureSoles). */
+  soleLift = 0;
   private skipped = 0;
   /** A barbell held in both hands (the gym): kept between the palms. */
   heldBar: THREE.Object3D | null = null;
@@ -234,6 +236,19 @@ export class Character {
     this.lowerKey = this.upperKey = '';
     this.setOpacity(this.opacity);
     this.pose('Idle_Loop', 'Idle_Loop', 0);
+    this.soleLift = this.measureSoles(model);
+  }
+
+  /** How far this body's shoes reach below its origin standing idle (the
+   *  clips crouch a touch): standing and walking lift it back by that much,
+   *  so soles rest on the ground instead of in it. */
+  private measureSoles(model: THREE.Object3D): number {
+    this.mixer?.update(0);
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model, true);
+    if (box.isEmpty()) return 0;
+    const origin = this.body.getWorldPosition(new THREE.Vector3()).y;
+    return THREE.MathUtils.clamp(origin - box.min.y, 0, 0.06);
   }
 
   /** Avatars v1 named a blocky skin: map the letter to a stable look. */
@@ -495,7 +510,8 @@ export class Character {
     }
     // Lift (balloon arrivals) eases down.
     if (this.lift > 0) this.lift = Math.max(0, this.lift - dt * 1.6);
-    this.root.position.y = this.lift + this.seatY + this.jumpY + this.groundY;
+    const standing = this.activity !== 'sit' && !this.exercise;
+    this.root.position.y = this.lift + this.seatY + this.jumpY + this.groundY + (standing ? this.soleLift : 0);
 
     // Ground speed, measured (works for paths and for the viewer's controller).
     const flat = this.tmp.set(this.root.position.x - this.lastPos.x, 0, this.root.position.z - this.lastPos.z);

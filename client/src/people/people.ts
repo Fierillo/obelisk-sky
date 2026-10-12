@@ -268,7 +268,7 @@ const SKIN_BASE: Record<string, string> = { 'm-light': '#d9a37e', 'm-dark': '#8a
 const SKIN_DYE = 0.8;
 
 /** A look's skin colour: the base tone of its body and texture, tinted. */
-function skinTone(look: PersonLook): string {
+export function skinTone(look: PersonLook): string {
   const tone = new THREE.Color(SKIN_BASE[`${look.body}-${look.skin}`]).multiply(new THREE.Color(look.skinTint));
   return `#${tone.getHexString()}`;
 }

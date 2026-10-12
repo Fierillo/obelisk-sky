@@ -34,3 +34,16 @@ describe('automatic quality', () => {
     expect(run(newAdapt('high'), 50, 60)).toEqual([]);
   });
 });
+
+describe('below low', () => {
+  it('renders fewer pixels while even low is slow, and gives them back with headroom', async () => {
+    const { lowScaleStep } = await import('./quality');
+    let s = 1;
+    for (let i = 0; i < 10; i++) s = lowScaleStep(s, 1 / 20);
+    expect(s).toBe(0.6);
+    expect(lowScaleStep(0.85, 1 / 45)).toBe(0.85); // fine: stays
+    s = 0.6;
+    for (let i = 0; i < 10; i++) s = lowScaleStep(s, 1 / 60);
+    expect(s).toBe(1);
+  });
+});

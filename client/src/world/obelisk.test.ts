@@ -17,3 +17,14 @@ describe('obelisk landmark', () => {
     expect(s.shaftH / s.apex).toBeCloseTo(0.875, 5);
   });
 });
+
+describe('the plinth', () => {
+  it('steps up three times and matches the walking grid', async () => {
+    const { plinthSteps } = await import('./obelisk');
+    const { PLINTH_HALF } = await import('./layout');
+    const st = plinthSteps(8);
+    expect(st.map((s) => s.top)).toEqual([0.16, 0.32, 0.5].map((v) => expect.closeTo(v, 5)));
+    expect(st[0].half).toBeCloseTo(PLINTH_HALF, 2);
+    expect(st[1].half).toBeLessThan(st[0].half);
+  });
+});

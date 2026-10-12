@@ -162,7 +162,7 @@ describe('first person', () => {
     const ys: number[] = [];
     cam.setFeel({ speed: 2.6, running: true, airborne: false, landed: false, strafe: 0 });
     for (let i = 0; i < 90; i++) { cam.update(1 / 60); ys.push(camera.position.y); }
-    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.01);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.004);
     expect(camera.fov).toBeGreaterThan(cam.fpFov + 3);
   });
 });

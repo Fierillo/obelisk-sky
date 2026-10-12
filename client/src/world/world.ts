@@ -10,7 +10,8 @@ import { buildBuilding, tierFor, type Building } from './buildings';
 import { Cameraman } from './cameraman';
 import { Character, pubkeyColor, CHAR_HEIGHT, PERSON_SCALE, SIT_SEAT_HEIGHT, registerClip } from './character';
 import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises';
-import { buildPerson } from '../people/people';
+import { buildPerson, skinTone } from '../people/people';
+import { FpHands } from './fpHands';
 import type { Command } from './director';
 import { buildIsland, type IslandMeshes } from './island';
 import { carrierOf, reachOf, stepRound, type Round } from './mateRound';
@@ -26,9 +27,9 @@ import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
 import { Flock } from './nostrich';
 import { WalkPin } from './walkPin';
 import { buildMarshmallow } from './campfire';
-import { mergeStatic } from './merge';
+import { findDynamic, mergeStatic } from './merge';
 import { chooseLights, lightBudget, type LightSpot } from './lightBudget';
-import { buildObelisk, type Obelisk } from './obelisk';
+import { buildObelisk, plinthSteps, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
 import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
@@ -41,6 +42,9 @@ import { Post } from './post';
 import { PropBatch } from './props';
 import { Sky, type TimeOverride } from './sky';
 import type { Prefs } from '../prefs';
+
+/** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
+const PAVING_TOP = 0.03, COBBLE_TOP = 0.02, FLOOR_TOP = 0.006;
 
 interface ConvoSpot { center: Vec2; groupId: string; members: string[]; fire: THREE.Object3D | null; sitting: boolean }
 
@@ -75,6 +79,8 @@ export interface Station {
 export interface WorldHooks {
   onSay?: (pk: string, groupId: string, text: string, to: string | null, instant: boolean) => void;
   onPersonClick?: (pk: string) => void;
+  /** Any tap on the world, before it's dispatched; true: don't walk for it. */
+  onTap?: () => boolean;
   onGroupClick?: (groupId: string) => void;
   onZap?: () => void;
   onArrive?: () => void;
@@ -153,6 +159,14 @@ export class World {
   /** Places to sit (and drink mate). */
   readonly seats: Seat[] = [];
   private seatOf = new Map<string, Seat>();
+  /** First-person eye: smoothed height above the feet (eyeOf). */
+  private eyeHeight = -1;
+  private eyeAt = 0;
+  private eyeTmp = new THREE.Vector3();
+  /** Your hands in first person. */
+  private readonly hands = new FpHands();
+  private handsT = 0;
+  private needsResize = false;
   /** Furniture the player bumps into but can jump onto (see PlayerController). */
   readonly solids: Solid[] = [];
   private laptops = new Map<string, THREE.Object3D>();
@@ -212,10 +226,12 @@ export class World {
       this.plan.plaza.c,
     );
     this.lampGlow = new THREE.MeshStandardMaterial({ color: 0xffe2a8, emissive: 0xffb84d, emissiveIntensity: 0 });
-    this.scene.add(this.staticRoot, this.buildingRoot, this.districtRoot, this.gameRoot);
+    this.scene.add(this.staticRoot, this.buildingRoot, this.districtRoot, this.gameRoot, this.hands.group);
     this.installPicking();
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    // Resized at the start of the next frame: resizing clears the canvas, and
+    // a cleared canvas shown before the redraw is a black flash.
+    window.addEventListener('resize', () => { this.needsResize = true; });
   }
 
   resize(): void {
@@ -267,7 +283,14 @@ export class World {
       if (existing) existing.group.removeFromParent();
       const slot = this.plan.slots[this.slotOf.get(g.id)!];
       const b = gym ? buildGym(slot, buildBuilding(g, slot, tier, district).roofColor) : buildBuilding(g, slot, tier, district);
-      if (gym) this.setGym(b as GymBuild, g.id, slot);
+      if (gym) {
+        const gb = b as GymBuild;
+        const moving = findDynamic(gb.group, () => {
+          gb.interior.setDoor(1); gb.interior.setInside(true); gb.interior.setInside(false); gb.interior.setDoor(0);
+        });
+        this.meshesMerged += mergeStatic(gb.group, (m) => moving.has(m) || m.name === 'roof' || gb.windows.includes(m));
+        this.setGym(gb, g.id, slot);
+      }
       // A house is dozens of little pieces: draw them as a handful (the roof
       // lights up for mentions and the windows at night, so they stay apart).
       else this.meshesMerged += mergeStatic(b.group, (m) => m.name === 'roof' || b.windows.includes(m) || underCampfire(m));
@@ -444,7 +467,7 @@ export class World {
    *  models, so the loading screen can show it from above while they load. */
   buildGround(): void {
     if (this.island) return;
-    const footprints = this.plan.slots.map((s) => ({ pos: s.pos, r: s.w * 0.8 + 0.4 }));
+    const footprints = this.plan.slots.map((s) => ({ pos: s.pos, r: s.w * 0.8 + 1.0 }));
     this.island = buildIsland(this.plan, footprints);
     this.staticRoot.add(this.island.group);
   }
@@ -587,6 +610,19 @@ export class World {
       const fwd = { x: Math.sin(s.rot), z: Math.cos(s.rot) };
       b.group.position.set(s.pos.x + fwd.x * d.forward, 0, s.pos.z + fwd.z * d.forward);
       b.group.rotation.y = s.rot;
+      // Fewer draw calls: merge what never moves (see findDynamic).
+      const moving = findDynamic(b.group, () => {
+        for (const t of [0.4, 2.9, 7.3, 13.1]) b.update?.(0.016, t);
+        b.setNight(1, 1);
+        b.interior?.setDoor(1);
+        b.interior?.setInside(true);
+        b.pulse?.();
+        b.update?.(0.5, 17);
+        b.interior?.setInside(false);
+        b.interior?.setDoor(0);
+        b.setNight(0, 1);
+      });
+      this.meshesMerged += mergeStatic(b.group, (m) => moving.has(m) || m.name === 'roof');
       b.group.traverse((o) => { o.userData.landmark = d.id; });
       this.staticRoot.add(b.group);
       this.landmarks.set(d.id, b);
@@ -672,22 +708,76 @@ export class World {
     return false;
   }
 
-  /** How high the ground is at p: raised where a landmark has stairs or a
-   *  floor up a storey (La Crypta's steps and living room), on the arch of a
-   *  bridge, else 0. */
+  /** How high the ground is at p: the lawn as drawn (island.ts
+   *  terrainHeight), the plaza's paving and the cobbled paths over it, a
+   *  building's floor inside, raised where a landmark has stairs or a floor
+   *  up a storey (La Crypta's steps and living room) or on the arch of a
+   *  bridge. */
   groundAt(p: Vec2): number {
-    let h = bridgeHeightAt(this.bridgeSpecs, p);
+    let h = this.island ? this.island.heightAt(p) : 0;
+    const plaza = this.plan?.plaza;
+    if (plaza && dist(p, plaza.c) < plaza.r) h = Math.max(h, PAVING_TOP);
+    else if (this.grid && this.pathCells.size) {
+      const [i, j] = this.grid.cellOf(p);
+      if (this.grid.inBounds(i, j) && this.pathCells.has(this.grid.idx(i, j))) h = Math.max(h, COBBLE_TOP);
+    }
+    if (h < FLOOR_TOP && this.insideWalkable(p)) h = FLOOR_TOP;
+    // Raised ground counts only where there is some: off a bridge's deck or a
+    // landmark's steps these say 0, which isn't "the lawn is at 0" (the lawn
+    // dips below 0 in places, and under every building).
+    const raise = (r: number) => { if (r > 1e-4) h = Math.max(h, r); };
+    raise(bridgeHeightAt(this.bridgeSpecs, p));
     for (const [id, b] of this.landmarks) {
       if (!b.groundAt) continue;
       const l = this.toLandmarkLocal(id, p);
-      if (l) h = Math.max(h, b.groundAt(l));
+      if (l) raise(b.groundAt(l));
     }
     const slot = this.gym && this.gymId ? this.slotFor(this.gymId) : null;
     if (slot && Math.abs(p.x - slot.pos.x) < slot.w && Math.abs(p.z - slot.pos.z) < slot.d) {
       const c = Math.cos(slot.rot), sn = Math.sin(slot.rot), dx = p.x - slot.pos.x, dz = p.z - slot.pos.z;
-      h = Math.max(h, this.gym!.groundAt({ x: dx * c - dz * sn, z: dx * sn + dz * c }));
+      raise(this.gym!.groundAt({ x: dx * c - dz * sn, z: dx * sn + dz * c }));
     }
     return h;
+  }
+
+  /** Debugging: how far each standing person's lowest point (shoe soles,
+   *  skinned) is from the ground they should stand on, and from whatever
+   *  static surface is really drawn under them (a ray straight down). */
+  groundAudit(): { pk: string; x: number; z: number; sole: number; ground: number; drawn: number | null; on: string }[] {
+    const out: { pk: string; x: number; z: number; sole: number; ground: number; drawn: number | null; on: string }[] = [];
+    const box = new THREE.Box3();
+    const ray = new THREE.Raycaster();
+    const targets: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || !m.visible || (m as THREE.InstancedMesh).isInstancedMesh) return;
+      // Glows and decals (see-through, no depth) are light, not floor.
+      const mat = m.material as THREE.Material;
+      if (!Array.isArray(m.material) && mat.transparent && !mat.depthWrite) return;
+      targets.push(m);
+    });
+    for (const c of this.people.values()) {
+      if (this.seatOf.has(c.pk) || c.jumpY > 0.02 || c.offscreen) continue;
+      box.setFromObject(c.body, true);
+      const ground = this.groundAt(c.pos);
+      ray.set(new THREE.Vector3(c.pos.x, box.min.y + 0.6, c.pos.z), new THREE.Vector3(0, -1, 0));
+      ray.far = 1.2;
+      const hit = ray.intersectObjects(targets, false).find((h) => !this.isPartOf(h.object, c.root));
+      out.push({ pk: c.pk.slice(0, 8), x: +c.pos.x.toFixed(2), z: +c.pos.z.toFixed(2), sole: +box.min.y.toFixed(3), ground: +ground.toFixed(3), drawn: hit ? +hit.point.y.toFixed(3) : null, on: hit ? this.describe(hit.object) : '' });
+    }
+    return out;
+  }
+
+  private describe(o: THREE.Object3D): string {
+    const names: string[] = [];
+    for (let p: THREE.Object3D | null = o; p && names.length < 4; p = p.parent) if (p.name) names.push(p.name);
+    const m = (o as THREE.Mesh).geometry?.type ?? '';
+    return `${names.join('<')}${m ? ` (${m})` : ''}`;
+  }
+
+  private isPartOf(o: THREE.Object3D, root: THREE.Object3D): boolean {
+    for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p === root) return true;
+    return false;
   }
 
   /** Doors open for the player and for people walking live from another
@@ -937,6 +1027,8 @@ export class World {
     this.obelisk.group.position.set(c.x, 0, c.z);
     this.obelisk.group.rotation.y = 0;
     this.staticRoot.add(this.obelisk.group);
+    // Its steps are furniture: you bump into them, or jump up them.
+    for (const st of plinthSteps(8)) this.solids.push({ minX: c.x - st.half, maxX: c.x + st.half, minZ: c.z - st.half, maxZ: c.z + st.half, top: st.top });
 
     // Lanterns around the plaza, a few with real light.
     const n = 8;
@@ -2481,8 +2573,9 @@ export class World {
       const ground = this.staticRoot.getObjectByName('ground');
       const targets: THREE.Object3D[] = [...[...this.people.values()].map((c) => c.root), this.gameRoot, this.buildingRoot, ...[...this.landmarks.values()].map((b) => b.group), ...(ground ? [ground] : [])];
       const hit = this.raycaster.intersectObjects(targets, true)[0];
+      const noWalk = this.hooks.onTap?.() ?? false;
       if (!hit) return;
-      if (hit.object === ground) { this.hooks.onGroundClick?.({ x: hit.point.x, z: hit.point.z }); return; }
+      if (hit.object === ground) { if (!noWalk) this.hooks.onGroundClick?.({ x: hit.point.x, z: hit.point.z }); return; }
       let o: THREE.Object3D | null = hit.object;
       while (o) {
         if (o.userData.pk) { this.hooks.onPersonClick?.(o.userData.pk); return; }
@@ -2497,12 +2590,15 @@ export class World {
   /** First person: hide your own body (you are its eyes). */
   setFirstPerson(on: boolean): void {
     const c = this.playerPk ? this.people.get(this.playerPk) : null;
-    if (!c) { this.cam.setFirstPerson(false); return; }
+    if (!c) { this.cam.setFirstPerson(false); this.hands.group.visible = false; return; }
     this.cam.setFirstPerson(on, c.body.rotation.y);
+    this.eyeHeight = -1;
     this.cam.eye = on ? () => this.eyeOf(c) : null;
     // Your body stays in the world for its shadow, but draws nothing for you.
     this.setBodyDrawn(c, !on);
     c.badge.visible = !on;
+    this.hands.setColors(skinTone(c.look), c.look.top);
+    this.hands.group.visible = on && !this.cam.isWatching;
   }
 
   private setBodyDrawn(c: Character, drawn: boolean): void {
@@ -2527,15 +2623,26 @@ export class World {
     // Three-quarters from the front: you see the exercise, not your back.
     this.cam.setWatching(on, c.body.rotation.y + Math.PI * 0.8);
     this.setBodyDrawn(c, on);
+    this.hands.group.visible = !on;
   }
 
   /** Eyes: just in front of the head bone (it carries walking, sitting, lifting, jumping). */
   private eyeOf(c: Character): THREE.Vector3 | null {
-    const h = c.bonePosition('Head', new THREE.Vector3());
+    const h = c.bonePosition('Head', this.eyeTmp);
     if (!h) return null;
+    // The head bone bobs and sways with every step of the walk clip; your
+    // eyes shouldn't. Height above your feet is low-passed (crouches, sitting
+    // and lifting still come through, a stride doesn't); across, the eye
+    // stays over your body. Jumps and slopes come with the body itself.
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - this.eyeAt) / 1000);
+    this.eyeAt = now;
+    const above = h.y - c.root.position.y;
+    this.eyeHeight = this.eyeHeight < 0 || dt <= 0 ? above : this.eyeHeight + (above - this.eyeHeight) * (1 - Math.exp(-dt * 3));
     const yaw = c.body.rotation.y;
-    return h.add(new THREE.Vector3(Math.sin(yaw) * 0.035, 0.045, Math.cos(yaw) * 0.035));
+    return new THREE.Vector3(c.root.position.x + Math.sin(yaw) * 0.06, c.root.position.y + this.eyeHeight + 0.045, c.root.position.z + Math.cos(yaw) * 0.06);
   }
+
 
   /** Make `pk` the viewer's character (or none), spawning it at the plaza. */
   setPlayer(pk: string | null): void {
@@ -2597,6 +2704,7 @@ export class World {
 
   /** One frame. `dtIn`: the caller's frame time (main.ts steps your character first). */
   frame(dtIn?: number): number {
+    if (this.needsResize) { this.needsResize = false; this.resize(); }
     const dt = dtIn ?? Math.min(this.clock.getDelta(), 0.1);
     this.elapsed += dt;
     this.sky.update(dt, this.elapsed);
@@ -2661,7 +2769,10 @@ export class World {
       if (e.age >= e.life) this.effects = this.effects.filter((x) => x !== e);
     }
     this.cam.update(dt);
-    this.post.setTiltAmount(this.cam.introProgress);
+    this.handsT += dt;
+    if (this.hands.group.visible) this.hands.update(this.camera, { ...this.cam.feelState, t: this.handsT });
+    // The miniature lens is for looking down on the island, not through your own eyes.
+    this.post.setTiltAmount(this.cam.firstPerson && !this.cam.isWatching ? 0 : this.cam.introProgress);
     this.overlay.update();
     this.post.render(dt);
     return dt;

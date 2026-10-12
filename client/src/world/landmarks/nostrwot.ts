@@ -295,7 +295,8 @@ export function buildNostrWotHq(): LandmarkBuild {
   graph.add(centerNode);
   const lineMatG = new THREE.LineBasicMaterial({ color: BRAND_LIGHT, transparent: true, opacity: 0.8 });
   const nodes: { mesh: THREE.Mesh; r: number; branch: number; kind: 'mid' | 'end' }[] = [];
-  const lines: { line: THREE.Line; from: THREE.Vector3; to: THREE.Vector3; branch: number; kind: 'mid' | 'end' }[] = [];
+  const lines: { line: THREE.Line; from: THREE.Vector3; to: THREE.Vector3; branch: number; kind: 'mid' | 'end'; k: number }[] = [];
+  const lineEnd = new THREE.Vector3();
   const pulses: { m: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; phase: number }[] = [];
   const pulseMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   WOT_GRAPH.branches.forEach((b, i) => {
@@ -304,7 +305,7 @@ export function buildNostrWotHq(): LandmarkBuild {
       const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
       const l = new THREE.Line(geo, lineMatG.clone());
       graph.add(l);
-      lines.push({ line: l, from, to, branch: i, kind });
+      lines.push({ line: l, from, to, branch: i, kind, k: -1 });
     };
     mkLine(c, m, 'mid');
     const mid = new THREE.Mesh(new THREE.SphereGeometry(3.5 * S * 0.8, 12, 8), nodeMat.clone());
@@ -367,10 +368,14 @@ export function buildNostrWotHq(): LandmarkBuild {
       for (const l of lines) {
         const gr = branchGrowth(l.branch, t);
         const k = l.kind === 'mid' ? gr.line : Math.min(1, gr.ends * 1.4);
-        const end = l.from.clone().lerp(l.to, k);
-        const pos = l.line.geometry.attributes.position as THREE.BufferAttribute;
-        pos.setXYZ(1, end.x, end.y, end.z);
-        pos.needsUpdate = true;
+        // Only re-upload a line that grew or shrank since the last frame.
+        if (l.k !== k) {
+          l.k = k;
+          lineEnd.copy(l.from).lerp(l.to, k);
+          const pos = l.line.geometry.attributes.position as THREE.BufferAttribute;
+          pos.setXYZ(1, lineEnd.x, lineEnd.y, lineEnd.z);
+          pos.needsUpdate = true;
+        }
         (l.line.material as THREE.LineBasicMaterial).opacity = 0.8 * gr.alpha;
       }
       for (const p of pulses) {

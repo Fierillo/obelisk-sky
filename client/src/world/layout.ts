@@ -38,6 +38,9 @@ export function distToPolyline(p: Vec2, line: Vec2[]): number {
   return d;
 }
 
+/** Half the width of the obelisk's bottom step (obelisk.ts plinthSteps(8)). */
+export const PLINTH_HALF = 1.553;
+
 export interface Slot {
   index: number;
   pos: Vec2;
@@ -361,7 +364,7 @@ export function buildNavGrid(plan: IslandPlan, usedSlots: Slot[], bridges: Vec2[
     if (distToPolyline(p, plan.river) < plan.riverWidth * 0.75 + 0.15) return true;
     if (dist(p, plan.pond.c) < plan.pond.r + 0.25) return true;
     if (plan.mountains.some((m) => dist(p, m.pos) < m.r * 0.92)) return true;
-    if (dist(p, plan.plaza.c) < 1.75) return true; // the obelisk and its plinth
+    if (Math.max(Math.abs(p.x - plan.plaza.c.x), Math.abs(p.z - plan.plaza.c.z)) < PLINTH_HALF + 0.2) return true; // the obelisk and its plinth
     for (const s of usedSlots) if (inFootprint(p, s, 0.15)) return true;
     return false;
   }, 1);

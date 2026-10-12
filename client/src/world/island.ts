@@ -9,6 +9,8 @@ const C = (hex: number) => new THREE.Color(hex);
 
 export interface IslandMeshes {
   group: THREE.Group;
+  /** The lawn's height (terrainHeight), gridded for fast reads. */
+  heightAt: (p: Vec2) => number;
   water: THREE.ShaderMaterial[];
   riverPts: Vec2[];
   fallTop: THREE.Vector3;
@@ -23,6 +25,7 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   const riverPts = smoothRiver(plan);
 
   group.add(buildTop(plan, riverPts, footprints));
+  const heightAt = heightGrid(plan, terrainHeight(plan, riverPts, footprints));
   group.add(buildSkirt(plan));
   group.add(buildRoots(plan));
   for (const m of plan.mountains) group.add(buildMountain(m.pos, m.r, m.h, plan.seed + Math.round(m.pos.x * 10)));
@@ -51,7 +54,7 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   water.push(fmat);
   group.add(buildWaterfall(fallTop, dir, plan.riverWidth, fmat));
 
-  return { group, water, riverPts, fallTop, fallDir: dir };
+  return { group, heightAt, water, riverPts, fallTop, fallDir: dir };
 }
 
 /** The river polyline, smoothed once; the ground, the water and the loading
@@ -143,6 +146,53 @@ function mulberry(seed: number): () => number {
   };
 }
 
+/** The lawn's height at p: a gentle roll, flattened round the plaza and sunk a
+ *  little under every building (so floors drawn at ground level are never
+ *  pierced), dipping into the river bed and the pond and off the rim. The
+ *  mesh is built from this and walking reads it (World.groundAt), so feet
+ *  stand on what is drawn. `f` is the fraction of the way to the rim
+ *  (derived from p when left out). */
+export function terrainHeight(plan: IslandPlan, river: Vec2[], footprints: { pos: Vec2; r: number }[]): (p: Vec2, f?: number) => number {
+  return (p, f) => {
+    let y = fbm2(p.x * 0.35, p.z * 0.35) * 0.08;
+    // Eased over the last 0.4 of a footprint (no seam in the lawn).
+    let sink = 0;
+    for (const fp of footprints) sink = Math.max(sink, smooth(fp.r, fp.r - 0.4, dist(p, fp.pos)));
+    const flat = smooth(plan.plaza.r + 0.9, plan.plaza.r + 0.5, dist(p, plan.plaza.c));
+    y *= 1 - 0.85 * Math.max(flat, sink);
+    if (sink > 0) y = y + (Math.min(y, 0) - BUILDING_SINK - y) * sink;
+    const dr = distToPolyline(p, river);
+    const w = plan.riverWidth * 0.62;
+    if (dr < w + 0.3) y = Math.min(y, -0.34 * smooth(w + 0.3, w * 0.3, dr));
+    const dp = dist(p, plan.pond.c);
+    if (dp < plan.pond.r + 0.5) y = Math.min(y, -0.45 * smooth(plan.pond.r + 0.5, plan.pond.r * 0.4, dp));
+    const fr = f ?? Math.hypot(p.x, p.z) / plan.radiusAt(Math.atan2(p.z, p.x));
+    if (fr > 0.965) y -= (fr - 0.965) * 3.2;
+    return y;
+  };
+}
+
+/** `height` sampled once on a grid (cell metres) over the island, read back
+ *  bilinearly: walking asks for the ground every frame for everyone. */
+export function heightGrid(plan: IslandPlan, height: (p: Vec2) => number, cell = 0.125): (p: Vec2) => number {
+  let R = 0;
+  for (let a = 0; a < Math.PI * 2; a += 0.05) R = Math.max(R, plan.radiusAt(a));
+  const n = Math.ceil((2 * R) / cell) + 2;
+  const h = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) h[j * n + i] = height({ x: -R + i * cell, z: -R + j * cell });
+  return (p) => {
+    const fx = (p.x + R) / cell, fz = (p.z + R) / cell;
+    const i = Math.floor(fx), j = Math.floor(fz);
+    if (i < 0 || j < 0 || i >= n - 1 || j >= n - 1) return height(p);
+    const tx = fx - i, tz = fz - j, k = j * n + i;
+    const a = h[k] + (h[k + 1] - h[k]) * tx, b = h[k + n] + (h[k + n + 1] - h[k + n]) * tx;
+    return a + (b - a) * tz;
+  };
+}
+
+/** How far the lawn sits below 0 under a building (floors are drawn at ~0). */
+export const BUILDING_SINK = 0.008;
+
 function buildTop(plan: IslandPlan, river: Vec2[], footprints: { pos: Vec2; r: number }[]): THREE.Mesh {
   const NR = 46, NS = 200;
   const pos: number[] = [];
@@ -152,18 +202,7 @@ function buildTop(plan: IslandPlan, river: Vec2[], footprints: { pos: Vec2; r: n
   const plazaC = C(0xd8c3a5), worn = C(0x9bbd5c);
   const tmp = new THREE.Color();
 
-  const heightAt = (p: Vec2, f: number) => {
-    let y = fbm2(p.x * 0.35, p.z * 0.35) * 0.08;
-    const near = footprints.some((fp) => dist(p, fp.pos) < fp.r) || dist(p, plan.plaza.c) < plan.plaza.r + 0.5;
-    if (near) y *= 0.15;
-    const dr = distToPolyline(p, river);
-    const w = plan.riverWidth * 0.62;
-    if (dr < w + 0.3) y = Math.min(y, -0.34 * smooth(w + 0.3, w * 0.3, dr));
-    const dp = dist(p, plan.pond.c);
-    if (dp < plan.pond.r + 0.5) y = Math.min(y, -0.45 * smooth(plan.pond.r + 0.5, plan.pond.r * 0.4, dp));
-    if (f > 0.965) y -= (f - 0.965) * 3.2;
-    return y;
-  };
+  const heightAt = terrainHeight(plan, river, footprints);
   const colorAt = (p: Vec2, out: THREE.Color) => {
     const n = fbm2(p.x * 0.18 + 10, p.z * 0.18);
     out.copy(grassA).lerp(grassB, THREE.MathUtils.clamp(n * 1.4 + 0.5, 0, 1));
