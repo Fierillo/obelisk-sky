@@ -39,7 +39,7 @@ client/
   src/landing/          the landing page: copy.ts (en/es words), landing.ts (language switch), landing.css
   src/world/            the 3D world
     world.ts              the World: island, buildings, people, seats, stations, landmarks, frame loop
-    layout.ts             pure planning: island plan, slots, NavGrid (CELL 0.5), river, millSite, bridges
+    layout.ts             pure planning: island plan, slots, NavGrid (CELL 0.5), river, millSite, bridges (`waterworks`, shared with the loading map: one upstream, one on the obelisk→Liberture line, one beside the mill's wheel; the pond is downstream of that line)
     island.ts             ground, river/pond/waterfall shaders (river and pond split the surface on one circle), grass detail texture
     bridge.ts             the arched footbridges: archHeight (shared by mesh and walking), buildBridge
     character.ts          a person: model, animation layers, path following, props, badge

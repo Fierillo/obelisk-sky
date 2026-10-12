@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { planIsland, buildNavGrid, assignSlots, inFootprint, dist, islandOutline, ISLAND_R, turnedHalf } from './layout';
+import { waterworks, millBlocked, distToPolyline } from './layout';
+import { smoothRiver } from './island';
+import { reserveLandmarkSlots } from './landmarks';
 
 describe('island plan', () => {
   const plan = planIsland();
@@ -97,5 +100,38 @@ describe('turnedHalf', () => {
     expect(q.hz).toBeCloseTo(0.3);
     const d = turnedHalf(0.3, 0.5, Math.PI / 4);
     expect(d.hx).toBeCloseTo(0.8 / Math.SQRT2);
+  });
+});
+
+describe('the footbridges and the watermill', () => {
+  const plan = planIsland();
+  const track = trackSite(plan);
+  const river = smoothRiver(plan);
+  const held = reserveLandmarkSlots(plan.slots.filter((s) => !track || !onTrack(s.pos, track, s.w * 0.7 + 0.6)), plan.plaza.c);
+  const lib = held.get('liberture')!.pos;
+  const { bridges, mill } = waterworks(plan, river, lib, millBlocked(plan, track));
+
+  it('puts a bridge on the straight line from the obelisk to the Liberture house, over the river only', () => {
+    const o = plan.plaza.c, d = { x: lib.x - o.x, z: lib.z - o.z }, len = Math.hypot(d.x, d.z);
+    const onLine = bridges.find((b) => Math.abs(((b.x - o.x) * d.z - (b.z - o.z) * d.x) / len) < 0.5);
+    expect(onLine).toBeDefined();
+    // The pond is downstream, clear of that bridge and its ramps.
+    expect(dist(onLine!, plan.pond.c)).toBeGreaterThan(plan.pond.r + 1.7);
+    expect(distToPolyline(plan.pond.c, [o, lib])).toBeGreaterThan(plan.pond.r + 0.5);
+  });
+
+  it('puts a bridge right beside the watermill, clear of its house', () => {
+    expect(mill).not.toBeNull();
+    const near = Math.min(...bridges.map((b) => dist(b, mill!.at)));
+    expect(near).toBeGreaterThan(1.5);
+    expect(near).toBeLessThan(2.2);
+  });
+
+  it('keeps three bridges apart, off the pond', () => {
+    expect(bridges).toHaveLength(3);
+    for (const a of bridges) {
+      expect(dist(a, plan.pond.c)).toBeGreaterThan(plan.pond.r + 1.5);
+      for (const b of bridges) if (a !== b) expect(dist(a, b)).toBeGreaterThan(2.5);
+    }
   });
 });

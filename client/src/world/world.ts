@@ -20,7 +20,7 @@ import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bri
 import {
   assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
-  millSite, type MillSite, turnedHalf, bridgePoints, parkSite,
+  millBlocked, type MillSite, turnedHalf, waterworks, parkSite,
 } from './layout';
 import { fbm2 } from './noise';
 import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, PARK_MAT, TRACK_LANES, TRACK_TOP, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
@@ -501,8 +501,11 @@ export class World {
   private buildStatic(): void {
     const plan = this.plan;
 
-    // Bridges where the paths will cross the river.
-    this.bridges = bridgePoints(this.island.riverPts, plan.pond.c);
+    // Bridges where the paths will cross the river (one on the line from the
+    // obelisk to the Liberture house, one beside the watermill's wheel).
+    const ww = waterworks(plan, this.island.riverPts, this.landmarkSlots.get('liberture')?.pos ?? null, millBlocked(plan, this.track));
+    this.bridges = ww.bridges;
+    this.millSite = ww.mill;
     // Arched footbridges: their deck is raised ground (groundAt).
     this.bridgeSpecs = bridgeSpecs(plan, this.bridges);
     for (const b of this.bridgeSpecs) this.staticRoot.add(buildBridge(b));
@@ -980,6 +983,9 @@ export class World {
   private layPaths(): void {
     const plan = this.plan;
     const grid = buildNavGrid(plan, plan.slots, this.bridges);
+    // The watermill's house stands by a bridge: roads go round it.
+    const mill = this.millSite;
+    if (mill) grid.mark((p) => dist(p, mill.house) < 1.0, 1);
     const cells = new Set<number>();
     const track = this.track;
     const ordered = plan.slots
@@ -1173,15 +1179,6 @@ export class World {
     const props = new PropBatch();
     const r = rng(plan.seed + 77);
     const used = new Set(this.usedSlots().map((s) => s.index));
-    // The watermill: the straightest free stretch of river past the pond.
-    const half = plan.riverWidth * 0.62;
-    this.millSite = millSite(this.island.riverPts, half, {
-      avoid: [...this.bridges, plan.pond.c],
-      clear: 2.4,
-      blocked: (p) => plan.slots.some((sl) => inFootprint(p, sl, 0.4) || dist(p, sl.yard) < 1)
-        || this.onPath(p, 0.2) || (!!this.track && onTrack(p, this.track, 0.6))
-        || dist(p, { x: 0, z: 0 }) > plan.R - 1.4,
-    });
     const occupied = (p: Vec2, pad: number) =>
       dist(p, plan.plaza.c) < plan.plaza.r + 0.6 + pad
       || (!!this.millSite && dist(p, this.millSite.house) < 1.15 + pad)

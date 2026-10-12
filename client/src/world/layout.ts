@@ -79,7 +79,9 @@ export function planIsland(seed = 7): IslandPlan {
   const radiusAt = (theta: number) => R * (1 + harmonics.reduce((s, h) => s + h.a * Math.sin(h.k * theta + h.p), 0));
 
   const plaza = { c: { x: 0, z: 0.5 }, r: 3.2 };
-  const pond = { c: { x: 7.2, z: -2.2 }, r: 2.1 };
+  // Downstream of the straight line from the obelisk to the Liberture house,
+  // so the footbridge on that line crosses only the river.
+  const pond = { c: { x: 8.85, z: 4.1 }, r: 1.9 };
 
   // Mountains along the back (−z) edge.
   const mountains: Mountain[] = [];
@@ -102,9 +104,10 @@ export function planIsland(seed = 7): IslandPlan {
     { x: 4.6, z: -10.8 },
     { x: 5.8, z: -7.6 },
     { x: 6.6, z: -4.4 },
+    { x: 7.3, z: -2.0 },
+    { x: 8.25, z: 1.0 },
     pond.c,
-    { x: 8.4, z: 1.2 },
-    { x: 8.6, z: 4.4 },
+    { x: 9.0, z: 7.0 },
     { x: Math.cos(fallAngle) * (fallR - 2.2), z: Math.sin(fallAngle) * (fallR - 2.2) },
     { x: Math.cos(fallAngle) * (fallR + 0.4), z: Math.sin(fallAngle) * (fallR + 0.4) },
   ];
@@ -441,6 +444,55 @@ export function bridgePoints(riverPts: Vec2[], pond: Vec2): Vec2[] {
   return [Math.floor(pondIdx * 0.45), Math.floor(pondIdx + (riverPts.length - pondIdx) * 0.45)].map((i) => riverPts[i]);
 }
 
+/** Where the watermill's house can't stand: building slots and their yards, the track, the rim. */
+export function millBlocked(plan: IslandPlan, track: { c: Vec2; rot: number } | null): (p: Vec2) => boolean {
+  return (p) => plan.slots.some((sl) => inFootprint(p, sl, 0.4) || dist(p, sl.yard) < 1)
+    || (!!track && onTrack(p, track, 0.6)) || Math.hypot(p.x, p.z) > plan.R - 1.4;
+}
+
+/** How far along the river the footbridge by the watermill stands from it:
+ *  past the house's half width (0.75), the deck's half (0.55) and a step. */
+export const MILL_BRIDGE_GAP = 1.75;
+
+/**
+ * The footbridges and the watermill (world.ts and the loading map share it):
+ * one bridge upstream, one where the straight line from the obelisk to
+ * `line` (the Liberture house) crosses the river, and one right beside the
+ * mill's wheel, on its upstream side if there's room. `blocked` is where the
+ * mill's house can't stand.
+ */
+export function waterworks(
+  plan: IslandPlan, riverPts: Vec2[], line: Vec2 | null, blocked: (p: Vec2) => boolean,
+): { bridges: Vec2[]; mill: MillSite | null } {
+  const pond = plan.pond;
+  const nearPond = (p: Vec2, pad: number) => dist(p, pond.c) < pond.r + pad;
+  const bridges = [riverPts[Math.floor(riverPts.length * 0.15)]];
+  if (line) {
+    // The river point nearest the segment obelisk → `line`, if it really crosses there.
+    const o = plan.plaza.c, dx = line.x - o.x, dz = line.z - o.z, len2 = dx * dx + dz * dz || 1;
+    const off = (p: Vec2) => {
+      const t = Math.max(0, Math.min(1, ((p.x - o.x) * dx + (p.z - o.z) * dz) / len2));
+      return dist(p, { x: o.x + dx * t, z: o.z + dz * t });
+    };
+    const at = riverPts.reduce((b, p) => (off(p) < off(b) ? p : b));
+    if (off(at) < 0.5 && !nearPond(at, 1.7)) bridges.push(at);
+  }
+  const mill = millSite(riverPts, plan.riverWidth * 0.62, { avoid: [...bridges, { ...pond.c, r: pond.r + 0.6 }], clear: 2.4, blocked });
+  if (!mill) return { bridges: [...bridges, bridgePoints(riverPts, pond.c)[1]], mill };
+  const i = riverPts.indexOf(mill.at);
+  const along = (dir: 1 | -1): Vec2 | null => {
+    let run = 0;
+    for (let k = i + dir; k > 0 && k < riverPts.length - 1; k += dir) {
+      run += dist(riverPts[k], riverPts[k - dir]);
+      if (run >= MILL_BRIDGE_GAP) return riverPts[k];
+    }
+    return null;
+  };
+  const fits = (p: Vec2 | null): p is Vec2 => !!p && !nearPond(p, 1.7) && Math.hypot(p.x, p.z) < plan.R - 1.6 && bridges.every((b) => dist(b, p) > 2.5);
+  const byMill = [along(-1), along(1)].find(fits);
+  return { bridges: byMill ? [...bridges, byMill] : bridges, mill };
+}
+
 /**
  * The calisthenics park: beside or past the end of the track, wherever no
  * building slot (used now or later) and no water is in the way.
@@ -535,14 +587,14 @@ export const MILL = { wheelRadius: 0.5, wheelWidth: 0.58, houseDepth: 1.1, house
  */
 export function millSite(
   river: Vec2[], halfWidth: number,
-  opts: { avoid?: Vec2[]; clear?: number; lo?: number; hi?: number; blocked?: (p: Vec2) => boolean } = {},
+  opts: { avoid?: (Vec2 & { r?: number })[]; clear?: number; lo?: number; hi?: number; blocked?: (p: Vec2) => boolean } = {},
 ): MillSite | null {
   const { avoid = [], clear = 2.2, lo = 0.6, hi = 0.92, blocked = () => false } = opts;
   let best: MillSite | null = null;
   let bestBend = Infinity;
   for (let i = Math.max(3, Math.floor(river.length * lo)); i <= Math.min(river.length - 4, Math.floor(river.length * hi)); i++) {
     const a = river[i - 3], p = river[i], b = river[i + 3];
-    if (avoid.some((q) => dist(q, p) < clear)) continue;
+    if (avoid.some((q) => dist(q, p) < clear + (q.r ?? 0))) continue;
     const t1 = norm({ x: p.x - a.x, z: p.z - a.z }), t2 = norm({ x: b.x - p.x, z: b.z - p.z });
     const bend = 1 - (t1.x * t2.x + t1.z * t2.z);
     const t = norm({ x: b.x - a.x, z: b.z - a.z });

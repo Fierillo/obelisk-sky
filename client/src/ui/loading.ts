@@ -5,7 +5,7 @@
 
 import { TOP_DOWN_MARGIN } from '../world/cameraman';
 import {
-  bridgePoints, dist, distToPolyline, inFootprint, islandOutline, millSite, onTrack, parkSite, rng, trackSite, TRACK,
+  dist, distToPolyline, inFootprint, islandOutline, millBlocked, onTrack, parkSite, rng, trackSite, waterworks, TRACK,
   type IslandPlan, type Vec2,
 } from '../world/layout';
 import { smoothRiver } from '../world/island';
@@ -73,17 +73,11 @@ export function mapFeatures(plan: IslandPlan): MapFeatures {
   const houses = open.filter((s) => !heldIdx.has(s.index))
     .sort((a, b) => dist(a.pos, plan.plaza.c) - dist(b.pos, plan.plaza.c))
     .slice(0, 12).map((s) => s.pos);
-  const bridgeAt = bridgePoints(river, plan.pond.c);
+  const { bridges: bridgeAt, mill } = waterworks(plan, river, held.get('liberture')?.pos ?? null, millBlocked(plan, track));
   const bridges = bridgeAt.map((p) => {
     const i = river.indexOf(p);
     const a = river[Math.max(0, i - 1)], b = river[Math.min(river.length - 1, i + 1)];
     return { p, angle: Math.atan2(b.z - a.z, b.x - a.x) };
-  });
-  const mill = millSite(river, plan.riverWidth * 0.62, {
-    avoid: [...bridgeAt, plan.pond.c],
-    clear: 2.4,
-    blocked: (p) => plan.slots.some((sl) => inFootprint(p, sl, 0.4) || dist(p, sl.yard) < 1)
-      || (!!track && onTrack(p, track, 0.6)) || Math.hypot(p.x, p.z) > plan.R - 1.4,
   });
   const park = track ? parkSite(plan, track, river) : null;
   // Trees where the world grows its groves (decorate: noise, denser toward the rim).

@@ -42,7 +42,7 @@ describe('the map matches the village', () => {
     expect(f.landmarks.map((l) => l.id).sort()).toEqual(LANDMARKS.map((d) => d.id).sort());
     expect(f.track).not.toBeNull();
     expect(f.park).not.toBeNull();
-    expect(f.bridges).toHaveLength(2);
+    expect(f.bridges).toHaveLength(3);
     const svg = islandMap(plan, f);
     for (const id of LANDMARKS.map((d) => d.id)) expect(svg.querySelector(`.lm-${id}`), id).not.toBeNull();
     for (const c of ['lm-track', 'lm-park', 'lm-bridge', 'lm-campfire']) expect(svg.querySelector(`.${c}`), c).not.toBeNull();
