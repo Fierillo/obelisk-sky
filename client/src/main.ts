@@ -1329,6 +1329,11 @@ const LANDMARK_CARDS: Record<Exclude<LandmarkId, 'nostrwot'>, { title: string; s
     title: 'Parrilla', sub: 'Asado under the quincho',
     about: 'Chorizos, morcilla and a tira de asado on the grill. Neighbours gather here in the evening: press E on the bench to join them.',
   },
+  liberture: {
+    title: 'Liberture', sub: 'Master your biology. Unlock your potential.',
+    about: 'The house of the six pillars: work, sleep, nutrition, mind, exercise and finance, glowing over the roof. Step inside: the pillar tower turns in the middle, there is a desk to work at, a daybed and two cushions to meditate on. Press E by one to sit.',
+    link: ['Visit liberture.com', 'https://liberture.com'],
+  },
 };
 
 world.hooks.onLandmarkClick = (id) => {

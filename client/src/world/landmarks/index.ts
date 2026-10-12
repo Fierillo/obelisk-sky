@@ -11,8 +11,9 @@ import { buildLaCryptaHouse } from '../lacrypta';
 import { buildCoffeeShop } from './coffee';
 import { buildParrilla } from './parrilla';
 import { buildNostrWotHq } from './nostrwot';
+import { buildLibertureHouse } from './liberture';
 
-export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla';
+export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla' | 'liberture';
 
 /** What a seat at a landmark puts in your hand. */
 export type SeatProp = 'mate' | 'coffee' | 'asado' | 'none' | 'marshmallow';
@@ -78,6 +79,7 @@ export const LANDMARKS: LandmarkDef[] = [
   { id: 'nostrwot', want: 'plaza', minSize: 3, forward: 0.2, footprint: { minX: -1.4, maxX: 1.4, minZ: -2.05, maxZ: 0.1 }, lawn: { along: 2.6, across: 1.8 }, build: buildNostrWotHq },
   { id: 'coffee', want: { x: -6.5, z: 1 }, minSize: 2, forward: 0.25, footprint: { minX: -1.3, maxX: 1.3, minZ: -1.75, maxZ: 0.1 }, lawn: { along: 2.4, across: 1.6 }, build: buildCoffeeShop },
   { id: 'parrilla', want: { x: -7, z: 5.5 }, minSize: 2, forward: 0.1, footprint: { minX: -1.0, maxX: 1.0, minZ: -1.55, maxZ: -0.95 }, lawn: { along: 2.2, across: 1.6 }, build: buildParrilla },
+  { id: 'liberture', want: { x: 11.5, z: -0.5 }, minSize: 2, forward: 0.25, footprint: { minX: -1.35, maxX: 1.35, minZ: -1.85, maxZ: 0.1 }, lawn: { along: 2.4, across: 1.6 }, build: buildLibertureHouse },
 ];
 
 /** Pick each landmark's slot: nearest to what it wants, never shared. */

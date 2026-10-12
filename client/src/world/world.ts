@@ -547,6 +547,16 @@ export class World {
     this.solids.push({ minX: box.min.x + shrink, maxX: box.max.x - shrink, minZ: box.min.z + shrink, maxZ: box.max.z - shrink, top: box.max.y });
   }
 
+  /** Is p under a landmark (its real footprint, which can overhang the slot), with a margin? */
+  private underLandmark(p: Vec2, margin: number): boolean {
+    for (const d of LANDMARKS) {
+      const l = this.toLandmarkLocal(d.id, p);
+      const f = d.footprint;
+      if (l && l.x > f.minX - margin && l.x < f.maxX + margin && l.z > f.minZ - margin && l.z < f.maxZ + margin) return true;
+    }
+    return false;
+  }
+
   /** Is p on a landmark's front lawn (where its stairs or terrace come down)? */
   private onLandmarkLawn(p: Vec2): boolean {
     for (const d of LANDMARKS) {
@@ -1205,6 +1215,7 @@ export class World {
       if (this.plan.mountains.some((mt) => dist(p, mt.pos) < mt.r)) continue;
       if (this.track && onTrack(p, this.track, 0.1)) continue;
       if (this.plan.slots.some((s) => inFootprint(p, s, 0.1))) continue;
+      if (this.underLandmark(p, 0.1)) continue; // no grass through a landmark's floor
       if (this.onPath(p, 0)) continue;
       if (this.marketAt && dist(p, this.marketAt) < 2.1) continue;
       // Tufts grow in clumps: thin out where the clump noise is low.
