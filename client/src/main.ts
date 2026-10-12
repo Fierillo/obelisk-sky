@@ -355,8 +355,10 @@ function startFeed(): void {
   themes.onChange(applyDistricts);
   void themes.start();
   resetVillage();
+  avatars.stop();
   avatars = new AvatarStore(hub);
   avatars.onChange((pk, a) => world.setAvatar(pk, a));
+  avatars.start();
   // Your look and pet follow you: the cached copy shows at once, and a relay
   // that doesn't have it (or has an older one) gets the same signed event.
   const me = session.current?.pubkey;
@@ -424,7 +426,7 @@ session.onChange((s) => {
   startDms();
   if (!s) pcall.hangup();
   if (!s) { dmPanel.close(); }
-  if (!s) { feed?.stop(); feed = null; activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); loginMount?.resetLogin(); forgetWallet(); }
+  if (!s) { feed?.stop(); feed = null; avatars.stop(); activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); loginMount?.resetLogin(); forgetWallet(); }
   else void loadWallet(s.pubkey);
   if (s && freshLogin) awaitEntry(s);
   else clearTimeout(entryTimer);

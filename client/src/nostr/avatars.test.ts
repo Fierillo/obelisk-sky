@@ -125,3 +125,47 @@ describe('your look across relays', () => {
     expect(loadCachedAvatar(pk, s)!.created_at).toBe(50);
   });
 });
+
+describe('AvatarStore on the relay', () => {
+  const sk = generateSecretKey();
+  const lookEv = (at: number, outfit: 'peasant' | 'ranger') =>
+    finalizeEvent({ ...avatarTemplate({ ...DEFAULT_AVATAR, v: 2, look: { ...defaultLook(1), outfit } }), created_at: at }, sk);
+
+  it('hears a look saved after we first asked (a change of clothes reaches everyone)', () => {
+    let onEvent: ((ev: ReturnType<typeof lookEv>) => void) | null = null;
+    let released = false;
+    const hub = { subscribe: (spec: { filters: { '#d': string[] }[]; onEvent: typeof onEvent }) => {
+      expect(spec.filters[0]['#d']).toEqual([AVATAR_D_TAG]);
+      onEvent = spec.onEvent;
+      return { release: () => { released = true; } };
+    } };
+    const store = new AvatarStore(hub as never, null);
+    const seen: string[] = [];
+    store.onChange((_pk, a) => seen.push(a.look!.outfit));
+    store.start();
+    onEvent!(lookEv(10, 'peasant'));
+    onEvent!(lookEv(20, 'ranger'));
+    expect(store.get(lookEv(1, 'ranger').pubkey)!.look!.outfit).toBe('ranger');
+    expect(seen).toEqual(['peasant', 'ranger']);
+    store.stop();
+    expect(released).toBe(true);
+  });
+
+  it('asks again for people whose query did not finish', async () => {
+    const asked: string[][] = [];
+    let complete = false;
+    const hub = { query: async (spec: { filters: { authors: string[] }[]; cache?: { mode: string } }) => {
+      asked.push(spec.filters[0].authors);
+      expect(spec.cache?.mode).toBe('bypass');
+      return { events: [], complete, perRelay: {}, fromCache: false };
+    } };
+    const store = new AvatarStore(hub as never, null);
+    store.want(['a']);
+    await new Promise((r) => setTimeout(r, 0));
+    complete = true;
+    store.want(['a']);
+    await new Promise((r) => setTimeout(r, 0));
+    store.want(['a']);
+    expect(asked).toEqual([['a'], ['a']]);
+  });
+});

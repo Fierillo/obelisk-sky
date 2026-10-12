@@ -119,6 +119,7 @@ export class AvatarStore {
   private listeners = new Set<(pk: string, a: Avatar) => void>();
   /** Your pubkey: your events are cached in this browser. */
   private own: string | null = null;
+  private sub: { release(): void } | null = null;
 
   constructor(private hub: RelayHub, private store: Storage | null = storage()) {}
 
@@ -162,6 +163,7 @@ export class AvatarStore {
         relays: [activeRelay()],
         filters: [{ kinds: [30078], authors: [pk], '#d': [AVATAR_D_TAG] }],
         maxWaitMs: 5000,
+        cache: { mode: 'bypass' },
         label: 'sky-avatar-own',
       });
       for (const ev of r.events) {
@@ -178,16 +180,42 @@ export class AvatarStore {
     return (await republish(best!)) ? 'republished' : 'failed';
   }
 
-  /** Ask the relay for anyone we haven't asked about yet. */
+  /**
+   * Looks saved from now on, by anyone: someone already in the village who
+   * changes body or clothes is redrawn on every screen, not after a reload.
+   */
+  start(nowS = Math.floor(Date.now() / 1000)): void {
+    this.sub?.release();
+    this.sub = this.hub.subscribe({
+      relays: [activeRelay()],
+      filters: [{ kinds: [30078], '#d': [AVATAR_D_TAG], since: nowS - 60 }],
+      priority: 'background',
+      label: 'sky-avatars-live',
+      onEvent: (ev) => this.ingest(ev),
+    });
+  }
+
+  stop(): void {
+    this.sub?.release();
+    this.sub = null;
+  }
+
+  /** Ask the relay for anyone we haven't asked about yet. A query that
+   *  didn't finish (AUTH still pending, a timeout) is asked again later. */
   want(pubkeys: Iterable<string>): void {
     const fresh = [...pubkeys].filter((p) => !this.asked.has(p)).slice(0, 200);
     if (!fresh.length) return;
     for (const p of fresh) this.asked.add(p);
+    const retry = () => { for (const p of fresh) if (!this.byPk.has(p)) this.asked.delete(p); };
     void this.hub.query({
       relays: [activeRelay()],
       filters: [{ kinds: [30078], authors: fresh, '#d': [AVATAR_D_TAG] }],
       maxWaitMs: 5000,
+      cache: { mode: 'bypass' },
       label: 'sky-avatars',
-    }).then((r) => { for (const ev of r.events) this.ingest(ev); }).catch(() => {});
+    }).then((r) => {
+      for (const ev of r.events) this.ingest(ev);
+      if (!r.complete) retry();
+    }).catch(retry);
   }
 }
