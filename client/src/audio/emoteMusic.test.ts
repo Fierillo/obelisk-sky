@@ -11,6 +11,8 @@ describe('emote music', () => {
     expect(musicFor('lotus')).toBe('zen');
     expect(musicFor('yes')).toBeNull();
     expect(musicFor('sangre')).toBeNull();
+    // You, training at the park or the gym (world.ts dancers adds only your own).
+    expect(musicFor('train')).toBe('workout');
   });
 
   it('a track loops on whole bars, so its beat stays on the grid', () => {

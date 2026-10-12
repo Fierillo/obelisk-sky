@@ -176,7 +176,7 @@ export class World {
   readonly solids: Solid[] = [];
   private laptops = new Map<string, THREE.Object3D>();
   readonly stations: Station[] = [];
-  private trainingAt = new Map<string, { station: Station; kind: StationKind; since: number }>();
+  private trainingAt = new Map<string, { station: Station; kind: StationKind; since: number; wall: number }>();
   /** The running track's lanes (inside to outside), like stations. */
   readonly lanes: Station[] = [];
   /** The channel whose house is the gym, and its hall. */
@@ -2177,7 +2177,7 @@ export class World {
     this.stopTraining(pk);
     if (kind === 'run') {
       st.taken = pk;
-      this.trainingAt.set(pk, { station: st, kind, since: this.elapsed });
+      this.trainingAt.set(pk, { station: st, kind, since: this.elapsed, wall: Date.now() });
       // Your own laps are run by the controller (main.ts); everyone else loops here.
       if (pk !== this.playerPk) {
         const lap = () => { if (this.trainingAt.get(pk)?.station === st) c.walk(this.lanePath(st.lane!, c.pos), true, lap); };
@@ -2204,7 +2204,7 @@ export class World {
       c.heldBar = buildBarbell(kind === 'curl' ? 0.34 : 0.68, kind === 'curl' ? 0.045 : 0.07);
       c.body.add(c.heldBar);
     }
-    this.trainingAt.set(pk, { station: st, kind, since: this.elapsed });
+    this.trainingAt.set(pk, { station: st, kind, since: this.elapsed, wall: Date.now() });
     return true;
   }
 
@@ -2239,9 +2239,14 @@ export class World {
     return c?.emote ? c.emoteSince : null;
   }
 
-  /** Everyone playing an emote, where, and since when (audio/emoteMusic.ts picks the music). */
-  dancers(): { pk: string; x: number; z: number; kind: EmoteKind; since: number; anchor: number | null }[] {
-    const out: { pk: string; x: number; z: number; kind: EmoteKind; since: number; anchor: number | null }[] = [];
+  /** Everyone playing an emote, where, and since when (audio/emoteMusic.ts picks the music);
+   *  and you while you train at the park or the gym ('train': workout music for you alone,
+   *  not for people passing; running laps has none). */
+  dancers(): { pk: string; x: number; z: number; kind: EmoteKind | 'train'; since: number; anchor: number | null }[] {
+    const out: { pk: string; x: number; z: number; kind: EmoteKind | 'train'; since: number; anchor: number | null }[] = [];
+    const me = this.playerPk ? this.people.get(this.playerPk) : null;
+    const training = this.playerPk ? this.trainingAt.get(this.playerPk) : undefined;
+    if (me && training && training.kind !== 'run') out.push({ pk: me.pk, x: me.pos.x, z: me.pos.z, kind: 'train', since: training.wall, anchor: null });
     for (const c of this.people.values()) {
       if (!c.emote || c.opacity < 0.5) continue;
       out.push({ pk: c.pk, x: c.pos.x, z: c.pos.z, kind: c.emote.kind as EmoteKind, since: c.emoteSince, anchor: c.emoteAnchor });

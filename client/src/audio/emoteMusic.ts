@@ -31,11 +31,12 @@ export const SELF_SHOT_GAIN = 1.8;
 type Vec2 = { x: number; z: number };
 
 /** `since`: when their emote began; `anchor`: the clock its rounds count from (both wall ms; world/emotes.ts). */
-export interface Dancer { pk: string; x: number; z: number; kind: EmoteKind; since: number; anchor?: number | null }
+export interface Dancer { pk: string; x: number; z: number; kind: EmoteKind | 'train'; since: number; anchor?: number | null }
 export interface Cluster { leader: string; music: MusicKind; x: number; z: number; members: string[] }
 
-/** Which music an emote plays, if any. */
-export function musicFor(kind: EmoteKind): MusicKind | null {
+/** Which music an emote plays, if any ('train': you, training at the park or the gym). */
+export function musicFor(kind: EmoteKind | 'train'): MusicKind | null {
+  if (kind === 'train') return 'workout';
   if (!emoteOf(kind)?.music) return null;
   if (kind === 'lotus') return 'zen';
   if (kind === 'pushup' || kind === 'jacks') return 'workout';
