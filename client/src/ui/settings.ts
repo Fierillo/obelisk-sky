@@ -96,7 +96,7 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   row('Shadows', toggle('shadows'));
   row('Ambient occlusion', toggle('ambientOcclusion'), '(soft contact shadows)');
   row('Glow (bloom)', toggle('bloom'));
-  row('Miniature lens', toggle('tiltShift'), '(tilt-shift blur)');
+  row('Toy-town view', toggle('tiltShift'), '(blurs the top and bottom so the island looks like a tiny model)');
   row('Grass', toggle('grass'));
 
   section('World');

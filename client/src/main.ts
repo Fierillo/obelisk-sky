@@ -1992,9 +1992,12 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
       case 'signs':
         prefs.set({ signs: !prefs.get().signs });
         break;
-      case 'tilt':
-        prefs.set({ tiltShift: !prefs.get().tiltShift });
+      case 'tilt': {
+        const on = !prefs.get().tiltShift;
+        prefs.set({ tiltShift: on });
+        toast(on ? 'Toy-town view on: the edges blur so the island looks like a tiny model' : 'Toy-town view off: the whole picture is sharp');
         break;
+      }
       case 'sound':
         prefs.set({ sound: !prefs.get().sound });
         break;
