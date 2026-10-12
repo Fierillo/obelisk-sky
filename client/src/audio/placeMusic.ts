@@ -15,7 +15,8 @@ export interface Place { kind: PlaceKind; x: number; z: number }
 
 /** How far each is heard (m) and how loud, under the music bus. */
 export const PLACE_TRACKS: Record<PlaceKind, { reach: number; gain: number }> = {
-  parrilla: { reach: 8, gain: 0.5 },
+  // The café is about 4.5 m away: the cumbia stays under the parrilla's roof.
+  parrilla: { reach: 3.5, gain: 0.6 },
   campfire: { reach: 5.5, gain: 0.45 },
 };
 

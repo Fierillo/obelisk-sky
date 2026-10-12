@@ -51,7 +51,7 @@ All volumes stack on the master volume. The numbers to change:
 
 | What | Where | Now |
 |---|---|---|
-| A place's reach (silent past it) and loudness | `audio/placeMusic.ts` `PLACE_TRACKS` | parrilla 8 m, 0.5; campfire 5.5 m, 0.45 |
+| A place's reach (silent past it) and loudness | `audio/placeMusic.ts` `PLACE_TRACKS` | parrilla 3.5 m, 0.6 (the café is 4.5 m away); campfire 5.5 m, 0.45 |
 | All music at places | `placeMusic.ts` `bus.gain` | 0.6 |
 | How close you must be for full volume at a place | `placeMusic.ts` `refDistance` | 1.5 m |
 | Emote music's reach | `audio/emoteMusic.ts` `HEAR_M` | 25 m |
@@ -113,7 +113,7 @@ The BPM matters for the dance: the groove animation is two bars at 120 BPM.
 | `zen.mp3` | `zen` ✅ | 60 | 3:44 | Lotus pose emote | `Instrumental calm meditation ambient loop, 60 BPM, warm evolving synth pad, soft singing bowl hits, gentle airy texture, peaceful and spacious, seamless loop, no drums, no vocals` |
 | `campfire.mp3` | `places.campfire` ✅ | 90 | 30 s | Every campfire (the logs by the pond, each voice tree's), heard within 5.5 m | `Instrumental acoustic campfire guitar loop, 90 BPM, fingerpicked nylon guitar, soft and warm, a little folk, evening by the fire, seamless loop, no vocals` |
 | `cafe.mp3` | (future) | 80 | 60 s | Inside the café | `Instrumental lo-fi café jazz hop loop, 80 BPM, mellow Rhodes chords, brushed drums, warm upright bass, vinyl crackle, cozy coffee shop, seamless loop, no vocals` |
-| `parrilla.mp3` | `places.parrilla` ✅ | 96 | 2:52 | The parrilla, heard within 8 m | `Instrumental Argentine cumbia loop, 96 BPM, güira and congas, accordion melody, bouncy bass, festive Sunday asado mood, seamless loop, no vocals` |
+| `parrilla.mp3` | `places.parrilla` ✅ | 96 | 2:52 | The parrilla, heard within 3.5 m (not at the café next door) | `Instrumental Argentine cumbia loop, 96 BPM, güira and congas, accordion melody, bouncy bass, festive Sunday asado mood, seamless loop, no vocals` |
 | `lacrypta.mp3` | (future) | 100 | 60 s | Inside La Crypta | `Instrumental retro synthwave loop, 100 BPM, analog arpeggios, gated reverb snare, warm bass, hacker lounge at night, seamless loop, no vocals` |
 | `gym.mp3` | (future) | 130 | 60 s | Inside the gym | `Instrumental gym hip-hop beat loop, 130 BPM, hard-hitting drums, deep 808 bass, confident and energetic, seamless loop, no vocals` |
 | `plaza-day.mp3` | (future) | 100 | 90 s | The plaza by day, very quiet | `Instrumental cheerful village theme loop, 100 BPM, ukulele, glockenspiel, light hand percussion, sunny floating island in the sky, seamless loop, no vocals` |
