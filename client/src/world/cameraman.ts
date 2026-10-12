@@ -366,6 +366,29 @@ export class Cameraman {
     this.flyTo(c.setY(0.4), THREE.MathUtils.clamp(12 + spread * 1.5, 12, 26), d);
   }
 
+  /** A camera at NaN draws nothing but black, and every smoothing step
+   *  after carries the NaN on. Put it back somewhere sane. Returns true when it had to. */
+  guard(): boolean {
+    const p = this.camera.position, q = this.camera.quaternion, t = this.controls.target;
+    const ok = (v: number) => Number.isFinite(v);
+    if ([p.x, p.y, p.z, q.x, q.y, q.z, q.w, t.x, t.y, t.z, this.fpYaw, this.fpPitch, this.camera.fov].every(ok)) return false;
+    console.warn('[sky] camera reset: it had gone non-finite');
+    if (!ok(this.fpYaw)) this.fpYaw = 0;
+    if (!ok(this.fpPitch)) this.fpPitch = -0.08;
+    if (!ok(this.camera.fov)) { this.camera.fov = this.fpFov; }
+    this.tween = null;
+    this.fpEnter = null;
+    this.watchPos = null;
+    const me = this.player?.();
+    const at = me && [me.x, me.y, me.z].every(ok) ? me.clone() : HOME_TARGET.clone();
+    t.copy(at);
+    p.copy(at).add(this.firstPerson ? new THREE.Vector3(0, 0.6, 0) : HOME_OFFSET.clone().normalize().multiplyScalar(11));
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(this.firstPerson ? at.clone().add(new THREE.Vector3(Math.sin(this.fpYaw), 0.55, Math.cos(this.fpYaw))) : at);
+    this.camera.updateProjectionMatrix();
+    return true;
+  }
+
   update(dt: number): void {
     if (this.intro) {
       const it = this.intro;

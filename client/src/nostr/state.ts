@@ -32,6 +32,8 @@ interface StoredMessage {
   /** Everyone the message names (mentions and p tags), for profile fetches. */
   mentions: string[];
   createdAt: number;
+  /** A zap bot's announcement (the chat shows it, the world flies it as a zap). */
+  zapNote?: boolean;
 }
 
 const HTTPS = /^https:\/\/[^\s"'<>]+$/i;
@@ -59,6 +61,27 @@ interface Profile {
   createdAt: number;
 }
 
+/**
+ * The zap bot's kind 9 announcement ("⚡ @alice sent 420 satoshis to @bob",
+ * obelisk-agents' zap-bot): `p` tags sender then recipient (only the
+ * recipient for an anonymous zap), `e` the zapped message.
+ */
+export function parseZapAnnouncement(content: string, tags: string[][]): { from: string | null; target: string; sats: number; targetId: string | null } | null {
+  const m = /^\s*⚡\s*(.+?)\s+sent\s+(\d[\d,.]*)\s+(?:satoshis?|sats?)\s+to\s+\S/is.exec(content);
+  if (!m) return null;
+  const ps = tags.filter((t) => t[0] === 'p' && /^[0-9a-f]{64}$/.test(t[1] ?? '')).map((t) => t[1]);
+  const sats = Number(m[2].replace(/[,.]/g, ''));
+  if (!ps.length || !Number.isFinite(sats) || sats <= 0) return null;
+  const anonymous = /^@?anonymous$/i.test(m[1].trim());
+  if (!anonymous && ps.length < 2) return null;
+  return {
+    from: anonymous ? null : ps[0],
+    target: ps[ps.length - 1],
+    sats,
+    targetId: tags.find((t) => t[0] === 'e')?.[1] ?? null,
+  };
+}
+
 export type Emit = (msg: ServerMsg) => void;
 
 export class SkyState {
@@ -67,6 +90,8 @@ export class SkyState {
   private messages = new Map<string, StoredMessage>();
   private reactions = new Map<string, WireReaction>();
   private zaps = new Map<string, WireZap>();
+  /** One zap can arrive twice (its receipt and the zap bot's announcement): message|from|sats. */
+  private zapKeys = new Set<string>();
   private profiles = new Map<string, Profile>();
   /** Pubkeys that showed up in visible content — the only profiles we expose. */
   private people = new Set<string>();
@@ -144,6 +169,7 @@ export class SkyState {
     if (!groupId || !this.visible.has(groupId)) return;
     if (ev.created_at < this.now() - HISTORY_SECONDS || ev.created_at > this.now() + 300) return;
     const replyToId = ev.tags.find((t) => t[0] === 'e' && t[3] === 'reply')?.[1] ?? null;
+    const ann = parseZapAnnouncement(ev.content, ev.tags);
     const m: StoredMessage = {
       id: ev.id,
       pubkey: ev.pubkey,
@@ -154,6 +180,7 @@ export class SkyState {
       ...mediaFromTags(ev.tags),
       mentions: mentionedPubkeys(ev.content, ev.tags).slice(0, 20),
       createdAt: ev.created_at,
+      ...(ann ? { zapNote: true } : {}),
     };
     this.messages.set(ev.id, m);
     this.notePerson(ev.pubkey);
@@ -162,6 +189,10 @@ export class SkyState {
     const wire = this.wireMessage(m);
     if (wire.replyTo) this.notePerson(wire.replyTo);
     this.emit({ t: 'msg', msg: wire });
+    if (ann) {
+      this.notePerson(ann.target);
+      this.addZap({ id: `zap:${ev.id}`, from: ann.from, target: ann.target, targetId: ann.targetId ?? ev.id, groupId, sats: ann.sats, createdAt: ev.created_at });
+    }
   }
 
   private wireMessage(m: StoredMessage): WireMessage {
@@ -171,7 +202,7 @@ export class SkyState {
       replyTo = parent ? parent.pubkey : m.replyHint;
       if (replyTo && !/^[0-9a-f]{64}$/.test(replyTo)) replyTo = null;
     }
-    return {
+    const out: WireMessage = {
       id: m.id,
       pubkey: m.pubkey,
       groupId: m.groupId,
@@ -183,6 +214,8 @@ export class SkyState {
       replyToId: m.replyToId,
       createdAt: m.createdAt,
     };
+    if (m.zapNote) out.zapNote = true;
+    return out;
   }
 
   /** Kind 5 from the author: drop their message or reaction (`k` 9 / 7). */
@@ -251,18 +284,17 @@ export class SkyState {
       try { sats = getSatoshisAmountFromBolt11(bolt11); } catch { sats = 0; }
     }
     if (!sats) return;
-    const z: WireZap = {
-      id: ev.id,
-      from,
-      target: msg.pubkey,
-      targetId: msg.id,
-      groupId: msg.groupId,
-      sats,
-      createdAt: ev.created_at,
-    };
-    this.zaps.set(ev.id, z);
+    this.addZap({ id: ev.id, from, target: msg.pubkey, targetId: msg.id, groupId: msg.groupId, sats, createdAt: ev.created_at });
+  }
+
+  private addZap(z: WireZap): void {
+    const key = `${z.targetId}|${z.from ?? ''}|${z.sats}`;
+    if (this.zapKeys.has(key)) return;
+    this.zapKeys.add(key);
+    if (this.zapKeys.size > MAX_ZAPS * 2) this.zapKeys.delete(this.zapKeys.values().next().value!);
+    this.zaps.set(z.id, z);
     this.trim(this.zaps, MAX_ZAPS);
-    if (from) this.notePerson(from);
+    if (z.from) this.notePerson(z.from);
     this.emit({ t: 'zap', zap: z });
   }
 

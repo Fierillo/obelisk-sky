@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { buildGym, pickGymChannel, BENCH_TOP } from './gym';
+import { buildGym, gymLights, pickGymChannel, BENCH_TOP } from './gym';
 import { trackLap, TRACK_LANES } from './districts';
 import { dist } from './layout';
 
@@ -56,5 +56,24 @@ describe('track lanes', () => {
     for (let i = 1; i < lanes.length; i++) expect(r(lanes[i])).toBeGreaterThan(r(lanes[i - 1]) + 0.2);
     // Neighbouring runners never share a line.
     expect(Math.min(...lanes[0].map((p) => Math.min(...lanes[1].map((q) => dist(p, q)))))).toBeGreaterThan(0.2);
+  });
+});
+
+describe('the gym never closes', () => {
+  it('keeps its lights on by day and brightens them at night', () => {
+    const day = gymLights(0), night = gymLights(1);
+    expect(day.lamp).toBeGreaterThan(0);
+    expect(day.strip).toBeGreaterThan(0);
+    expect(night.lamp).toBeGreaterThan(day.lamp * 2);
+    expect(night.strip).toBeGreaterThan(day.strip);
+    expect(night.glass).toBeGreaterThan(0);
+    expect(gymLights(0.5).lamp).toBeGreaterThan(day.lamp);
+  });
+
+  it('hangs strip lights under the ceiling, inside the walls', () => {
+    const slot = { pos: { x: 0, z: 0 }, rot: 0, w: 2.4, d: 2, yard: { x: 0, z: 2 } } as never;
+    const strips = buildGym(slot, 0x334455).group.children.filter((o) => o.name === 'gym-strip');
+    expect(strips).toHaveLength(2);
+    for (const s of strips) expect(Math.abs(s.position.z)).toBeLessThan(1);
   });
 });

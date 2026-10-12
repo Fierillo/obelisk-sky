@@ -108,6 +108,19 @@ describe('jumping', () => {
     for (let i = 0; i < 10; i++) { c.step(1 / 60, still, 0); if (c.vy > 0) relaunched = true; }
     expect(relaunched).toBe(true);
   });
+  it('keeps bouncing while jump is held, one take-off per landing', () => {
+    const c = new PlayerController(() => grid(), { x: 0, z: 0 });
+    let takeoffs = 0, wasUp = false;
+    for (let i = 0; i < 180; i++) {
+      c.step(1 / 60, { ...still, jump: true }, 0);
+      const up = c.vy > 0;
+      if (up && !wasUp) takeoffs++;
+      wasUp = up;
+    }
+    // 3 s held, about 0.53 s per hop.
+    expect(takeoffs).toBeGreaterThanOrEqual(4);
+    expect(takeoffs).toBeLessThanOrEqual(6);
+  });
 });
 
 describe('solid furniture', () => {

@@ -182,7 +182,7 @@ export class Player {
     const lastSeen = new Map<string, { groupId: string; at: number }>();
     for (const e of this.events) {
       if (e.at > t) break;
-      if (e.k === 'msg') lastSeen.set(e.m.pubkey, { groupId: e.m.groupId, at: e.at });
+      if (e.k === 'msg') { if (!e.m.zapNote) lastSeen.set(e.m.pubkey, { groupId: e.m.groupId, at: e.at }); }
       else if (e.k === 'react') {
         if (!lastSeen.has(e.r.pubkey)) lastSeen.set(e.r.pubkey, { groupId: e.r.groupId, at: e.at });
       }
@@ -199,7 +199,8 @@ export class Player {
   }
 
   private apply(e: Ev, instant: boolean, arrival: 'instant' | 'balloon' | 'door'): void {
-    if (e.k === 'msg') this.director.message(e.m, e.at, { instant, arrival });
+    // The zap bot doesn't walk over to announce: its zap flies on its own.
+    if (e.k === 'msg') { if (!e.m.zapNote) this.director.message(e.m, e.at, { instant, arrival }); }
     else if (e.k === 'react') this.director.reaction(e.r, e.at, instant);
     else this.director.zap(e.z, e.at, instant);
   }

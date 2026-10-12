@@ -35,3 +35,10 @@ export function chooseLights(lights: readonly LightSpot[], to: { x: number; y: n
   }
   return keep;
 }
+
+/** How far the street lamps are on for a night amount (0 day … 1 night):
+ *  off in daylight, fully on from early dusk, so they never sit half-lit. */
+export function lampLevel(night01: number): number {
+  const k = Math.min(1, Math.max(0, (night01 - 0.15) / 0.25));
+  return k * k * (3 - 2 * k);
+}

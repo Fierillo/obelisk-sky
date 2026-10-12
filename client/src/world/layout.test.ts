@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planIsland, buildNavGrid, assignSlots, inFootprint, dist, islandOutline, ISLAND_R } from './layout';
+import { planIsland, buildNavGrid, assignSlots, inFootprint, dist, islandOutline, ISLAND_R, turnedHalf } from './layout';
 
 describe('island plan', () => {
   const plan = planIsland();
@@ -86,5 +86,16 @@ describe('island outline (the loading screen map)', () => {
   });
   it('has the river inside the island until it falls off the edge', () => {
     for (const p of plan.river.slice(0, -1)) expect(Math.hypot(p.x, p.z)).toBeLessThan(plan.radiusAt(Math.atan2(p.z, p.x)));
+  });
+});
+
+describe('turnedHalf', () => {
+  it('boxes a rectangle at any turn', () => {
+    expect(turnedHalf(0.3, 0.5, 0)).toEqual({ hx: 0.3, hz: 0.5 });
+    const q = turnedHalf(0.3, 0.5, Math.PI / 2);
+    expect(q.hx).toBeCloseTo(0.5);
+    expect(q.hz).toBeCloseTo(0.3);
+    const d = turnedHalf(0.3, 0.5, Math.PI / 4);
+    expect(d.hx).toBeCloseTo(0.8 / Math.SQRT2);
   });
 });

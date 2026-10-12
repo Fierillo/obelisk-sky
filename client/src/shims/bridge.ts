@@ -132,7 +132,7 @@ export function isImportableRelayUrl(url: string): boolean {
 // The bridge's public types the message code imports (type-only re-exports;
 // common/types has no runtime imports). JsMemberInfo lives in the bridge's
 // members hook, which pulls the whole bridge, so it is repeated here.
-export type { JsMediaFavorites, JsMediaItem, JsMediaKind, JsMediaPack, JsUserMetadata } from '@/services/nostr-bridge/common/types';
+export type { JsMediaFavorites, JsMediaItem, JsMediaKind, JsMediaPack, JsMessage, JsUserMetadata } from '@/services/nostr-bridge/common/types';
 export interface JsMemberInfo {
   pubkey: string;
   displayName: string;
@@ -176,3 +176,15 @@ export function cacheGet<T>(_relay: string, _kind: number, _id: string): { value
 }
 
 export function cacheSet<T>(_relay: string, _kind: number, _id: string, _value: T): void {}
+
+// ── the composer ───────────────────────────────────────────────────────
+// The re-hosted message bar (client/src/chat/composer) reuses the app's
+// media picker, whose favourites and "create media" tiles save the reader's
+// media list through `nostrActions`. Sky keeps no such list (the controls
+// are hidden in styles.css), so a stray call fails plainly instead of
+// reaching a bridge that isn't there.
+export const nostrActions = {
+  saveMediaFavorites: async (_favorites: Omit<JsMediaFavorites, 'createdAt'>): Promise<void> => {
+    throw new Error('Media favourites live in obelisk.ar');
+  },
+};

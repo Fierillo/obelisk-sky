@@ -253,8 +253,11 @@ export function buildNostrWotHq(): LandmarkBuild {
   for (const [w, h, x, y] of [[2.48, 0.025, 0, 0.31], [2.48, 0.025, 0, -0.31], [0.025, 0.64, 1.24, 0], [0.025, 0.64, -1.24, 0]] as const) {
     up(box(w, h, 0.03, frameMat, x, H1 + H2 / 2 + y, 0.26));
   }
-  // Pale glow strips along the upper corners.
+  // Pale glow strips along the upper corners and under the roof trim: with
+  // the one along the first floor they frame the upper storey.
   for (const x of [-(W + 0.1) / 2, (W + 0.1) / 2]) up(box(0.03, H2, 0.03, lineMat, x, H1 + H2 / 2, 0.255));
+  const topStrip = up(box(W + 0.1, 0.03, 0.03, lineMat, 0, H1 + H2 - 0.015, 0.265));
+  topStrip.name = 'frame-top';
   const logoMat = signMat;
   const wmMat = frameMat;
 

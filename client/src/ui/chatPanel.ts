@@ -1,12 +1,15 @@
-// The channel you're standing in: recent messages, reactions and a composer.
+// The channel you're standing in: recent messages, reactions and obelisk-dex's
+// message bar (chat/composer: emoji picker, @-mentions, bot commands, reply).
 // Opens when your character walks into a building's yard (or when asked: see
 // ui/chatAuto.ts for when), closes with × or when you walk out of a yard
-// that opened it. Text is rendered through content.ts (textContent only; images
+// that opened it. Text is rendered through obelisk-dex's message components
+// (chat/messageBody), or content.ts until they load (textContent only; images
 // as <img>, never relay HTML).
 
 import type { WireGroup, WireMessage, WireReaction } from '../nostr/wire';
 import { pubkeyColor } from '../world/character';
 import { renderContent } from './content';
+import type { MentionPerson, ReplyTarget } from '../chat/composer/useSkyComposer';
 
 export const QUICK_REACTIONS = ['❤️', '👍', '😂', '🔥', '🤙', '⚡', '👀', '🎉'];
 const MAX_SHOWN = 60;
@@ -17,7 +20,8 @@ export interface ChatPanelDeps {
   avatarOf: (pk: string) => string | null;
   messages: (groupId: string) => WireMessage[];
   reactions: (msgId: string) => WireReaction[];
-  send: (groupId: string, text: string, replyTo: WireMessage | null) => Promise<string | null>;
+  /** Publish a kind 9; `tags` are the bar's custom emoji / sticker / voice-note tags. */
+  send: (groupId: string, text: string, replyTo: WireMessage | null, tags?: string[][]) => Promise<string | null>;
   react: (msg: WireMessage, emoji: string) => void;
   unreact: (r: WireReaction) => void;
   remove: (msg: WireMessage) => void;
@@ -27,17 +31,23 @@ export interface ChatPanelDeps {
   /** A mention chip in a message was clicked. */
   onProfile?: (pubkey: string) => void;
   newGame?: (groupId: string) => void;
+  /** Everyone the @-picker may offer (the relay's members, posters, people in the village). */
+  people?: (groupId: string) => MentionPerson[];
+  /** The group relay (bots advertise their commands per relay). */
+  relay?: () => string;
+  /** The relay's NIP-11 operator, whose emoji set the picker offers. */
+  operator?: () => string | null;
 }
 
 type Bodies = typeof import('../chat/messageBody');
+type Composer = typeof import('../chat/composer/mount');
 
 export class ChatPanel {
   readonly el: HTMLElement;
   private list: HTMLElement;
   private title: HTMLElement;
   private sub: HTMLElement;
-  private input: HTMLTextAreaElement;
-  private replyChip: HTMLElement;
+  private composerSlot: HTMLElement;
   private error: HTMLElement;
   private group: WireGroup | null = null;
   private replyTo: WireMessage | null = null;
@@ -68,24 +78,10 @@ export class ChatPanel {
     head.append(titles, games, min, x);
     head.addEventListener('dblclick', () => this.setMinimised(!this.minimised));
     this.list = div('chat-list');
-    this.replyChip = div('chat-reply');
-    this.replyChip.hidden = true;
     this.error = div('chat-error');
     this.error.hidden = true;
-    const composer = div('chat-composer');
-    this.input = document.createElement('textarea');
-    this.input.rows = 1;
-    this.input.placeholder = 'Say something…';
-    this.input.className = 'chat-input';
-    this.input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void this.submit(); }
-      if (e.key === 'Escape') { this.setReply(null); this.input.blur(); }
-    });
-    const send = button('chat-send', 'Send');
-    send.textContent = 'Send';
-    send.addEventListener('click', () => void this.submit());
-    composer.append(this.input, send);
-    this.el.append(head, this.list, this.replyChip, this.error, composer);
+    this.composerSlot = div('chat-composer chat-bar');
+    this.el.append(head, this.list, this.error, this.composerSlot);
     parent.appendChild(this.el);
   }
 
@@ -101,7 +97,8 @@ export class ChatPanel {
     document.body.classList.add('chat-open');
     this.title.textContent = g.name;
     this.sub.textContent = g.kind === 'forum' ? 'Publication' : g.kind.startsWith('voice') ? 'Voice channel' : 'Text channel';
-    if (changed) { this.setReply(null); this.error.hidden = true; this.setMinimised(false); }
+    if (changed) { this.replyTo = null; this.error.hidden = true; this.setMinimised(false); }
+    this.renderComposer();
     this.render();
   }
 
@@ -120,21 +117,20 @@ export class ChatPanel {
   }
 
   focusComposer(): void {
-    if (this.group && !this.el.hidden) { this.setMinimised(false); this.input.focus(); }
+    if (!this.group || this.el.hidden) return;
+    this.setMinimised(false);
+    if (this.composer) this.composer.focus();
+    else this.focusWhenLoaded = true;
+  }
+
+  get replyingTo(): WireMessage | null {
+    return this.replyTo;
   }
 
   setReply(m: WireMessage | null): void {
     this.replyTo = m;
-    this.replyChip.hidden = !m;
-    this.replyChip.replaceChildren();
-    if (!m) return;
-    const label = document.createElement('span');
-    label.textContent = `Replying to ${this.deps.nameOf(m.pubkey)}`;
-    const x = button('chat-reply-x', 'Cancel reply');
-    x.textContent = '×';
-    x.addEventListener('click', () => this.setReply(null));
-    this.replyChip.append(label, x);
-    this.input.focus();
+    this.renderComposer();
+    if (m) this.focusComposer();
   }
 
   /** Re-render if the panel shows `groupId` (or always, with no argument). */
@@ -143,17 +139,53 @@ export class ChatPanel {
     this.render();
   }
 
-  private async submit(): Promise<void> {
-    const text = this.input.value.trim();
-    if (!text || !this.group) return;
-    this.input.value = '';
-    const reply = this.replyTo;
-    this.setReply(null);
-    const err = await this.deps.send(this.group.id, text, reply);
-    if (err) this.showError(err, text);
+  /** obelisk-dex's message bar, loaded on the first open (React). */
+  private composer: ReturnType<Composer['mountComposer']> | null = null;
+  private composerLoading = false;
+  private focusWhenLoaded = false;
+
+  private loadComposer(): void {
+    if (this.composer || this.composerLoading) return;
+    this.composerLoading = true;
+    void import('../chat/composer/mount').then((c) => {
+      this.composer = c.mountComposer(this.composerSlot);
+      this.renderComposer();
+      if (this.focusWhenLoaded) { this.focusWhenLoaded = false; queueMicrotask(() => this.composer?.focus()); }
+    }).catch((e) => {
+      this.composerLoading = false;
+      console.warn('[sky] message bar failed to load', e);
+    });
   }
 
-  private showError(reason: string, text: string): void {
+  private renderComposer(): void {
+    const g = this.group;
+    if (!g) return;
+    if (!this.composer) { this.loadComposer(); return; }
+    const reply = this.replyTo;
+    this.composer.render({
+      groupId: g.id,
+      groupName: g.name,
+      relay: this.deps.relay?.() ?? '',
+      operator: this.deps.operator?.() ?? null,
+      replyingTo: reply ? { id: reply.id, pubkey: reply.pubkey, content: reply.content ?? reply.text } : null,
+      setReplyingTo: (m: ReplyTarget | null) => {
+        // The bar only ever clears the reply or puts back the one it had.
+        this.setReply(m && reply && m.id === reply.id ? reply : null);
+      },
+      onSend: (text, tags, to) => this.submit(g, text, tags, to && reply && to.id === reply.id ? reply : null),
+      onNewGame: () => this.deps.newGame?.(g.id),
+      people: () => this.deps.people?.(g.id) ?? [],
+    });
+  }
+
+  private async submit(g: WireGroup, text: string, tags: string[][], reply: WireMessage | null): Promise<string | null> {
+    this.error.hidden = true;
+    const err = await this.deps.send(g.id, text, reply, tags);
+    if (err) this.showError(err);
+    return err;
+  }
+
+  private showError(reason: string): void {
     this.error.hidden = false;
     this.error.replaceChildren();
     const msg = document.createElement('span');
@@ -171,7 +203,6 @@ export class ChatPanel {
       });
       this.error.append(join);
     }
-    if (!this.input.value) this.input.value = text;
   }
 
   /** obelisk-dex's message renderer, loaded on the first open (React, markdown). */

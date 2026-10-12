@@ -47,6 +47,8 @@ export default defineConfig({
     // Mesh voice TURN: the same public values obelisk-dex builds with.
     ...turnDefines(),
     'process.env.NEXT_PUBLIC_RECOMMENDED_RELAYS': '""',
+    // The message bar's media picker: no GIPHY key, so the built-in GIF and sticker catalog only (as obelisk.ar without one).
+    'process.env.NEXT_PUBLIC_GIPHY_API_KEY': '""',
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     // simple-peer's dependencies look for Node's `global`.
     global: 'globalThis',

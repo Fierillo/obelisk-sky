@@ -141,3 +141,27 @@ describe('gym lifts', () => {
     }
   });
 });
+
+describe('the lotus pose', () => {
+  const pos = (o: THREE.Object3D, n: string) => o.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+  it('sits on the ground cross-legged, upright, knees out, hands on the knees', () => {
+    const clip = buildExerciseClip('lotus', figure(), 0);
+    for (const t of [0, 1.2, 2.4]) {
+      const f = poseAt(clip, t);
+      const low = Math.min(...['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r'].map((n) => y(f, n)));
+      // Nothing below the ground, the seat close above it.
+      expect(low).toBeGreaterThan(-0.01);
+      expect(y(f, 'pelvis')).toBeGreaterThan(0.03);
+      expect(y(f, 'pelvis')).toBeLessThan(0.3);
+      // Upright: the head over the pelvis.
+      expect(y(f, 'Head') - y(f, 'pelvis')).toBeGreaterThan(0.55);
+      // Knees wide (to the sides), shins crossed in front.
+      expect(pos(f, 'calf_l').x).toBeGreaterThan(0.3);
+      expect(pos(f, 'calf_r').x).toBeLessThan(-0.3);
+      expect(pos(f, 'foot_l').x).toBeLessThan(pos(f, 'calf_l').x - 0.25);
+      // Hands rest near the knees.
+      expect(pos(f, 'hand_l').distanceTo(pos(f, 'calf_l'))).toBeLessThan(0.3);
+      expect(pos(f, 'hand_r').distanceTo(pos(f, 'calf_r'))).toBeLessThan(0.3);
+    }
+  });
+});

@@ -15,6 +15,7 @@
 import type { Event as NostrEvent, EventTemplate } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import { activeRelay } from './hub';
+import { EMOTE_KINDS, type EmoteKind } from '../world/emotes';
 
 export const KIND_SKY_MOTION = 20390;
 export const MOTION_T_TAG = 'obelisk-sky-motion';
@@ -45,6 +46,8 @@ export interface Motion {
   heading: number | null;
   /** They just jumped (content `j: 1`): everyone plays the same jump. */
   jump?: boolean;
+  /** Standing still and playing an emote (content `e`, world/emotes.ts). */
+  emote?: EmoteKind;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -57,6 +60,7 @@ export function motionTemplate(m: Motion, at = Math.floor(m.t / 1000)): EventTem
   if (m.moving) c.mv = 1;
   if (m.run) c.run = 1;
   if (m.jump) c.j = 1;
+  if (!m.moving && m.emote) c.e = m.emote;
   if (m.moving && m.dest) c.d = [r2(m.dest.x), r2(m.dest.z)];
   else if (m.moving && m.heading !== null) c.h = Math.round(m.heading * 1000) / 1000;
   return {
@@ -78,7 +82,9 @@ export function parseMotion(ev: NostrEvent): (Motion & { pk: string }) | null {
   const moving = j.mv === 1;
   const dest = moving ? point(j.d) : null;
   const heading = moving && !dest && finite(j.h, 10) ? j.h : null;
-  return { pk: ev.pubkey, t: j.t, p, moving: moving && (!!dest || heading !== null), run: j.run === 1, dest, heading, jump: j.j === 1 };
+  const isMoving = moving && (!!dest || heading !== null);
+  const emote = !isMoving && typeof j.e === 'string' && EMOTE_KINDS.has(j.e) ? (j.e as EmoteKind) : undefined;
+  return { pk: ev.pubkey, t: j.t, p, moving: isMoving, run: j.run === 1, dest, heading, jump: j.j === 1, ...(emote ? { emote } : {}) };
 }
 
 /** Where someone walking by keys should be `seconds` after their event. */
@@ -143,7 +149,7 @@ export class MotionStore {
 }
 
 /** The viewer's movement this frame, as the controller sees it. */
-export interface PlayerMotionState { p: Vec2; moving: boolean; run: boolean; dest: Vec2 | null; heading: number; jumped?: boolean }
+export interface PlayerMotionState { p: Vec2; moving: boolean; run: boolean; dest: Vec2 | null; heading: number; jumped?: boolean; emote?: EmoteKind | null }
 
 /** A jump goes out at once, but never closer than this to the last event (ms). */
 export const JUMP_GAP_MS = 400;
@@ -164,7 +170,7 @@ export class MotionBeacon {
     if (s.jumped && since >= JUMP_GAP_MS * this.backoff) {
       this.lastSig = sig;
       this.lastSent = nowMs;
-      return { t: nowMs, p: { ...s.p }, moving: s.moving, run: s.moving && s.run, dest: s.moving && s.dest ? { ...s.dest } : null, heading: s.moving && !s.dest ? s.heading : null, jump: true };
+      return { ...snapshot(s, nowMs), jump: true };
     }
     if (since < MIN_GAP_MS * this.backoff) return null;
     const due = sig !== this.lastSig
@@ -173,7 +179,7 @@ export class MotionBeacon {
     if (!due) return null;
     this.lastSig = sig;
     this.lastSent = nowMs;
-    return { t: nowMs, p: { ...s.p }, moving: s.moving, run: s.moving && s.run, dest: s.moving && s.dest ? { ...s.dest } : null, heading: s.moving && !s.dest ? s.heading : null };
+    return snapshot(s, nowMs);
   }
 
   /** The relay took it: ease back towards the normal pace. */
@@ -197,9 +203,15 @@ export class MotionBeacon {
   }
 }
 
-/** What counts as a change worth sending: start/stop, a new click, running, a turn of more than ~22°. */
+function snapshot(s: PlayerMotionState, nowMs: number): Motion {
+  const m: Motion = { t: nowMs, p: { ...s.p }, moving: s.moving, run: s.moving && s.run, dest: s.moving && s.dest ? { ...s.dest } : null, heading: s.moving && !s.dest ? s.heading : null };
+  if (!s.moving && s.emote) m.emote = s.emote;
+  return m;
+}
+
+/** What counts as a change worth sending: start/stop, a new click, running, a turn of more than ~22°, an emote. */
 function signature(s: PlayerMotionState): string {
-  if (!s.moving) return 'idle';
+  if (!s.moving) return s.emote ? `idle:${s.emote}` : 'idle';
   if (s.dest) return `d:${Math.round(s.dest.x * 2)}:${Math.round(s.dest.z * 2)}:${s.run ? 1 : 0}`;
   return `h:${Math.round(s.heading / (Math.PI / 8))}:${s.run ? 1 : 0}`;
 }

@@ -78,7 +78,7 @@ const Grade = {
     }`,
 };
 
-import { adaptStep, lowScaleStep, newAdapt, startLevel, type Adapt, type Level } from './quality';
+import { adaptStep, lowScaleStep, newAdapt, startLevel, ORDER, type Adapt, type Level } from './quality';
 export type { Level };
 
 export interface PostSettings {
@@ -88,6 +88,20 @@ export interface PostSettings {
   ambientOcclusion: boolean;
   bloom: boolean;
   tiltShift: boolean;
+}
+
+/** Give render targets a new MSAA sample count: each one that changes is
+ *  disposed, so three.js builds it again on next use (changing the count of
+ *  a target it already set up throws on the next draw). */
+export function setSamples(targets: THREE.WebGLRenderTarget[], samples: number): number {
+  let changed = 0;
+  for (const t of targets) {
+    if (t.samples === samples) continue;
+    t.samples = samples;
+    t.dispose();
+    changed++;
+  }
+  return changed;
 }
 
 const LEVELS: Record<Level, { pixelRatio: number; shadowMap: number; ao: 'off' | 'half' | 'full'; msaa: number }> = {
@@ -191,7 +205,11 @@ export class Post {
       (this.sun.shadow as { map: THREE.WebGLRenderTarget | null }).map = null;
     }
     this.sun.shadow.radius = this.level === 'ultra' ? 3 : 2;
-    this.target.samples = L.msaa;
+    // MSAA on or off. A render target three.js has already set up can't
+    // change its sample count in place (the next draw throws, and a frame
+    // that throws after a resize leaves the screen black): both of the
+    // composer's targets take the new count and are rebuilt on next use.
+    setSamples([this.composer.renderTarget1, this.composer.renderTarget2], L.msaa);
     this.gtao.enabled = this.settings.ambientOcclusion && L.ao !== 'off';
     this.fxaa.enabled = L.msaa === 0;
     this.setSize(this.size.x, this.size.y);
@@ -238,6 +256,19 @@ export class Post {
     }
     this.composer.render(dt);
     this.adapt(dt);
+  }
+
+  /** The GPU gave up once (context lost): one level lower from now on, and
+   *  "auto" never climbs back to where it was. */
+  stepDown(): void {
+    const i = ORDER.indexOf(this.level);
+    const ceiling = this.level;
+    if (i > 0) this.level = ORDER[i - 1];
+    else this.lowScale = Math.max(0.6, this.lowScale * 0.85);
+    this.auto = newAdapt(this.level, ceiling);
+    this.pendingLevel = true;
+    console.info('[sky] quality →', this.level, '(after a lost context)');
+    this.onLevel?.(this.level);
   }
 
   /** Hold the "auto" level (while models load, slow frames say nothing about the GPU). */

@@ -30,3 +30,39 @@ describe('double-tap to run', () => {
     expect(input.read().run).toBe(false);
   });
 });
+
+describe('holding jump', () => {
+  it('keeps asking to jump while Space is held, and stops when it is let go', () => {
+    const t = new EventTarget() as Window;
+    const input = new InputState(t);
+    key(t, 'keydown', ' ');
+    expect(input.read().jump).toBe(true);
+    // Auto-repeat keydowns and later frames: still held.
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat: true }));
+    expect(input.read().jump).toBe(true);
+    expect(input.read().jump).toBe(true);
+    key(t, 'keyup', ' ');
+    expect(input.read().jump).toBe(false);
+  });
+  it('still catches a tap that comes and goes between two frames', () => {
+    const t = new EventTarget() as Window;
+    const input = new InputState(t);
+    key(t, 'keydown', ' ');
+    key(t, 'keyup', ' ');
+    expect(input.read().jump).toBe(true);
+    expect(input.read().jump).toBe(false);
+  });
+  it('lets go when the window loses focus, and for the touch button', () => {
+    const t = new EventTarget() as Window;
+    const input = new InputState(t);
+    key(t, 'keydown', ' ');
+    t.dispatchEvent(new Event('blur'));
+    input.read();
+    expect(input.read().jump).toBe(false);
+    input.pressJump();
+    expect(input.read().jump).toBe(true);
+    expect(input.read().jump).toBe(true);
+    input.releaseJump();
+    expect(input.read().jump).toBe(false);
+  });
+});

@@ -37,4 +37,18 @@ describe('first-person hands', () => {
     h.group.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m) mats.add(m.color.getHexString()); });
     expect(mats.has(new THREE.Color('#3d7bd9').getHexString())).toBe(true);
   });
+
+  it('turn thumb-up (rolled inward, mirrored), not palm-down', () => {
+    const p = handsPose({ phase: 0, amp: 0, airborne: false, t: 0 });
+    expect(p.right.roll).toBeLessThan(-1);
+    expect(p.left.roll).toBeCloseTo(-p.right.roll, 6);
+  });
+
+  it('curl the fingers into a loose fist', () => {
+    const h = new FpHands();
+    const bent: number[] = [];
+    h.group.traverse((o) => { if ((o as THREE.Group).isGroup && o.rotation.x < -0.5) bent.push(o.rotation.x); });
+    // Two bent joints per finger, four fingers, two hands.
+    expect(bent.length).toBe(16);
+  });
 });

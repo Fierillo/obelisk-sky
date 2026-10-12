@@ -27,6 +27,8 @@ import { obeliskNoteUrl, obeliskProfileUrl } from './ui/obeliskLinks';
 import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
 import { SidePanel } from './ui/sidePanel';
 import { DmPanel } from './ui/dmPanel';
+import { EmoteMenu } from './ui/emoteMenu';
+import type { EmoteKind } from './world/emotes';
 import { DmStore } from './nostr/dm';
 import { PrivateCall } from './voice/privateCall';
 import { MembersStore } from './nostr/members';
@@ -207,6 +209,16 @@ world.hooks = {
     showGroup(id);
   },
   onZap: () => sound.coin(),
+  onContext: (ok) => {
+    // The phone took the graphics away (short of memory): say so, and if
+    // they don't come back by themselves, offer a reload.
+    clearTimeout(contextTimer);
+    if (ok) { toast('Graphics are back, at a lighter quality.'); return; }
+    toast('The graphics stopped (low on memory). Restarting them…');
+    contextTimer = setTimeout(() => {
+      if (world.contextLost) toast('The graphics didn’t come back. Tap to reload.', () => location.reload());
+    }, 5000);
+  },
   onArrive: () => sound.whoosh(),
 };
 
@@ -568,6 +580,8 @@ function stepPlayer(dt: number): void {
   // In first person, step out to watch yourself train or sit (running laps stays in your eyes).
   world.setSelfView((world.isTraining(pk!) && world.laneOf(pk!) === null) || world.isSeated(pk!));
   const mv = input.read();
+  // A jump ends an emote (walking does in Character.drive).
+  if (mv.jump && world.emoteOf(pk!)) world.setEmote(pk!, null);
   // Walking off gets you up from your seat.
   if (world.isSeated(pk!) && (Math.hypot(mv.x, mv.y) > 0.05 || controller.path.length || mv.jump)) {
     const path = controller.path;
@@ -595,6 +609,14 @@ function stepPlayer(dt: number): void {
   const before = { ...controller.pos };
   const vyBefore = controller.vy;
   controller.step(dt, mvNow, world.cameraYaw());
+  // Never walk into NaN (a bad yaw, a bad ground read): it would carry the
+  // camera and everything that follows you with it.
+  if (!Number.isFinite(controller.pos.x) || !Number.isFinite(controller.pos.z)) {
+    console.warn('[sky] position reset: it had gone non-finite');
+    controller.pos = before;
+    controller.path = [];
+  }
+  if (!Number.isFinite(controller.height) || !Number.isFinite(controller.vy)) { controller.height = 0; controller.vy = 0; }
   // Took off this frame: tell the others (nostr/motion.ts `j`).
   if (controller.vy > 0 && vyBefore <= 0) pendingJump = performance.now();
   c.drive(controller.pos.x, controller.pos.z, controller.heading, controller.moving, controller.running, controller.height, controller.airborne);
@@ -782,8 +804,29 @@ function seatHintCompute(hint: { hidden: boolean; textContent: string }): void {
 
 $('seat-hint').addEventListener('click', () => { toggleSeat(); renderSeatHint(); });
 
+// Emotes (world/emotes.ts): G or the bottom bar opens the menu; picking the
+// one you're doing stops it. Moving or jumping ends it too.
+const emoteMenu = new EmoteMenu($('app'), {
+  pick: (kind) => doEmote(kind),
+  current: () => (world.playerPk ? world.emoteOf(world.playerPk) : null),
+});
+function doEmote(kind: EmoteKind): void {
+  const pk = world.playerPk;
+  if (!pk || !controller) { toast('Log in to walk around as yourself.'); return; }
+  if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
+  controller.path = [];
+  world.clearWalkTarget();
+  world.setEmote(pk, world.emoteOf(pk) === kind ? null : kind);
+}
+document.addEventListener('pointerdown', (e) => {
+  const t = e.target as Element;
+  if (emoteMenu.open && !t.closest('.emote-menu') && !t.closest('[data-act="emote"]')) emoteMenu.toggle(false);
+});
+
 window.addEventListener('keydown', (e) => {
   if (isTyping(e.target)) return;
+  if (emoteMenu.key(e.key)) { e.preventDefault(); return; }
+  if (e.key.toLowerCase() === 'g' && !e.ctrlKey && !e.metaKey && world.playerPk) emoteMenu.toggle();
   if (e.key === 'Enter' && chat.groupId) { e.preventDefault(); chat.focusComposer(); }
   // E: sit down for a mate on the nearest bench or stool (or stand up).
   if (e.key.toLowerCase() === 'e' && controller && world.playerPk) toggleSeat();
@@ -990,7 +1033,21 @@ const chat = new ChatPanel($('app'), {
   avatarOf: (pk) => world.profiles.get(pk)?.avatar ?? null,
   messages: msgsOf,
   reactions: reactionsOf,
-  send: (g, text, reply) => publish(messageTemplate(g, text, reply ? { id: reply.id, pubkey: reply.pubkey } : null)),
+  send: (g, text, reply, tags) => publish(messageTemplate(g, text, reply ? { id: reply.id, pubkey: reply.pubkey } : null, tags)),
+  // The @-picker: like obelisk-dex, anyone on the relay (every channel's
+  // members and posters), plus whoever is walking around the village.
+  people: (g) => {
+    void members.load(g);
+    const pks = new Set<string>(world.people.keys());
+    for (const ch of groups) {
+      const m = members.cached(ch.id);
+      for (const pk of m?.members ?? []) pks.add(pk);
+      for (const msg of msgsOf(ch.id)) pks.add(msg.pubkey);
+    }
+    return [...pks].filter((pk) => /^[0-9a-f]{64}$/.test(pk)).map((pk) => ({ pubkey: pk, name: world.nameOf(pk), picture: world.profiles.get(pk)?.avatar ?? null }));
+  },
+  relay: activeRelay,
+  operator: () => themes?.operator ?? null,
   react: (m, emoji) => { void publish(reactionTemplate(m.groupId, { id: m.id, pubkey: m.pubkey }, emoji)); },
   unreact: (r: WireReaction) => { void publish(deletionTemplate(r.groupId, r.id, 7)); },
   remove: (m) => { void publish(deletionTemplate(m.groupId, m.id, 9)); },
@@ -1160,6 +1217,7 @@ function tickMotion(): void {
     dest: path.length ? path[path.length - 1] : null,
     heading: controller.heading,
     jumped: pendingJump > 0,
+    emote: world.emoteOf(pk),
   }, Date.now());
   if (!send) return;
   if (send.jump) pendingJump = 0;
@@ -1598,6 +1656,8 @@ window.addEventListener('beforeunload', () => { void call.leave(); });
 
 // ── frame loop ───────────────────────────────────────────────────────────
 
+let contextTimer: ReturnType<typeof setTimeout> | undefined;
+
 let signTimer = 0;
 const pinged = new Set<string>();
 const roofLit = new Set<string>();
@@ -1605,7 +1665,20 @@ let placeDwell = 0;
 let qualityHeld = true;
 let lastFrame = performance.now();
 const frameTimes: number[] = [];
+/** One frame's error must never stop the village: the next frame is asked
+ *  for first, and a throw is logged (once per kind) instead of ending the loop. */
+const frameErrors = new Set<string>();
 function loop(): void {
+  requestAnimationFrame(loop);
+  try {
+    frame();
+  } catch (err) {
+    const key = String((err as Error)?.stack ?? err).slice(0, 300);
+    if (!frameErrors.has(key)) { frameErrors.add(key); console.error('[sky] frame error', err); }
+  }
+}
+
+function frame(): void {
   // Your character moves first, then the world draws it: no frame of lag.
   const now = performance.now();
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
@@ -1647,7 +1720,6 @@ function loop(): void {
       if (latest) readState.markRead(reading, latest.createdAt * 1000);
     }
   } else placeDwell = 0;
-  requestAnimationFrame(loop);
 }
 
 /** Pips: green when a channel spoke in the last 15 min (of the time being
@@ -2022,6 +2094,10 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
       case 'home':
         $('card').hidden = true;
         world.cam.home();
+        break;
+      case 'emote':
+        if (world.playerPk) emoteMenu.toggle();
+        else toast('Log in to walk around as yourself.');
         break;
       case 'firstperson':
         if (world.playerPk) toggleFirstPerson();

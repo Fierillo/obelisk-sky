@@ -49,6 +49,16 @@ export interface GymBuild extends Building {
   groundAt(local: Vec2): number;
 }
 
+/** The gym never closes: its lights by day and how they rise at night. */
+export const GYM_LIGHTS = { lampDay: 0.6, lampNight: 2.6, stripDay: 0.8, stripNight: 2.4, glassNight: 0.35 } as const;
+
+/** Light levels for a night amount (0 day … 1 night): never off. */
+export function gymLights(night: number): { lamp: number; strip: number; glass: number } {
+  const n = Math.min(1, Math.max(0, night));
+  const L = GYM_LIGHTS;
+  return { lamp: L.lampDay + (L.lampNight - L.lampDay) * n, strip: L.stripDay + (L.stripNight - L.stripDay) * n, glass: L.glassNight * n };
+}
+
 /** The bench's height: the person lies on it. */
 export const BENCH_TOP = 0.2;
 
@@ -100,7 +110,8 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
 
   // Walls: brick back wall with a mirror, glass sides and front on a low brick base.
   const brick = mat(0xa4553f, { roughness: 0.9 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.22, roughness: 0.18, metalness: 0.1, depthWrite: false });
+  // At night the glass glows a little: the hall reads as lit from outside.
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.22, roughness: 0.18, metalness: 0.1, depthWrite: false, emissive: 0xfff4dc, emissiveIntensity: 0 });
   const frame = mat(0x2b2e34, { metalness: 0.5, roughness: 0.4 });
   const walls: THREE.Mesh[] = [];
   walls.push(add(box(W, H, T, brick), 0, F + H / 2, -D / 2 + T / 2));
@@ -233,8 +244,16 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
     }
   }
 
-  // A warm light inside for the evening.
-  const lamp = new THREE.PointLight(0xfff1d6, 0, W * 1.6, 1.6);
+  // Open 24 hours: strip lights along the ceiling are always on (they glow,
+  // so they cost no light), and a light fills the hall, brighter at night.
+  const stripMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf4fbff, emissiveIntensity: GYM_LIGHTS.stripDay, roughness: 0.4 });
+  for (const lz of [-D / 4, D / 4]) {
+    const strip = box(W * 0.7, 0.025, 0.05, stripMat);
+    strip.position.set(0, F + H - 0.03, lz);
+    strip.name = 'gym-strip';
+    group.add(strip);
+  }
+  const lamp = new THREE.PointLight(0xf2f7ff, GYM_LIGHTS.lampDay, W * 1.8, 1.4);
   lamp.position.set(0, F + H - 0.15, 0);
   group.add(lamp);
   const windows: THREE.Mesh[] = [];
@@ -258,7 +277,12 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
       for (const w of walls) w.castShadow = !on;
     },
   };
-  group.userData.setNight = (night: number) => { lamp.intensity = night * 1.2; };
+  group.userData.setNight = (night: number) => {
+    const k = gymLights(night);
+    lamp.intensity = k.lamp;
+    stripMat.emissiveIntensity = k.strip;
+    glass.emissiveIntensity = k.glass;
+  };
   const room = interior.rooms[0], doorway = interior.rooms[1];
   const groundAt = (l: Vec2): number => {
     if (l.x > room.minX && l.x < room.maxX && l.z > room.minZ && l.z < room.maxZ) return F;
@@ -290,7 +314,11 @@ function gymSign(): THREE.Mesh {
     g.shadowColor = '#b4f953';
     g.shadowBlur = 18;
     g.fillStyle = '#d9ff9c';
-    g.fillText('GYM', 128, 52);
+    g.fillText('GYM', 104, 52);
+    g.font = '700 26px Inter, system-ui, sans-serif';
+    g.shadowBlur = 10;
+    g.fillStyle = '#ffffff';
+    g.fillText('24h', 214, 54);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;

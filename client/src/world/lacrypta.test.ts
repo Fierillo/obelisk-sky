@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { laCryptaGround, LA_CRYPTA_STAIRS, LA_CRYPTA_ROOM } from './lacrypta';
+import { laCryptaGround, LA_CRYPTA_DOOR, LA_CRYPTA_LOGO, LA_CRYPTA_STAIRS, LA_CRYPTA_ROOM } from './lacrypta';
 
 describe('La Crypta: the ground you walk on', () => {
   const { foot, top, lift } = LA_CRYPTA_STAIRS;
@@ -50,5 +50,15 @@ describe('La Crypta interior decals', () => {
     const m = decal(new THREE.MeshBasicMaterial());
     expect(m.polygonOffset).toBe(true);
     expect(m.polygonOffsetFactor).toBeLessThan(0);
+  });
+});
+
+describe('La Crypta: the logo', () => {
+  it('hangs beside the door, within its height, clear of its surround and the corner', () => {
+    const d = LA_CRYPTA_DOOR, l = LA_CRYPTA_LOGO;
+    expect(l.y).toBeGreaterThanOrEqual(d.sill);
+    expect(l.y + l.h).toBeLessThanOrEqual(d.sill + d.h);
+    expect(l.x - l.w / 2).toBeGreaterThan(d.x + d.w / 2 + 0.07);
+    expect(l.x + l.w / 2).toBeLessThan(1.45);
   });
 });

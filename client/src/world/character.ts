@@ -192,6 +192,9 @@ export class Character {
   private landFor = 0;
   /** A looping exercise clip in progress (calisthenics), if any. */
   exercise: string | null = null;
+  /** An emote played while standing still (emotes.ts); moving ends it. */
+  emote: { kind: string; lower: string; upper: string; grounded?: boolean } | null = null;
+  private emoteLeft = Infinity;
   /** Ground speed this frame, for picking and pacing the gait. */
   private speed = 0;
   private lastPos = new THREE.Vector3();
@@ -359,6 +362,7 @@ export class Character {
       this.idleFor = 0;
       if (this.activity === 'sit') this.activity = 'idle';
       this.exercise = null;
+      this.emote = null;
     }
     this.external = { moving, running };
   }
@@ -381,6 +385,14 @@ export class Character {
     this.path = [];
     this.activity = 'sit';
     this.exercise = null;
+    this.emote = null;
+  }
+
+  /** Start an emote (or stop it with null). `seconds`: it ends on its own. */
+  setEmote(e: { kind: string; lower: string; upper: string; grounded?: boolean; seconds?: number } | null): void {
+    this.emote = e ? { kind: e.kind, lower: e.lower, upper: e.upper, grounded: e.grounded } : null;
+    this.emoteLeft = e?.seconds ?? Infinity;
+    if (e) { this.idleFor = 0; this.talkingFor = 0; }
   }
 
   stand(): void {
@@ -510,7 +522,8 @@ export class Character {
     }
     // Lift (balloon arrivals) eases down.
     if (this.lift > 0) this.lift = Math.max(0, this.lift - dt * 1.6);
-    const standing = this.activity !== 'sit' && !this.exercise;
+    if (this.emote && (moving || this.exercise || this.activity === 'sit' || (this.emoteLeft -= dt) <= 0)) this.emote = null;
+    const standing = this.activity !== 'sit' && !this.exercise && !this.emote?.grounded;
     this.root.position.y = this.lift + this.seatY + this.jumpY + this.groundY + (standing ? this.soleLift : 0);
 
     // Ground speed, measured (works for paths and for the viewer's controller).
@@ -544,6 +557,8 @@ export class Character {
       // With a mate the left arm is posed by IK after the mixer (see holdProp).
       const upper = this.talkingFor > 0 && !this.mate ? 'Sitting_Talking_Loop' : 'Sitting_Idle_Loop';
       this.pose('Sitting_Idle_Loop', upper, 0.35);
+    } else if (this.emote) {
+      this.pose(this.emote.lower, this.emote.upper, 0.35);
     } else if (this.emoteFor > 0) {
       this.pose('Idle_Loop', 'Yes', 0.2);
     } else if (this.talkingFor > 0) {

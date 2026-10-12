@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event as NostrEvent } from 'nostr-tools';
-import { SkyState, reactionEmoji, HISTORY_SECONDS } from './state';
+import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement } from './state';
 import type { ServerMsg } from './wire';
 
 const NOW = 1_800_000_000;
@@ -180,5 +180,41 @@ describe('reactionEmoji', () => {
     expect(reactionEmoji(':pepe:')).toBe('✨');
     expect(reactionEmoji('🤙')).toBe('🤙');
     expect(reactionEmoji('lol')).toBe('❤️');
+  });
+});
+
+describe('the zap bot', () => {
+  const zapBot = generateSecretKey();
+  const A = getPublicKey(alice), B = getPublicKey(bob);
+  const target = 'c'.repeat(64);
+
+  it('reads the announcement', () => {
+    expect(parseZapAnnouncement('⚡ @alice sent 1,420 satoshis to @bob', [['h', 'g'], ['e', target], ['p', A], ['p', B]]))
+      .toEqual({ from: A, target: B, sats: 1420, targetId: target });
+    expect(parseZapAnnouncement('⚡ @anonymous sent 1 satoshi to @bob', [['p', B]])).toEqual({ from: null, target: B, sats: 1, targetId: null });
+    expect(parseZapAnnouncement('⚡ zap bot online — I will announce zaps', [['p', B]])).toBeNull();
+    expect(parseZapAnnouncement('⚡ @alice sent 5 satoshis to @bob', [['p', B]])).toBeNull();
+  });
+
+  it('turns an announcement into a zap from the sender to the recipient, once', () => {
+    const { s, out } = setup();
+    s.ingestGroupMeta(meta('g'));
+    const tags = [['e', target], ['p', A], ['p', B]];
+    s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 21 satoshis to @bob', tags));
+    s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 21 satoshis to @bob', tags, NOW + 1));
+    const m = out.find((x) => x.t === 'msg') as Extract<ServerMsg, { t: 'msg' }>;
+    expect(m.msg.zapNote).toBe(true);
+    const zaps = out.filter((x) => x.t === 'zap') as Extract<ServerMsg, { t: 'zap' }>[];
+    expect(zaps).toHaveLength(1);
+    expect(zaps[0].zap).toMatchObject({ from: A, target: B, sats: 21, targetId: target, groupId: 'g' });
+    expect((s.snapshot('r') as Extract<ServerMsg, { t: 'snapshot' }>).zaps).toHaveLength(1);
+  });
+
+  it('leaves ordinary messages alone', () => {
+    const { s, out } = setup();
+    s.ingestGroupMeta(meta('g'));
+    s.ingestMessage(msg(alice, 'g', 'I sent 5 sats to bob'));
+    expect((out.find((x) => x.t === 'msg') as Extract<ServerMsg, { t: 'msg' }>).msg.zapNote).toBeUndefined();
+    expect(out.some((x) => x.t === 'zap')).toBe(false);
   });
 });

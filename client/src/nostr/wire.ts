@@ -36,6 +36,8 @@ export interface WireMessage {
   replyTo: string | null;
   replyToId: string | null;
   createdAt: number;
+  /** A zap bot's announcement: shown in the chat, flown as a zap in the world (its zap comes separately). */
+  zapNote?: boolean;
 }
 
 export interface WireReaction {

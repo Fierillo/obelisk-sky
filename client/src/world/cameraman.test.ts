@@ -187,3 +187,28 @@ describe('first person, watching yourself', () => {
     expect(camera.position.distanceTo(new THREE.Vector3(2, 0.62, 2))).toBeLessThan(1e-6);
   });
 });
+
+describe('the camera never stays at NaN', () => {
+  it('leaves a sane camera alone', () => {
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.08, 900);
+    const cam = new Cameraman(camera, document.createElement('div'));
+    cam.update(1 / 30);
+    const before = camera.position.clone();
+    expect(cam.guard()).toBe(false);
+    expect(camera.position.equals(before)).toBe(true);
+  });
+
+  it('puts a NaN camera back over you, in first person too, and it stays finite', () => {
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.08, 900);
+    const cam = new Cameraman(camera, document.createElement('div'));
+    const me = new THREE.Vector3(3, 0.5, -2);
+    cam.followPlayer(() => me.clone());
+    cam.setFirstPerson(true, 0);
+    camera.position.set(NaN, 1, 1);
+    expect(cam.guard()).toBe(true);
+    for (let i = 0; i < 30; i++) { cam.update(1 / 30); cam.guard(); }
+    const p = camera.position;
+    expect([p.x, p.y, p.z].every(Number.isFinite)).toBe(true);
+    expect(p.distanceTo(me)).toBeLessThan(2);
+  });
+});

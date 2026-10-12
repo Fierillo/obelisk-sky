@@ -8,8 +8,10 @@ export class InputState {
   private stick = { x: 0, y: 0 };
   /** performance.now() of the last movement input. */
   lastInput = 0;
-  /** Space was pressed since the last read (a jump is edge-triggered). */
+  /** Space was pressed since the last read (so a quick tap is never missed). */
   private jumpPressed = false;
+  /** Space (or the touch jump button) is held: you keep jumping each time you land. */
+  private jumpHeld = false;
   /** Double-tapping a movement key runs until that key is let go. */
   private lastTap = { key: '', at: 0 };
   private runKey: string | null = null;
@@ -21,6 +23,7 @@ export class InputState {
       if (k === ' ') {
         e.preventDefault();
         if (!e.repeat) { this.jumpPressed = true; this.lastInput = performance.now(); }
+        this.jumpHeld = true;
         return;
       }
       if (MOVE_KEYS.has(k)) {
@@ -36,16 +39,22 @@ export class InputState {
     });
     target.addEventListener('keyup', (e) => {
       const k = e.key.toLowerCase();
+      if (k === ' ') this.jumpHeld = false;
       this.keys.delete(k);
       if (k === this.runKey) this.runKey = null;
     });
-    target.addEventListener('blur', () => { this.keys.clear(); this.runKey = null; });
+    target.addEventListener('blur', () => { this.keys.clear(); this.runKey = null; this.jumpHeld = false; });
   }
 
-  /** The touch jump button. */
+  /** The touch jump button: pressed (held until `releaseJump`). */
   pressJump(): void {
     this.jumpPressed = true;
+    this.jumpHeld = true;
     this.lastInput = performance.now();
+  }
+
+  releaseJump(): void {
+    this.jumpHeld = false;
   }
 
   setStick(x: number, y: number): void {
@@ -60,8 +69,9 @@ export class InputState {
     if (k.has('d') || k.has('arrowright')) x += 1;
     if (k.has('w') || k.has('arrowup')) y += 1;
     if (k.has('s') || k.has('arrowdown')) y -= 1;
-    const jump = this.jumpPressed;
+    const jump = this.jumpPressed || this.jumpHeld;
     this.jumpPressed = false;
+    if (jump) this.lastInput = performance.now();
     const run = k.has('shift') || (!!this.runKey && k.has(this.runKey)) || Math.hypot(this.stick.x, this.stick.y) > 0.9;
     return { x: clamp(x), y: clamp(y), run, jump };
   }
@@ -109,6 +119,7 @@ export function mountJoystick(parent: HTMLElement, input: InputState): void {
   jump.className = 'jump-btn';
   jump.setAttribute('aria-label', 'Jump');
   jump.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6 11l6-6 6 6"/></svg>';
-  jump.addEventListener('pointerdown', (e) => { e.preventDefault(); input.pressJump(); });
+  jump.addEventListener('pointerdown', (e) => { e.preventDefault(); jump.setPointerCapture(e.pointerId); input.pressJump(); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) jump.addEventListener(ev, () => input.releaseJump());
   parent.appendChild(jump);
 }

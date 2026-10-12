@@ -19,16 +19,16 @@ import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bri
 import {
   assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
-  millSite, type MillSite,
+  millSite, type MillSite, turnedHalf,
 } from './layout';
 import { fbm2 } from './noise';
-import { CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
+import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
 import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
 import { Flock } from './nostrich';
 import { WalkPin } from './walkPin';
 import { buildMarshmallow } from './campfire';
 import { findDynamic, mergeStatic } from './merge';
-import { chooseLights, lightBudget, type LightSpot } from './lightBudget';
+import { chooseLights, lampLevel, lightBudget, type LightSpot } from './lightBudget';
 import { buildObelisk, plinthSteps, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
@@ -42,6 +42,8 @@ import { Post } from './post';
 import { PropBatch } from './props';
 import { Sky, type TimeOverride } from './sky';
 import type { Prefs } from '../prefs';
+import { arcPoint, coinCount, flightTime, zapAssets } from './zapFlight';
+import { emoteOf, lotusClipName, type EmoteKind } from './emotes';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
 const PAVING_TOP = 0.03, COBBLE_TOP = 0.02, FLOOR_TOP = 0.006;
@@ -83,6 +85,8 @@ export interface WorldHooks {
   onTap?: () => boolean;
   onGroupClick?: (groupId: string) => void;
   onZap?: () => void;
+  /** The WebGL context was lost (false) or came back (true). */
+  onContext?: (ok: boolean) => void;
   onArrive?: () => void;
   onGroundClick?: (p: Vec2) => void;
   onGameClick?: (gameId: string) => void;
@@ -199,6 +203,8 @@ export class World {
   private avatars = new Map<string, Avatar>();
   private pets = new Map<string, Pet>();
   private built = false;
+  /** The browser took the WebGL context away (see the constructor). */
+  contextLost = false;
 
   constructor(private canvas: HTMLCanvasElement, overlayEl: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -232,6 +238,21 @@ export class World {
     // Resized at the start of the next frame: resizing clears the canvas, and
     // a cleared canvas shown before the redraw is a black flash.
     window.addEventListener('resize', () => { this.needsResize = true; });
+    // A phone short of GPU memory can take the WebGL context away (black,
+    // nothing draws). Ask for it back, and come back one quality level lower.
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.contextLost = true;
+      console.warn('[sky] WebGL context lost');
+      this.hooks.onContext?.(false);
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.contextLost = false;
+      console.warn('[sky] WebGL context restored');
+      this.post.stepDown();
+      this.needsResize = true;
+      this.hooks.onContext?.(true);
+    });
   }
 
   resize(): void {
@@ -506,8 +527,9 @@ export class World {
 
   /**
    * The street market: three stalls in a little square of its own, away from
-   * the obelisk. Kenney's stalls hold their awning on one side only, so each
-   * gets a pole at every corner. The tables are solid (walk round, or jump up).
+   * the obelisk. Kenney's stalls carry their awning on two posts of their own
+   * (mid-way along the ridge); don't add more. The tables are solid (walk
+   * round, or jump up).
    */
   private buildMarket(): void {
     const plan = this.plan;
@@ -535,7 +557,6 @@ export class World {
     this.marketAt = best;
     const toPlaza = Math.atan2(plan.plaza.c.x - best.x, plan.plaza.c.z - best.z);
     const stalls = ['town/stall-red', 'town/stall-green', 'town/stall-red'];
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x9a6a3c, roughness: 0.9 });
     for (let i = 0; i < 3; i++) {
       // An arc facing the way back to the plaza.
       const a = toPlaza + Math.PI + (i - 1) * 0.85;
@@ -546,16 +567,11 @@ export class World {
       st.rotation.y = a + Math.PI;
       st.scale.setScalar(S);
       this.staticRoot.add(st);
-      for (const [lx, lz] of [[-0.47, -0.47], [0.47, -0.47], [-0.47, 0.47], [0.47, 0.47]]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.12, 6), poleMat);
-        pole.position.set(lx, 0.56, lz);
-        pole.castShadow = true;
-        st.add(pole);
-      }
       st.updateMatrixWorld(true);
-      // The table top only (not the awning): solid up to table height.
-      const half = 0.45 * S;
-      this.solids.push({ minX: pos.x - half, maxX: pos.x + half, minZ: pos.z - half, maxZ: pos.z + half, top: 0.42 * S });
+      // The table top only (not the awning), 0.64 × 1.0 turned with the
+      // stall: its bounding box is solid up to table height.
+      const { hx, hz } = turnedHalf(0.32 * S, 0.5 * S, st.rotation.y);
+      this.solids.push({ minX: pos.x - hx, maxX: pos.x + hx, minZ: pos.z - hz, maxZ: pos.z + hz, top: 0.42 * S });
     }
   }
 
@@ -845,6 +861,12 @@ export class World {
     this.blockAround(parkAt, 0.9);
     // Its training spots, in world space.
     const r = -t.rot, cos = Math.cos(r), sin = Math.sin(r);
+    // Lamps at the two corners of the mat farthest from the track, for training after dark.
+    const lamps = CALISTHENICS_LAMPS.map((l) => ({ x: parkAt.x + l.x * cos + l.z * sin, z: parkAt.z - l.x * sin + l.z * cos }))
+      .filter((p) => !onTrack(p, t, 0.5))
+      .sort((a, b) => dist(b, t.c) - dist(a, t.c))
+      .slice(0, 2);
+    for (const p of lamps) this.lantern(p);
     for (const st of CALISTHENICS_STATIONS) {
       this.stations.push({
         pos: { x: parkAt.x + st.at.x * cos + st.at.z * sin, z: parkAt.z - st.at.x * sin + st.at.z * cos },
@@ -1030,13 +1052,13 @@ export class World {
     // Its steps are furniture: you bump into them, or jump up them.
     for (const st of plinthSteps(8)) this.solids.push({ minX: c.x - st.half, maxX: c.x + st.half, minZ: c.z - st.half, maxZ: c.z + st.half, top: st.top });
 
-    // Lanterns around the plaza, a few with real light.
+    // Lanterns around the plaza.
     const n = 8;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + 0.2;
       const p = { x: c.x + Math.cos(a) * (this.plan.plaza.r + 0.25), z: c.z + Math.sin(a) * (this.plan.plaza.r + 0.25) };
       if (this.onLandmarkLawn(p)) continue; // a landmark's stairs or terrace come down here
-      this.lantern(p, i % 2 === 0);
+      this.lantern(p);
     }
     // Three long benches, three places each, sharing a mate. They stand
     // round the voice tree nearest the plaza (placeBenches), or here when
@@ -1118,7 +1140,9 @@ export class World {
     this.treeSolids.set(id, solids);
   }
 
-  private lantern(p: Vec2, light: boolean): void {
+  /** A street lamp. Every one has a real light: the light budget
+   *  (budgetLights) keeps only the nearest few on, so more lamps cost nothing. */
+  private lantern(p: Vec2): void {
     const l = model('town/lantern');
     l.position.set(p.x, 0, p.z);
     l.scale.setScalar(0.6);
@@ -1126,12 +1150,10 @@ export class World {
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), this.lampGlow);
     bulb.position.set(p.x, 0.85, p.z);
     this.staticRoot.add(bulb);
-    if (light && this.lampLights.length < 6) {
-      const pl = new THREE.PointLight(0xffb45a, 0, 5, 1.6);
-      pl.position.set(p.x, 0.95, p.z);
-      this.lampLights.push(pl);
-      this.staticRoot.add(pl);
-    }
+    const pl = new THREE.PointLight(0xffb45a, 0, 5, 1.6);
+    pl.position.set(p.x, 0.95, p.z);
+    this.lampLights.push(pl);
+    this.staticRoot.add(pl);
     // A thin post: you walk around it and can't jump over it.
     this.solids.push({ minX: p.x - 0.06, maxX: p.x + 0.06, minZ: p.z - 0.06, maxZ: p.z + 0.06, top: 3 });
   }
@@ -1580,7 +1602,6 @@ export class World {
         case 'zap': {
           if (cmd.instant) break;
           this.zapEffect(cmd.from, cmd.to, cmd.sats);
-          this.pets.get(cmd.to)?.dance(3.5);
           break;
         }
       }
@@ -1708,39 +1729,52 @@ export class World {
     });
   }
 
+  /** A zap flies from the sender (or out of the sky) to the recipient and bursts into coins. */
   private zapEffect(from: string | null, to: string, sats: number): void {
     const t = this.people.get(to);
     if (!t) return;
-    const end = t.root.position.clone().setY(CHAR_HEIGHT + 0.2);
+    const head = (c: Character, y: number) => c.root.position.clone().setY(c.root.position.y + y);
+    const end = head(t, CHAR_HEIGHT + 0.2);
     const f = from ? this.people.get(from) : null;
-    const start = f ? f.root.position.clone().setY(CHAR_HEIGHT + 0.4) : end.clone().add(new THREE.Vector3(1.5, 8, 0.5));
+    const start = f ? head(f, CHAR_HEIGHT + 0.4) : end.clone().add(new THREE.Vector3(1.5, 8, 0.5));
     f?.cheer();
-    this.pulseLandmarks();
-    // Jagged bolt.
-    const pts: THREE.Vector3[] = [];
-    const N = 12;
-    for (let i = 0; i <= N; i++) {
-      const p = start.clone().lerp(end, i / N);
-      if (i > 0 && i < N) p.add(new THREE.Vector3((Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.35 + Math.sin((i / N) * Math.PI) * 0.8, (Math.random() - 0.5) * 0.35));
-      pts.push(p);
-    }
-    const bolt = new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.035, 4),
-      new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true }),
-    );
-    this.scene.add(bolt);
+    if (f) f.faceToward(t.pos);
+    const { bolt: boltMat, spark: sparkMat } = zapAssets();
+    const bolt = new THREE.Sprite(boltMat);
+    bolt.scale.setScalar(0.5);
+    const sparks = [0, 1, 2].map((i) => {
+      const s = new THREE.Sprite(sparkMat);
+      s.scale.setScalar(0.32 - i * 0.07);
+      return s;
+    });
+    const group = new THREE.Group();
+    group.add(bolt, ...sparks);
+    this.scene.add(group);
+    const life = flightTime(start.distanceTo(end));
+    const p = new THREE.Vector3();
     this.effects.push({
-      obj: bolt, age: 0, life: 0.7,
+      obj: group, age: 0, life,
       tick: (e) => {
-        (bolt.material as THREE.MeshBasicMaterial).opacity = (1 - e.age / e.life) * (Math.random() > 0.2 ? 1 : 0.3);
-        if (e.age >= e.life) bolt.removeFromParent();
+        // Aim at where the recipient is now, not where they stood.
+        if (this.people.get(to) === t) end.copy(head(t, CHAR_HEIGHT + 0.2));
+        const k = Math.min(1, e.age / e.life);
+        const ease = k * k * (3 - 2 * k);
+        bolt.position.copy(arcPoint(start, end, ease, p));
+        bolt.material.rotation = Math.sin(e.age * 18) * 0.3;
+        sparks.forEach((s, i) => s.position.copy(arcPoint(start, end, Math.max(0, ease - (i + 1) * 0.045), p)));
+        if (e.age >= e.life) {
+          group.removeFromParent();
+          this.zapLands(t, to, end, sats);
+        }
       },
     });
-    // Coin burst.
-    const coinGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.015, 10);
-    const coinMat = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0xffa000, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 });
-    const count = Math.min(24, 6 + Math.round(Math.log10(Math.max(sats, 1)) * 5));
-    for (let i = 0; i < count; i++) {
+  }
+
+  private zapLands(t: Character, to: string, end: THREE.Vector3, sats: number): void {
+    this.pulseLandmarks();
+    const { coinGeo, coinMat } = zapAssets();
+    const floor = this.groundAt({ x: end.x, z: end.z }) + 0.02;
+    for (let i = 0; i < coinCount(sats); i++) {
       const coin = new THREE.Mesh(coinGeo, coinMat);
       coin.position.copy(end);
       const v = new THREE.Vector3((Math.random() - 0.5) * 2.2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2.2);
@@ -1750,13 +1784,14 @@ export class World {
         tick: (e, dt) => {
           v.y -= 7 * dt;
           coin.position.addScaledVector(v, dt);
-          if (coin.position.y < 0.02) { coin.position.y = 0.02; v.multiplyScalar(0.4); v.y = Math.abs(v.y) * 0.5; }
+          if (coin.position.y < floor) { coin.position.y = floor; v.multiplyScalar(0.4); v.y = Math.abs(v.y) * 0.5; }
           coin.rotation.x += dt * 9;
           if (e.age >= e.life) coin.removeFromParent();
         },
       });
     }
     t.cheer(2);
+    this.pets.get(to)?.dance(3.5);
     this.overlay.pop(this.headAnchor(to, 0.35), `⚡ ${sats.toLocaleString()} sats`, 'pop zap');
     this.cam.interest([end], true);
     this.hooks.onZap?.();
@@ -2186,6 +2221,33 @@ export class World {
     return true;
   }
 
+  /** Play an emote where they stand (emotes.ts), or stop it (null).
+   *  Not while seated or training. Returns whether it's playing. */
+  setEmote(pk: string, kind: EmoteKind | null): boolean {
+    const c = this.people.get(pk);
+    if (!c) return false;
+    const e = emoteOf(kind);
+    if (!e || this.seatOf.has(pk) || this.trainingAt.has(pk) || c.exercise) { c.setEmote(null); return false; }
+    let { lower, upper } = e;
+    if (e.kind === 'lotus') {
+      // Built for this body's skeleton, once.
+      lower = upper = lotusClipName(c.look.body);
+      if (!this.builtClips.has(lower)) {
+        const model = buildPerson(c.look)?.root;
+        if (!model) return false;
+        registerClip(buildExerciseClip('lotus', model, 0, lower));
+        this.builtClips.add(lower);
+      }
+    }
+    c.setEmote({ kind: e.kind, lower, upper, grounded: e.grounded, seconds: e.seconds });
+    return true;
+  }
+
+  /** The emote someone is playing, if any. */
+  emoteOf(pk: string): EmoteKind | null {
+    return (this.people.get(pk)?.emote?.kind as EmoteKind | undefined) ?? null;
+  }
+
   stopTraining(pk: string): void {
     const t = this.trainingAt.get(pk);
     this.trainUntil.delete(pk);
@@ -2518,8 +2580,10 @@ export class World {
       // cell it knows): walk the rest straight in, or straight out of the room.
       if (far && this.insideWalkable(target) && !this.grid.isWalkable(target)) path = [...(path ?? []), target];
       else if (far && !path && this.insideWalkable(ch.pos)) path = [target];
-      if (path) ch.walk(path, m.run);
-      else ch.halt();
+      // Standing still with an emote: play it once they're there.
+      const emote = m.moving ? null : m.emote ?? null;
+      if (path) { ch.walk(path, m.run, () => this.setEmote(pk, emote)); if (!m.moving) ch.setEmote(null); }
+      else { ch.halt(); if (ch.emote?.kind !== emote) this.setEmote(pk, emote); }
     };
     if (c.opacity < 0.5 && c.targetOpacity === 1) { go(); return; }
     if (dist(c.pos, now) > MOVER_BLINK_M) this.blink(c, now, go);
@@ -2704,8 +2768,22 @@ export class World {
 
   /** One frame. `dtIn`: the caller's frame time (main.ts steps your character first). */
   frame(dtIn?: number): number {
-    if (this.needsResize) { this.needsResize = false; this.resize(); }
     const dt = dtIn ?? Math.min(this.clock.getDelta(), 0.1);
+    // No context, nothing to draw with: wait for it to come back.
+    if (this.contextLost) return dt;
+    if (this.needsResize) { this.needsResize = false; this.resize(); }
+    // Whatever goes wrong updating, the frame is still drawn: a resize may
+    // have cleared the canvas, and an undrawn frame stays black.
+    try {
+      this.update(dt);
+    } finally {
+      this.cam.guard();
+      this.post.render(dt);
+    }
+    return dt;
+  }
+
+  private update(dt: number): void {
     this.elapsed += dt;
     this.sky.update(dt, this.elapsed);
     const night01 = 1 - this.sky.day;
@@ -2714,8 +2792,9 @@ export class World {
       m.uniforms.uDay.value = this.sky.day;
     }
     this.swayUniform.value = this.elapsed;
-    this.lampGlow.emissiveIntensity = night01 * 3;
-    for (const l of this.lampLights) l.intensity = night01 * 6;
+    const lamps = lampLevel(night01);
+    this.lampGlow.emissiveIntensity = lamps * 3;
+    for (const l of this.lampLights) l.intensity = lamps * 6;
     this.pulse = Math.max(0, this.pulse - dt * 0.8);
     this.obelisk?.setGlow(night01, this.pulse + (Math.sin(this.elapsed * 2) * 0.5 + 0.5) * 0.08);
     for (const b of this.landmarks.values()) { b.setNight(night01, this.elapsed); b.update?.(dt, this.elapsed); }
@@ -2774,8 +2853,6 @@ export class World {
     // The miniature lens is for looking down on the island, not through your own eyes.
     this.post.setTiltAmount(this.cam.firstPerson && !this.cam.isWatching ? 0 : this.cam.introProgress);
     this.overlay.update();
-    this.post.render(dt);
-    return dt;
   }
 }
 

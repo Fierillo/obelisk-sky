@@ -40,6 +40,18 @@ const globals = readFileSync('vendor/obelisk/src/app/globals.css', 'utf8').repla
     '@source "../../vendor/obelisk/src/components/chat/gallery";',
     '@source "../../vendor/obelisk/src/components/common";',
     '@source "../../vendor/obelisk/src/assets/brand";',
+    // The message bar (client/src/chat/composer): the app's composer pieces,
+    // pickers, reply bar and attachments, and sky's own skin over them.
+    '@source "../../vendor/obelisk/src/components/chat/composer";',
+    '@source "../../vendor/obelisk/src/components/chat/picker";',
+    '@source "../../vendor/obelisk/src/components/chat/mentions";',
+    '@source "../../vendor/obelisk/src/components/chat/slash";',
+    '@source "../../vendor/obelisk/src/components/identity";',
+    '@source "../../vendor/obelisk/src/components/media/library/MediaThumb.tsx";',
+    '@source "../../vendor/obelisk/src/app/*/app/panes/channel/ComposerReplyBar.tsx";',
+    '@source "../../vendor/obelisk/src/app/*/app/panes/channel/ComposerAttachments.tsx";',
+    '@source "../../vendor/obelisk/src/utils/chat/picker";',
+    '@source "./chat/composer";',
   ].join('\n'),
 );
 // Paths in globals.css are relative to src/app; the copy lives in client/src.

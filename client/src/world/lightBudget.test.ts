@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chooseLights, lightBudget, type LightSpot } from './lightBudget';
+import { chooseLights, lampLevel, lightBudget, type LightSpot } from './lightBudget';
 
 const at = (x: number, kind: 'point' | 'spot' = 'point', lit = true): LightSpot => ({ x, y: 0, z: 0, kind, lit });
 
@@ -28,5 +28,21 @@ describe('the light budget', () => {
   it('gives phones and low quality fewer lights', () => {
     expect(lightBudget(true, 'high').point).toBeLessThan(lightBudget(false, 'high').point);
     expect(lightBudget(false, 'low').point).toBeLessThan(lightBudget(false, 'medium').point);
+  });
+});
+
+describe('street lamps', () => {
+  it('are off by day, fully on from early dusk, and rise smoothly between', () => {
+    expect(lampLevel(0)).toBe(0);
+    expect(lampLevel(0.1)).toBe(0);
+    expect(lampLevel(0.45)).toBe(1);
+    expect(lampLevel(1)).toBe(1);
+    let last = 0;
+    for (let n = 0; n <= 1; n += 0.01) {
+      const v = lampLevel(n);
+      expect(v).toBeGreaterThanOrEqual(last);
+      expect(v - last).toBeLessThan(0.07);
+      last = v;
+    }
   });
 });

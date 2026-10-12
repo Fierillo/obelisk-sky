@@ -5,7 +5,7 @@
 // tall grey stone base under the left bay; the wooden arched door half a
 // storey up on the right, reached by stone steps that curve down a grassy
 // mound to the street, with a fairy-light rail and a round shrub by the door.
-// La Crypta's arched, striped logo high on the stone base is backlit; a
+// La Crypta's arched, striped logo beside the door, at its height, is backlit; a
 // white glowing ball with the gold ₿ sits on the lawn; red and violet
 // uplights at night. No front fence.
 //
@@ -107,6 +107,10 @@ export const LA_CRYPTA_STAIRS = {
   lift,
 };
 export const LA_CRYPTA_ROOM = ROOM;
+/** The door (local): its centre x, width, sill and height. */
+export const LA_CRYPTA_DOOR = { x: doorX, w: DOOR_W, sill: lift, h: DOOR_H } as const;
+/** The logo plaque on the brick right of the door (local): its centre x, bottom, size. */
+export const LA_CRYPTA_LOGO = { x: (doorX + DOOR_W / 2 + W / 2) / 2 + 0.04, y: lift + 0.16, w: 0.42, h: 0.5 } as const;
 
 let brickCanvas: HTMLCanvasElement | null = null;
 
@@ -541,22 +545,21 @@ export function buildLaCryptaHouse(): LandmarkBuild {
   shrub.castShadow = true;
   g.add(shrub);
 
-  // La Crypta's logo high on the stone base, backlit: an arched white
-  // plaque with three black bars, mounted in front of the sill.
+  // La Crypta's logo on the brick right of the door, at the door's height,
+  // backlit: an arched white plaque with three black bars.
   const logoGlow = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, emissive: 0xfff6e6, emissiveIntensity: 0.25, flatShading: true });
-  const LOGO_W = 0.5, LOGO_H = 0.6;
-  const logoX = L - 0.33, logoY = lift + 0.06 - LOGO_H;
+  const { x: logoX, y: logoY, w: LOGO_W, h: LOGO_H } = LA_CRYPTA_LOGO;
   const logo = new THREE.Mesh(new THREE.ExtrudeGeometry(roundArch(LOGO_W, LOGO_H), { depth: 0.02, bevelEnabled: false, curveSegments: 10 }), logoGlow);
-  logo.position.set(logoX, logoY, 0.1);
+  logo.position.set(logoX, logoY, 0.02);
   shell.add(logo);
   const kx = LOGO_W / 0.36, ky = LOGO_H / 0.44; // the old plaque's bars, scaled up
   for (let i = 0; i < 3; i++) {
     const bar = new THREE.Mesh(new THREE.BoxGeometry((0.28 - i * 0.02) * kx, 0.04 * ky, 0.01), flat(0x161616));
-    bar.position.set(logoX + (0.02 + i * 0.01) * kx, logoY + (0.07 + i * 0.075) * ky, 0.125);
+    bar.position.set(logoX + (0.02 + i * 0.01) * kx, logoY + (0.07 + i * 0.075) * ky, 0.045);
     shell.add(bar);
   }
   const logoLight = new THREE.PointLight(0xfff3dc, 0, 1.8, 1.6);
-  logoLight.position.set(logoX, logoY + LOGO_H * 0.5, 0.45);
+  logoLight.position.set(logoX, logoY + LOGO_H * 0.5, 0.4);
   g.add(logoLight);
 
   // The white glowing ball with the gold ₿, on the lawn left of the steps.

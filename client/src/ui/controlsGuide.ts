@@ -12,7 +12,7 @@ const DESKTOP: { title: string; rows: Row[] }[] = [
       { keys: ['W', 'A', 'S', 'D'], text: 'Walk (arrow keys work too)' },
       { keys: ['Shift'], text: 'Hold to run' },
       { keys: ['W', 'W'], text: 'Double-tap a direction key to run; let go to walk again' },
-      { keys: ['Space'], text: 'Jump (works while walking and running too)' },
+      { keys: ['Space'], text: 'Jump (works while walking and running too); hold it to keep jumping' },
       { keys: ['Click'], text: 'Click the ground to walk there' },
       { keys: ['Drag'], text: 'Turn the camera; scroll to zoom' },
       { keys: ['V'], text: 'First-person view: click to look with the mouse; V or Esc to leave' },
@@ -32,6 +32,7 @@ const DESKTOP: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['E'], text: 'Sit on a nearby bench or stool and drink mate, at the café for a coffee and a laptop, or at the parrilla for asado; E again to stand' },
       { keys: ['E', '2'], text: 'In the sports park: E trains at the nearest bar (pull-ups, dips, push-ups), 2 does muscle-ups at the pull-up bar; walk off to stop' },
+      { keys: ['G'], text: 'Emotes: dance, sit in the lotus pose, nod, fold your arms… then 1–6 to pick; walk off to stop' },
       { keys: ['Join call'], text: 'In a voice channel’s pavilion, join the call' },
       { keys: ['Game'], text: 'In a channel, start a game; click a table to play' },
       { keys: ['Your name'], text: 'Top right: change your look and your pet' },
@@ -60,6 +61,7 @@ const TOUCH: { title: string; rows: Row[] }[] = [
     title: 'Hang out',
     rows: [
       { keys: ['Sit'], text: 'Near a bench or stool, tap Sit to drink mate' },
+      { keys: ['Menu', 'Emotes'], text: 'Dance, sit in the lotus pose, nod…; walk off to stop' },
       { keys: ['Join call'], text: 'In a voice channel’s pavilion, join the call' },
       { keys: ['Your name'], text: 'Top right: change your look and your pet' },
     ],

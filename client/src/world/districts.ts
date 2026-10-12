@@ -89,6 +89,10 @@ export const CALISTHENICS_STATIONS: { at: Vec2; face: number; grip: number; half
   { at: { x: 0.65, z: -0.5 }, face: Math.PI / 2, grip: 0.03, kinds: ['pushup'] },
 ];
 
+/** Where a street lamp may stand: each corner of the park's mat (2.6 × 1.4),
+ *  just outside it (local). The world lights the two clear of the track. */
+export const CALISTHENICS_LAMPS: Vec2[] = [{ x: -1.45, z: 0.85 }, { x: 1.45, z: -0.85 }, { x: -1.45, z: -0.85 }, { x: 1.45, z: 0.85 }];
+
 export function buildCalisthenics(at: Vec2, rot: number): THREE.Group {
   const g = new THREE.Group();
   g.position.set(at.x, 0, at.z);

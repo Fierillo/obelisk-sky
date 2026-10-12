@@ -146,3 +146,20 @@ describe('jumps', () => {
     expect(parseMotion(ev as never)?.jump).toBe(false);
   });
 });
+
+describe('emotes', () => {
+  const at = (p: Partial<PlayerMotionState>): PlayerMotionState => ({ p: { x: 0, z: 0 }, moving: false, run: false, dest: null, heading: 0, ...p });
+  it('carries an emote while standing, and drops it while moving or when unknown', () => {
+    expect(parseMotion(sign({ ...idle, emote: 'lotus' }))).toMatchObject({ moving: false, emote: 'lotus' });
+    expect(parseMotion(sign({ ...keys, emote: 'dance' }))!.emote).toBeUndefined();
+    const ev = finalizeEvent({ ...motionTemplate(idle), content: JSON.stringify({ v: 1, t: 1, p: [0, 0], e: 'fly' }) }, sk);
+    expect(parseMotion(ev)!.emote).toBeUndefined();
+  });
+  it('sends starting and stopping an emote as a change', () => {
+    const b = new MotionBeacon();
+    b.update(at({}), 0);
+    expect(b.update(at({ emote: 'dance' }), MIN_GAP_MS)).toMatchObject({ emote: 'dance' });
+    expect(b.update(at({ emote: 'dance' }), MIN_GAP_MS * 3)).toBeNull();
+    expect(b.update(at({ emote: null }), MIN_GAP_MS * 4)!.emote).toBeUndefined();
+  });
+});

@@ -79,6 +79,19 @@ const SQUAT_LOW: PoseSpec = { pitch: 0.55, hands: BACK_HANDS, aim: merge(BAR_ON_
 const CURL_DOWN: PoseSpec = { hands: { dir: [0, -1, 0.15], palm: [0, 0.15, 1], curl: 0.85 }, aim: merge(both('upperarm', [0.12, -1, 0.05]), both('lowerarm', [0.06, -1, 0.2]), STRAIGHT_LEGS) };
 const CURL_UP: PoseSpec = { hands: { dir: [0, 0.45, 1], palm: [0, 1, -0.45], curl: 0.85 }, aim: merge(both('upperarm', [0.12, -1, 0.12]), both('lowerarm', [0.05, 0.45, 1]), STRAIGHT_LEGS) };
 
+// The lotus pose (an emote, not an exercise): sitting cross-legged on the
+// ground, knees out to the sides, each shin crossed in front of the other,
+// the backs of the hands resting on the knees, palms up. It breathes: the
+// chest lifts and the arms ease out a touch.
+const LOTUS_LEGS = merge(both('thigh', [0.85, -0.12, 0.55]), both('calf', [-0.95, -0.04, -0.12]));
+const LOTUS_HANDS = { dir: [0.3, -0.25, 1] as Dir, palm: [0, 1, 0.1] as Dir, curl: 0.25 };
+const LOTUS_IN: PoseSpec = { pitch: 0.02, hands: LOTUS_HANDS, aim: merge(both('upperarm', [0.32, -1, 0.18]), both('lowerarm', [0.35, -0.35, 1]), LOTUS_LEGS) };
+const LOTUS_OUT: PoseSpec = { pitch: -0.02, hands: LOTUS_HANDS, aim: merge(both('upperarm', [0.36, -1, 0.2]), both('lowerarm', [0.4, -0.33, 1]), LOTUS_LEGS) };
+export const LOTUS: { keys: Key[]; grip: 'ground' } = {
+  grip: 'ground',
+  keys: [{ t: 0, pose: LOTUS_IN }, { t: 2.4, pose: LOTUS_OUT }, { t: 4.8, pose: LOTUS_IN }],
+};
+
 /**
  * Key poses and timing (seconds) of one repetition; the last key returns to
  * the first. Grip: hands on a bar at its height, hands on the floor, feet on
@@ -110,7 +123,7 @@ interface Rest { bone: THREE.Bone; q: THREE.Quaternion; p: THREE.Vector3 }
  * model in its rest pose (not animated), unscaled.
  */
 export function buildExerciseClip(
-  kind: ExerciseKind, model: THREE.Object3D, gripY: number, name = `${kind}@${gripY.toFixed(2)}`,
+  kind: ExerciseKind | 'lotus', model: THREE.Object3D, gripY: number, name = `${kind}@${gripY.toFixed(2)}`,
   /** Half the distance between the two grips (parallel bars), model units. */
   gripHalf?: number,
   /** The bar's radius (model units): the fingers close round it. */
@@ -133,7 +146,8 @@ export function buildExerciseClip(
 
   const alignForward = kind === 'pullup' || kind === 'muscleup';
   const onFloor = kind === 'pushup';
-  const grip = EXERCISES[kind].grip;
+  const spec: { keys: Key[]; grip: 'bar' | 'floor' | 'stand' | 'lie' | 'ground' } = kind === 'lotus' ? LOTUS : EXERCISES[kind];
+  const grip = spec.grip;
   // Standing lifts keep the feet where they stand; lying ones put the back
   // on the bench. Measured at rest: the soles, and the back's depth below
   // the pelvis joint (about a sixteenth of the body's height).
@@ -262,6 +276,14 @@ export function buildExerciseClip(
       model.updateMatrixWorld(true);
       return;
     }
+    if (grip === 'ground') {
+      // Sitting on the ground: the seat a hip's depth above the floor, and
+      // nothing (feet, shins) below it.
+      const low = Math.min(...['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r'].filter((n) => bones.has(n)).map((n) => wp(n).y));
+      root.position.y += Math.max(restFeet.y + backDepth * 1.3 - wp('pelvis').y, restFeet.y + 0.02 - low);
+      model.updateMatrixWorld(true);
+      return;
+    }
     if (grip === 'lie') {
       // On the back: the pelvis rests a back's depth above the bench top.
       root.position.y += gripY + backDepth - wp('pelvis').y;
@@ -291,12 +313,11 @@ export function buildExerciseClip(
     return best;
   };
 
-  const spec = EXERCISES[kind];
   const times: number[] = [];
   const qs = new Map<string, number[]>();
   const rootPos: number[] = [];
   for (const k of spec.keys) {
-    const pitch = spec.grip === 'floor' ? solvePitch(k.pose) : (k.pose.pitch ?? 0);
+    const pitch = grip === 'floor' ? solvePitch(k.pose) : (k.pose.pitch ?? 0);
     let spread = 0;
     if (gripHalf) {
       // Widen the arms until each palm sits over its bar.

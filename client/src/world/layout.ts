@@ -560,3 +560,9 @@ export function riverTangentAt(line: Vec2[], p: Vec2): Vec2 {
   }
   return best;
 }
+
+/** Half extents of the axis-aligned box round a `hx` × `hz` rectangle turned by `yaw`. */
+export function turnedHalf(hx: number, hz: number, yaw: number): { hx: number; hz: number } {
+  const c = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw));
+  return { hx: c * hx + sn * hz, hz: sn * hx + c * hz };
+}
