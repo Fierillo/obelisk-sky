@@ -35,6 +35,14 @@ describe('the emote menu', () => {
     expect(m.open).toBe(false);
   });
 
+  it('0 picks the tenth: Sangreee...', () => {
+    const { m, pick } = make();
+    m.toggle(true);
+    expect(m.el.querySelector('[data-kind="sangre"] kbd')!.textContent).toBe('0');
+    expect(m.key('0')).toBe(true);
+    expect(pick).toHaveBeenCalledWith('sangre');
+  });
+
   it('picks on click', () => {
     const { m, pick } = make();
     m.toggle(true);

@@ -435,6 +435,33 @@ export function trackSite(plan: IslandPlan): { c: Vec2; rot: number } | null {
   return null;
 }
 
+/** Where the paths cross the river (the footbridges): one stretch before the pond, one after. */
+export function bridgePoints(riverPts: Vec2[], pond: Vec2): Vec2[] {
+  const pondIdx = riverPts.reduce((best, p, i) => (dist(p, pond) < dist(riverPts[best], pond) ? i : best), 0);
+  return [Math.floor(pondIdx * 0.45), Math.floor(pondIdx + (riverPts.length - pondIdx) * 0.45)].map((i) => riverPts[i]);
+}
+
+/**
+ * The calisthenics park: beside or past the end of the track, wherever no
+ * building slot (used now or later) and no water is in the way.
+ */
+export function parkSite(plan: IslandPlan, t: { c: Vec2; rot: number }, riverPts: Vec2[]): Vec2 {
+  const tan = { x: Math.cos(t.rot), z: Math.sin(t.rot) };
+  const nrm = { x: -Math.sin(t.rot), z: Math.cos(t.rot) };
+  const candidates = [
+    { x: t.c.x + tan.x * 5.4, z: t.c.z + tan.z * 5.4 },
+    { x: t.c.x - tan.x * 5.4, z: t.c.z - tan.z * 5.4 },
+    { x: t.c.x + nrm.x * 3.2, z: t.c.z + nrm.z * 3.2 },
+    { x: t.c.x - nrm.x * 3.2, z: t.c.z - nrm.z * 3.2 },
+  ];
+  const clearance = (p: Vec2) => Math.min(
+    ...plan.slots.filter((sl) => !onTrack(sl.pos, t, sl.w * 0.7 + 0.6)).map((sl) => dist(p, sl.pos) - sl.w * 0.75),
+    distToPolyline(p, riverPts) - 1,
+    plan.radiusAt(Math.atan2(p.z, p.x)) - Math.hypot(p.x, p.z) - 1.2,
+  );
+  return candidates.reduce((best, p) => (clearance(p) > clearance(best) ? p : best));
+}
+
 /** Is `p` under the track (or its run-off)? Slots there stay empty. */
 export function onTrack(p: Vec2, site: { c: Vec2; rot: number }, pad = 0): boolean {
   const dx = p.x - site.c.x, dz = p.z - site.c.z;

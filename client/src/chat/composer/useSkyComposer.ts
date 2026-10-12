@@ -48,6 +48,8 @@ export interface SkyComposerOptions {
   onSend: (text: string, tags: string[][], replyTo: ReplyTarget | null) => Promise<string | null>;
   /** `/play`: open the game table. */
   onNewGame?: () => void;
+  /** `/zap …` (mentions already as `nostr:npub1…`): open the zap sheet, or say why not. */
+  onZap?: (command: string, replyTo: ReplyTarget | null) => string | null;
   /** Everyone mentionable on this relay (asked only while the @-picker is open). */
   people: () => MentionPerson[];
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -77,7 +79,7 @@ function useBotProfiles(pubkeys: readonly string[]): BotProfiles {
 }
 
 export function useSkyComposer({
-  groupId, relay, replyingTo, setReplyingTo, onSend, onNewGame, people, inputRef, maxMentionResults = 8,
+  groupId, relay, replyingTo, setReplyingTo, onSend, onNewGame, onZap, people, inputRef, maxMentionResults = 8,
 }: SkyComposerOptions) {
   const serverEmojis = useChatStore((s) => s.serverEmojis);
 
@@ -200,7 +202,17 @@ export function useSkyComposer({
     const content = draft.trim();
     if (!content || uploading) return;
     if (unsupportedCommandOf(content)) {
-      setSendError('Zaps are sent from obelisk.ar for now.');
+      setSendError('That command only works in obelisk.ar.');
+      return;
+    }
+    // /zap is frontend-only, like the app's: the sheet pays, then posts the ⚡.
+    if (/^\/zap(\s|$)/i.test(content)) {
+      const err = onZap ? onZap(resolveDraftMentions(content, draftMentions), replyingTo) : 'Log in to zap.';
+      if (err) { setSendError(err); return; }
+      setSendError(null);
+      setDraft('');
+      setDraftMentions([]);
+      setReplyingTo(null);
       return;
     }
     if (/^\/play(\s|$)/.test(content)) {

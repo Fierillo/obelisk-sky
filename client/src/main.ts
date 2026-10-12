@@ -1,6 +1,7 @@
 import { nip19, type VerifiedEvent } from 'nostr-tools';
 import type * as THREE from 'three';
 import { renderContent } from './ui/content';
+import { openPings as listPings, pingReason, pingTitle, type PingCursors, type PingReason } from './nostr/pings';
 import type { ServerMsg, WireGroup, WireMessage } from './nostr/wire';
 import { hexToNpub } from '@nostr-wot/data';
 import { Feed, type FeedAccess } from './nostr/feed';
@@ -18,7 +19,7 @@ import { openThemeEditor } from './ui/themeEditor';
 import { GameBook, createTable, joinTable, startTable, moveOnTable, resignTable, cancelTable, timeoutOnTable, claimableTimeout, gameMarker, type CRSizeKey } from './games/book';
 import { GamePanel } from './ui/gamePanel';
 import { AvatarStore, DEFAULT_AVATAR, avatarTemplate, type Avatar } from './nostr/avatars';
-import { ActivityBeacon, ActivityStore, activityTemplate, type Activity } from './nostr/activity';
+import { ActivityBeacon, ActivityStore, activityTemplate, emoteActivity, emoteOfActivity, hereSpotId, parseSpot, type Activity, type Claim } from './nostr/activity';
 import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
 import { openCreator } from './ui/creator';
 import { CallRoom, RECONNECT_DELAYS, awayCountdown } from './voice/callRoom';
@@ -26,6 +27,8 @@ import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/control
 import { obeliskNoteUrl, obeliskProfileUrl } from './ui/obeliskLinks';
 import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
 import { SidePanel } from './ui/sidePanel';
+import { initOrientation, lockLandscape } from './ui/orientation';
+import { wireCard } from './ui/cardSheet';
 import { DmPanel } from './ui/dmPanel';
 import { EmoteMenu } from './ui/emoteMenu';
 import type { EmoteKind } from './world/emotes';
@@ -47,6 +50,12 @@ import { pageHub } from './nostr/hub';
 import { SessionManager, type LoginArgs, type Session } from './nostr/session';
 import { registerHost } from './shims/host';
 import { Soundscape } from './sound';
+import { openZapSheet } from './ui/zapSheet';
+import { connectWallet, forgetWallet, loadWallet, walletKindFor, walletView } from './wallet/wallet';
+import { sendZap, ZapPaymentUnconfirmed } from './wallet/zap';
+import { parseZapCommand, zapCommandMessage } from './wallet/zapCommand';
+import { EmoteMusic } from './audio/emoteMusic';
+import { PlaceMusic } from './audio/placeMusic';
 import { ALL_MODELS, preload } from './world/assets';
 import { defaultLook, preloadPeople } from './people/people';
 import type { LandmarkId } from './world/landmarks';
@@ -67,6 +76,11 @@ const OBELISK_APP = 'https://obelisk.ar/app';
 const world = new World($('scene'), $('overlay'));
 const director = new Director();
 const sound = new Soundscape();
+// Music near people dancing or working out, only where it's heard (audio/emoteMusic.ts).
+const emoteMusic = new EmoteMusic(() => sound.audio());
+// Cumbia at the parrilla, a guitar by the campfires (audio/placeMusic.ts).
+const placeMusic = new PlaceMusic(() => sound.audio());
+let musicTimer = 0;
 let relayHost = 'public.obelisk.ar';
 let groups: WireGroup[] = [];
 let ready = false;
@@ -91,6 +105,10 @@ function applyPrefs(p: Prefs): void {
   $('feed').hidden = !p.feed;
   sound.setVolume(p.volume);
   if (soundUnlocked) sound.setEnabled(p.sound);
+  emoteMusic.enabled = p.emoteMusic;
+  placeMusic.enabled = p.placeMusic;
+  sound.ambience = p.ambience;
+  sound.footsteps = p.footsteps;
   const btn = (act: string) => document.querySelector<HTMLButtonElement>(`.controls [data-act="${act}"]`);
   btn('director')?.classList.toggle('on', p.autoDirector);
   btn('signs')?.classList.toggle('on', p.signs);
@@ -105,13 +123,20 @@ function applyPrefs(p: Prefs): void {
   }
 }
 
-// Browsers only start audio after a gesture: remembered "sound on" waits for one.
+// Browsers only start audio after a gesture they accept (a key, a click, a
+// finger lifted; not a touch going down), and phones and hidden tabs
+// suspend it again: remembered "sound on" waits for one, and every gesture
+// wakes audio that is on but held.
 let soundUnlocked = false;
-window.addEventListener('pointerdown', () => {
-  if (soundUnlocked) return;
-  soundUnlocked = true;
-  sound.setEnabled(prefs.get().sound);
-}, { once: true });
+const unlockSound = (e: Event) => {
+  if (e.type === 'keydown' && (e as KeyboardEvent).key === 'Escape') return; // not a gesture to browsers
+  if (!soundUnlocked) {
+    soundUnlocked = true;
+    sound.setEnabled(prefs.get().sound);
+  }
+  sound.wake();
+};
+for (const type of ['pointerup', 'touchend', 'keydown', 'click']) window.addEventListener(type, unlockSound, { capture: true, passive: true });
 
 prefs.onChange(applyPrefs);
 
@@ -204,6 +229,9 @@ world.hooks = {
   },
   onPersonClick: (pk) => showPerson(pk),
   onGroupClick: (id) => {
+    // Something for you there (the "@"): open the chat at it and go.
+    const ping = pingIn.get(id);
+    if (ping) { goToMessage(ping.m); return; }
     const slot = world.slotFor(id);
     if (controller && slot) { controller.walkTo(slot.yard); world.cam.played(); return; }
     showGroup(id);
@@ -247,6 +275,7 @@ if (import.meta.env.DEV) {
   (window as unknown as { __skyDevLogin: unknown }).__skyDevLogin = async (skHex: string) => {
     const { PrivateKeySigner } = await import('@nostr-wot/signers');
     const signer = new PrivateKeySigner(skHex);
+    freshLogin = true;
     await session.login({ signer, pubkey: await signer.getPublicKey(), method: 'import' });
   };
 }
@@ -277,6 +306,10 @@ void (async () => {
   applyPrefs(prefs.get()); // again: grass needs the island built
   await preloadPeople((d, t) => loading.setProgress(0.7 + (d / t) * 0.3));
   ready = true;
+  // The chat's React islands (message bar, rich bodies) are big lazy chunks:
+  // fetch and parse them while nobody's typing yet, not on the first open.
+  const idle = (cb: () => void) => ((window as unknown as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500)))(cb, { timeout: 8000 });
+  setTimeout(() => idle(() => chat.preload()), 4000);
   // Everything that arrived while loading (houses, people) is built and its
   // shaders compiled while the loading screen still covers it: otherwise the
   // first frames of the swing stall and it jumps.
@@ -391,21 +424,56 @@ session.onChange((s) => {
   startDms();
   if (!s) pcall.hangup();
   if (!s) { dmPanel.close(); }
-  if (!s) { feed?.stop(); feed = null; activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); }
+  if (!s) { feed?.stop(); feed = null; activity.stop(); motion.stop(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); loginMount?.resetLogin(); forgetWallet(); }
+  else void loadWallet(s.pubkey);
+  if (s && freshLogin) awaitEntry(s);
+  else clearTimeout(entryTimer);
 });
+
+/** Logged in just now (the modal, not a reload): your entrance is shown. */
+let freshLogin = false;
+let entryTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Between a login and the village opening, a remote signer (bunker) has to
+ * answer the relay's AUTH (and may ask you to approve it): say so, and offer
+ * a retry if it goes quiet.
+ */
+function awaitEntry(s: Session): void {
+  clearTimeout(entryTimer);
+  if (s.method !== 'nip46') return;
+  toast('Connected to your signer. Approve its requests to come in.');
+  entryTimer = setTimeout(() => {
+    if (session.current !== s || world.playerPk) return;
+    toast('Still waiting for your signer app… Tap to try again.', () => startFeed());
+  }, 25_000);
+}
+
+/** The swing down from above onto your character, after a fresh login. */
+function playEntrance(): void {
+  if (!freshLogin) return;
+  freshLogin = false;
+  clearTimeout(entryTimer);
+  if (world.cam.inIntro) return; // the boot intro already lands on you
+  world.cam.holdTopDown(ISLAND_R);
+  world.cam.playIntro(2.6);
+  sound.whoosh();
+}
 
 void session.restore().then((ok) => { if (!ok) { renderAccount(null); renderAccess('logged-out'); } });
 
 // The re-hosted obelisk-dex login modal reaches sky through this host.
 registerHost({
-  login: (args) => session.login(args as LoginArgs),
+  login: (args) => { freshLogin = true; return session.login(args as LoginArgs); },
   sign: (t) => session.sign(t),
   pubkey: () => session.current?.pubkey ?? null,
 });
 
+/** The login module, once loaded (logging out resets it). */
+let loginMount: typeof import('./login/LoginMount') | null = null;
 $('login').addEventListener('click', async () => {
-  const { openLogin } = await import('./login/LoginMount');
-  openLogin();
+  loginMount ??= await import('./login/LoginMount');
+  loginMount.openLogin();
 });
 $('logout').addEventListener('click', () => session.logout());
 $('gate-login').addEventListener('click', () => $('login').click());
@@ -481,6 +549,7 @@ function handle(m: ServerMsg): void {
       player.load(events, nowSec());
       drawTimeline();
       enterAsPlayer();
+      playEntrance();
       placeOfficial();
       if (session.current) maybeShowControlsGuide($('app'));
       maybeWelcome();
@@ -512,7 +581,7 @@ function handle(m: ServerMsg): void {
       const why = me ? pingReason(m.msg, me) : null;
       if (why && nowSec() - m.msg.createdAt < 120) {
         const msg = m.msg;
-        toast(`${world.nameOf(msg.pubkey)} ${why === 'reply' ? 'replied to you' : 'mentioned you'}`, () => goToMessage(msg));
+        toast(pingTitle(world.nameOf(msg.pubkey), why, groups.find((g) => g.id === msg.groupId)?.name ?? null), () => goToMessage(msg));
       }
       renderBell();
     }
@@ -577,8 +646,10 @@ function stepPlayer(dt: number): void {
   const pk = world.playerPk;
   const c = pk ? world.people.get(pk) : undefined;
   if (!controller || !c) return;
-  // In first person, step out to watch yourself train or sit (running laps stays in your eyes).
-  world.setSelfView((world.isTraining(pk!) && world.laneOf(pk!) === null) || world.isSeated(pk!));
+  // Your footsteps, in time with your feet (Character.onStep).
+  c.onStep ??= (running) => sound.footstep(running);
+  // In first person, step out to watch yourself train, sit or raise the knives (running laps stays in your eyes).
+  world.setSelfView((world.isTraining(pk!) && world.laneOf(pk!) === null) || world.isSeated(pk!) || world.emoteOf(pk!) === 'sangre');
   const mv = input.read();
   // A jump ends an emote (walking does in Character.drive).
   if (mv.jump && world.emoteOf(pk!)) world.setEmote(pk!, null);
@@ -814,7 +885,8 @@ function doEmote(kind: EmoteKind): void {
   const pk = world.playerPk;
   if (!pk || !controller) { toast('Log in to walk around as yourself.'); return; }
   if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
-  controller.path = [];
+  // No coast: still moving next frame, the body would drop the emote at once.
+  controller.stopNow();
   world.clearWalkTarget();
   world.setEmote(pk, world.emoteOf(pk) === kind ? null : kind);
 }
@@ -1036,16 +1108,7 @@ const chat = new ChatPanel($('app'), {
   send: (g, text, reply, tags) => publish(messageTemplate(g, text, reply ? { id: reply.id, pubkey: reply.pubkey } : null, tags)),
   // The @-picker: like obelisk-dex, anyone on the relay (every channel's
   // members and posters), plus whoever is walking around the village.
-  people: (g) => {
-    void members.load(g);
-    const pks = new Set<string>(world.people.keys());
-    for (const ch of groups) {
-      const m = members.cached(ch.id);
-      for (const pk of m?.members ?? []) pks.add(pk);
-      for (const msg of msgsOf(ch.id)) pks.add(msg.pubkey);
-    }
-    return [...pks].filter((pk) => /^[0-9a-f]{64}$/.test(pk)).map((pk) => ({ pubkey: pk, name: world.nameOf(pk), picture: world.profiles.get(pk)?.avatar ?? null }));
-  },
+  people: (g) => chatPeople(g),
   relay: activeRelay,
   operator: () => themes?.operator ?? null,
   react: (m, emoji) => { void publish(reactionTemplate(m.groupId, { id: m.id, pubkey: m.pubkey }, emoji)); },
@@ -1054,12 +1117,63 @@ const chat = new ChatPanel($('app'), {
   join: (g) => publish(joinTemplate(g)),
   onGame: (id) => openGame(id),
   newGame: (g) => { if (session.current) newGameDialog(g); },
+  zap: (g, command, replyTo) => {
+    const me = session.current?.pubkey ?? null;
+    if (!me) return 'Log in to zap.';
+    const parsed = parseZapCommand(command, {
+      messages: msgsOf(g), me, replyingTo: replyTo,
+      people: chatPeople(g).map((p) => ({ pubkey: p.pubkey, names: [p.name] })),
+    });
+    if (!parsed.ok) return zapCommandMessage(parsed.error, parsed.token);
+    openZap(g, parsed.target.recipient, parsed.target.messageId, parsed.target.sats);
+    return null;
+  },
   onReplyPick: (m) => {
     // Walk over to the person you're answering.
     const other = world.people.get(m.pubkey);
     if (controller && other && m.pubkey !== session.current?.pubkey) controller.walkTo(other.pos);
   },
 });
+/** Everyone the @-picker (and /zap @name) may mean: anyone on the relay, plus whoever walks the village. */
+function chatPeople(g: string): { pubkey: string; name: string; picture: string | null }[] {
+  void members.load(g);
+  const pks = new Set<string>(world.people.keys());
+  for (const ch of groups) {
+    const m = members.cached(ch.id);
+    for (const pk of m?.members ?? []) pks.add(pk);
+    for (const msg of msgsOf(ch.id)) pks.add(msg.pubkey);
+  }
+  return [...pks].filter((pk) => /^[0-9a-f]{64}$/.test(pk)).map((pk) => ({ pubkey: pk, name: world.nameOf(pk), picture: world.profiles.get(pk)?.avatar ?? null }));
+}
+
+// ── zaps (wallet/, ui/zapSheet.ts) ───────────────────────────────────────
+
+/** Open the zap sheet for `recipient` in channel `groupId` (their message `messageId`, if one). */
+function openZap(groupId: string, recipient: string, messageId: string | null, sats: number | null): void {
+  const s = session.current;
+  if (!s) { toast('Log in to zap.'); return; }
+  void loadWallet(s.pubkey);
+  openZapSheet($('app'), recipient, sats, {
+    name: (pk) => world.nameOf(pk),
+    lud16: (pk) => world.profiles.get(pk)?.lud16 ?? null,
+    walletKind: () => walletKindFor(s.pubkey, s.method),
+    walletView: () => walletView(s.pubkey),
+    connect: async (uri) => { await connectWallet(s.pubkey, uri); },
+    send: (amount, comment) => sendZap({
+      account: s.pubkey, loginMethod: s.method, sign: (t) => session.sign(t),
+      recipient, lud16: world.profiles.get(recipient)?.lud16 ?? null, groupId, messageId,
+      sats: amount, comment, relay: activeRelay(),
+    }, async (t) => {
+      const out = await publishToGroup(hub, (x) => session.sign(x), t);
+      // Your own zap flies at once, without waiting for the relay to echo the ⚡.
+      if (out.ok) feed?.state.ingestReaction(out.event);
+      return out;
+    }),
+    isUnconfirmed: (e) => e instanceof ZapPaymentUnconfirmed,
+    toast,
+  });
+}
+
 // Closed with ×: the button offers it again while you're still in its yard.
 chat.onClose = () => { if (place) chatHint = place; };
 
@@ -1067,28 +1181,25 @@ chat.onClose = () => { if (place) chatHint = place; };
 // ── mentions and replies ─────────────────────────────────────────────────
 // A ping is an explicit @you or a reply to you (obelisk-dex classifyGroupPing);
 // ordinary traffic never pings. Read once its channel has been open, or with
-// "Mark all read" (which sets the synced mentionsReadAt).
+// "Mark all read" (which sets the synced mentionsReadAt and, like
+// obelisk-dex, reads every channel). The rules are nostr/pings.ts.
 
-function pingReason(m: WireMessage, me: string): 'reply' | 'mention' | null {
-  if (m.pubkey === me) return null;
-  if (m.replyTo === me) return 'reply';
-  if (m.content && mentionedPubkeys(m.content).includes(me)) return 'mention';
-  return null;
+/** Read cursors for pings: a channel read past it, or "Mark all read". */
+function pingCursors(): PingCursors | null {
+  if (!readState) return null;
+  const rs = readState;
+  return { channel: (g) => rs.cursorFor(g), mentionsReadAt: rs.cursors.mentionsReadAt };
 }
 
-function openPings(): { m: WireMessage; reason: 'reply' | 'mention' }[] {
+function openPings(): { m: WireMessage; reason: PingReason }[] {
   const me = session.current?.pubkey;
-  if (!me || !readState) return [];
-  const since = readState.cursors.mentionsReadAt;
-  const out: { m: WireMessage; reason: 'reply' | 'mention' }[] = [];
-  for (const e of player.events) {
-    if (e.k !== 'msg' || e.m.createdAt * 1000 <= since) continue;
-    if (e.m.createdAt * 1000 <= readState.cursorFor(e.m.groupId)) continue;
-    const r = pingReason(e.m, me);
-    if (r) out.push({ m: e.m, reason: r });
-  }
-  return out.reverse();
+  const c = pingCursors();
+  if (!me || !c) return [];
+  return listPings(player.events.flatMap((e) => (e.k === 'msg' ? [e.m] : [])), me, c);
 }
+
+/** The newest unread ping in each channel (the map's "@" and its compass arrow open it). */
+const pingIn = new Map<string, { m: WireMessage; reason: PingReason }>();
 
 function goToMessage(m: WireMessage): void {
   const g = groups.find((x) => x.id === m.groupId);
@@ -1122,7 +1233,7 @@ function renderBell(): void {
     const head = document.createElement('div');
     head.className = 'bell-item-head';
     const g = groups.find((x) => x.id === m.groupId);
-    head.textContent = `${world.nameOf(m.pubkey)} ${reason === 'reply' ? 'replied to you' : 'mentioned you'} in ${g?.name ?? 'a channel'}`;
+    head.textContent = pingTitle(world.nameOf(m.pubkey), reason, g?.name ?? null);
     const text = document.createElement('div');
     text.className = 'bell-item-text';
     text.textContent = m.text;
@@ -1133,7 +1244,16 @@ function renderBell(): void {
 }
 
 $('bell').addEventListener('click', () => { renderBell(); $('bell-panel').hidden = !$('bell-panel').hidden; });
-$('bell-read').addEventListener('click', () => { readState?.markMentionsRead(); $('bell-panel').hidden = true; });
+$('bell-read').addEventListener('click', () => {
+  // Like obelisk-dex's "Mark read": the mentions and every channel, so roofs,
+  // signs and arrows clear too, not only the bell.
+  const now = Date.now();
+  readState?.markMentionsRead(now);
+  for (const g of groups) readState?.markRead(g.id, now);
+  $('bell-panel').hidden = true;
+  renderBell();
+  refreshSigns();
+});
 
 function toast(text: string, onClick?: () => void): void {
   const t = document.createElement('button');
@@ -1218,6 +1338,10 @@ function tickMotion(): void {
     heading: controller.heading,
     jumped: pendingJump > 0,
     emote: world.emoteOf(pk),
+    emoteSince: world.emoteSinceOf(pk),
+    // Where you look: in first person the eyes (yaw and pitch), else the way your body faces.
+    yaw: world.cam.firstPerson ? world.cam.fpYaw : controller.heading,
+    pitch: world.cam.firstPerson ? world.cam.fpPitch : undefined,
   }, Date.now());
   if (!send) return;
   if (send.jump) pendingJump = 0;
@@ -1269,7 +1393,7 @@ function yieldSpot(to: string): void {
 function tickActivity(): void {
   if (!session.current) return;
   const pk = world.playerPk;
-  let mine = pk ? world.activityOf(pk) : null;
+  let mine = pk ? world.activityOf(pk) ?? remoteSignerEmote(pk) : null;
   if (pk) {
     const send = beacon.update(mine, Date.now());
     if (send) publishActivity(send.activity, send.since);
@@ -1291,6 +1415,41 @@ function tickActivity(): void {
     claims = activity.live(nowSec(), { pk, activity: mine, since: beacon.since });
   }
   world.syncClaims(claims);
+  playEmoteClaims(claims);
+}
+
+/**
+ * A remote signer's live movement is off, so their emote goes out as an
+ * activity on the spot they stand (nostr/activity.ts `here:`).
+ */
+function remoteSignerEmote(pk: string): Activity | null {
+  if (session.current?.method !== 'nip46' || !controller) return null;
+  const e = world.emoteOf(pk);
+  return e ? { spot: hereSpotId(controller.pos), kind: emoteActivity(e) } : null;
+}
+
+/** Who is emoting by activity (remote signers), and what: played like a standing motion. */
+const emoteClaims = new Map<string, { key: string; at: number }>();
+function playEmoteClaims(claims: readonly Claim[]): void {
+  const me = world.playerPk;
+  const now = new Map<string, Claim>();
+  for (const c of claims) if (c.pk !== me && emoteOfActivity(c.kind) && !motion.get(c.pk)) now.set(c.pk, c);
+  for (const pk of emoteClaims.keys()) {
+    if (now.has(pk)) continue;
+    emoteClaims.delete(pk);
+    if (world.people.has(pk)) world.setEmote(pk, null);
+  }
+  const t = performance.now();
+  for (const c of now.values()) {
+    const key = `${c.spot}|${c.kind}`;
+    const was = emoteClaims.get(c.pk);
+    // Again now and then, or the world counts them gone like stale movement.
+    if (was?.key === key && t - was.at < 30_000) continue;
+    emoteClaims.set(c.pk, { key, at: t });
+    const spot = parseSpot(c.spot);
+    if (spot?.type !== 'here') continue;
+    world.applyMotion(c.pk, { t: c.since * 1000, p: spot.pos, moving: false, run: false, dest: null, heading: null, emote: emoteOfActivity(c.kind)!, emoteSince: c.since * 1000 }, 0);
+  }
 }
 
 // Best effort: tell the others you left (the expiration covers a lost one).
@@ -1702,6 +1861,14 @@ function frame(): void {
   if (cmds.length) world.apply(cmds);
   for (const p of director.people.values()) world.homeOf.set(p.pk, p.groupId);
   sound.night = world.sky.night;
+  musicTimer -= dt;
+  if (musicTimer <= 0) {
+    musicTimer = 0.25;
+    const t = world.cam.controls.target;
+    const at = controller ? controller.pos : { x: t.x, z: t.z };
+    emoteMusic.update(world.dancers(), { ...at, yaw: world.cameraYaw() }, world.playerPk);
+    placeMusic.update(world.musicPlaces(), at);
+  }
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }
   // Only roofs that glow (or just stopped) are touched.
@@ -1735,14 +1902,18 @@ function refreshSigns(): void {
   }
   const me = session.current?.pubkey ?? null;
   pinged.clear();
+  // The newest unread ping in each channel.
+  const pings = pingIn;
+  pings.clear();
+  if (me) for (const p of openPings()) if (!pings.has(p.m.groupId)) pings.set(p.m.groupId, p);
   for (const g of groups) {
     world.overlay.setSignActivity(g.id, at - (last.get(g.id) ?? 0) < 900, day.get(g.id) ?? 0);
     if (!readState || !me) continue;
     const msgs = msgsOf(g.id);
     const cursor = readState.cursorFor(g.id);
-    const ping = msgs.some((m) => m.createdAt * 1000 > cursor && pingReason(m, me) !== null);
+    const ping = pings.get(g.id) ?? null;
     if (ping) pinged.add(g.id);
-    world.overlay.setSignUnread(g.id, countUnread(msgs, cursor, me), ping);
+    world.overlay.setSignUnread(g.id, countUnread(msgs, cursor, me), !!ping, ping ? pingTitle(world.nameOf(ping.m.pubkey), ping.reason, g.name) : null);
   }
   $('tab-channels-n').textContent = String(groups.length);
   // Online now: live in the village or active in the last minutes (AFK not counted).
@@ -1913,26 +2084,10 @@ function openCard(build: (body: HTMLElement) => void): void {
   // On a phone the chat is a bottom sheet the card would sit under: fold it.
   if (window.matchMedia('(max-width: 720px)').matches) chat.setMinimised(true);
 }
-($('card').querySelector('.card-close') as HTMLElement).addEventListener('click', () => { $('card').hidden = true; });
-// On a phone the card is a bottom sheet: drag its grip down to put it away.
-{
-  const card = $('card'), head = card.querySelector('.card-head') as HTMLElement;
-  let from: number | null = null;
-  head.addEventListener('pointerdown', (e) => { from = e.clientY; head.setPointerCapture(e.pointerId); });
-  head.addEventListener('pointermove', (e) => {
-    if (from === null) return;
-    card.style.transform = `translateY(${Math.max(0, e.clientY - from)}px)`;
-  });
-  const end = (e: PointerEvent) => {
-    if (from === null) return;
-    const dy = e.clientY - from;
-    from = null;
-    card.style.transform = '';
-    if (dy > 70) card.hidden = true;
-  };
-  head.addEventListener('pointerup', end);
-  head.addEventListener('pointercancel', end);
-}
+// The × closes it; on a phone the card is a bottom sheet whose grip drags it away.
+wireCard($('card'), () => { $('card').hidden = true; });
+// Phones held upright: a card asks to turn sideways (and can lock it).
+initOrientation($('rotate'));
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -1984,7 +2139,16 @@ function showPerson(pk: string): void {
       msg.addEventListener('click', () => { $('card').hidden = true; openDm(pk); });
       const ring = el('button', 'pill', '📞 Call');
       ring.addEventListener('click', () => { $('card').hidden = true; void pcall.start(pk); });
-      actions.append(msg, ring);
+      // Zap them for their latest message here (its channel carries the ⚡).
+      const zapBtn = el('button', 'pill', '⚡ Zap');
+      zapBtn.addEventListener('click', () => {
+        const last = msgs.at(-1);
+        const g = last?.groupId ?? place ?? groups[0]?.id;
+        if (!g) { toast('No channel to zap them in yet.'); return; }
+        $('card').hidden = true;
+        openZap(g, pk, last?.id ?? null, null);
+      });
+      actions.append(msg, ring, zapBtn);
     }
     const follow = el('button', 'pill', 'Follow with camera');
     follow.addEventListener('click', () => world.cam.focus(world.personAnchor(pk), 6));
@@ -2111,6 +2275,8 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
       }
       case 'fullscreen':
         if (document.fullscreenElement) void document.exitFullscreen();
+        // A phone goes full screen sideways (ui/orientation.ts).
+        else if (isTouch()) void lockLandscape();
         else void document.documentElement.requestFullscreen?.();
         break;
     }

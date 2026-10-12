@@ -34,6 +34,11 @@ describe('landing copy', () => {
     document.documentElement.innerHTML = html.replace(/^<!doctype html>/i, '');
     for (const k of ['nav.enter', 'hero.enter', 'cta.enter']) expect(document.querySelector(`[data-i18n="${k}"]`)!.getAttribute('href')).toBe('/app');
   });
+  it('links the family at the foot: Obelisk, nostr-wot, Liberture, La Crypta', () => {
+    document.documentElement.innerHTML = html.replace(/^<!doctype html>/i, '');
+    const hrefs = [...document.querySelectorAll('.foot a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['https://obelisk.ar', 'https://nostr-wot.com', 'https://liberture.com', 'https://lacrypta.ar']);
+  });
 });
 
 describe('pickLang', () => {

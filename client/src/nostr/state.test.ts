@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event as NostrEvent } from 'nostr-tools';
-import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement } from './state';
+import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement, parseZapMarker } from './state';
 import type { ServerMsg } from './wire';
 
 const NOW = 1_800_000_000;
@@ -216,5 +216,31 @@ describe('the zap bot', () => {
     s.ingestMessage(msg(alice, 'g', 'I sent 5 sats to bob'));
     expect((out.find((x) => x.t === 'msg') as Extract<ServerMsg, { t: 'msg' }>).msg.zapNote).toBeUndefined();
     expect(out.some((x) => x.t === 'zap')).toBe(false);
+  });
+});
+
+describe('zaps sent from Obelisk (the ⚡ marker)', () => {
+  const A = getPublicKey(alice), B = getPublicKey(bob);
+  it('reads the recipient, the message and the amount (msat, or from the invoice)', () => {
+    const m = 'd'.repeat(64);
+    expect(parseZapMarker([['e', m], ['p', B], ['h', 'g'], ['amount', '21000', 'msat']], '⚡')).toEqual({ target: B, targetId: m, sats: 21 });
+    expect(parseZapMarker([['p', B], ['amount', '5', 'sat']], '⚡')).toEqual({ target: B, targetId: null, sats: 5 });
+    expect(parseZapMarker([['p', B], ['amount', '21000']], '+')).toBeNull();
+    expect(parseZapMarker([['p', B]], '⚡')).toBeNull();
+  });
+
+  it('flies as a zap from the zapper, not as a ⚡ reaction, and counts once with its receipt', () => {
+    const { s, out } = setup();
+    s.ingestGroupMeta(meta('g'));
+    const target = msg(bob, 'g', 'gm');
+    s.ingestMessage(target);
+    s.ingestReaction(ev(alice, 7, [['e', target.id], ['p', B], ['h', 'g'], ['amount', '21000', 'msat'], ['bolt11', 'lnbc210n1x']], '⚡'));
+    const zaps = out.filter((x) => x.t === 'zap') as Extract<ServerMsg, { t: 'zap' }>[];
+    expect(zaps).toHaveLength(1);
+    expect(zaps[0].zap).toMatchObject({ from: A, target: B, targetId: target.id, groupId: 'g', sats: 21 });
+    expect(out.some((x) => x.t === 'reaction')).toBe(false);
+    // The NIP-57 receipt for the same payment adds nothing.
+    s.ingestZap(ev(relayKey, 9735, [['e', target.id], ['p', B], ['bolt11', 'lnbc210n1x'], ['description', JSON.stringify({ kind: 9734, pubkey: A })]]));
+    expect(out.filter((x) => x.t === 'zap')).toHaveLength(1);
   });
 });

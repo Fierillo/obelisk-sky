@@ -67,6 +67,13 @@ export class PlayerController {
   private prevPos: Vec2 | null = null;
   /** Current keyboard speed and direction (eases toward the input). */
   private spd = 0;
+
+  /** Stop dead, no coast (an emote starts where you stand). */
+  stopNow(): void {
+    this.path = [];
+    this.spd = 0;
+    this.moving = false;
+  }
   private dir: Vec2 = { x: 0, z: 0 };
 
   get airborne(): boolean {

@@ -7,12 +7,14 @@
 //   GET /app               the village (dist/client/app/index.html); old /?relay= links redirect here
 //   GET /healthz           JSON status
 //   GET /api/link-preview  OpenGraph unfurl for chat links (server/linkPreview.ts)
+//   GET /api/avatar        a profile picture whose host sends no CORS (server/avatarProxy.ts)
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { existsSync, statSync, createReadStream } from 'node:fs';
 import { join, normalize, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleLinkPreview } from './linkPreview';
+import { handleAvatar } from './avatarProxy';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT || 3024);
@@ -34,6 +36,10 @@ const MIME: Record<string, string> = {
   '.stl': 'model/stl',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
 };
 
 // The model loader reads textures embedded in .glb files through blob: URLs
@@ -99,6 +105,10 @@ const server = createServer((req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
   if (url.pathname === '/api/link-preview') {
     handleLinkPreview(req, res, url).catch(() => { if (!res.headersSent) res.writeHead(500).end(); });
+    return;
+  }
+  if (url.pathname === '/api/avatar') {
+    handleAvatar(req, res, url).catch(() => { if (!res.headersSent) res.writeHead(500).end(); });
     return;
   }
   const to = redirectFor(url.pathname, url.search);

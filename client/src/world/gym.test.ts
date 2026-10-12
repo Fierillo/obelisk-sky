@@ -76,4 +76,21 @@ describe('the gym never closes', () => {
     expect(strips).toHaveLength(2);
     for (const s of strips) expect(Math.abs(s.position.z)).toBeLessThan(1);
   });
+  it('keeps its glass door out of the merge, so it still slides open', async () => {
+    const THREE = await import('three');
+    const { findDynamic, mergeStatic } = await import('./merge');
+    const slot = { index: 0, pos: { x: 0, z: 0 }, rot: 0, w: 2, d: 2, door: { x: 0, z: 1.2 }, yard: { x: 0, z: 2 } };
+    const gb = buildGym(slot, 0x334455);
+    // As world.ts builds it.
+    const moving = findDynamic(gb.group, (mark) => {
+      gb.interior.setDoor(1); mark(); gb.interior.setInside(true); mark(); gb.interior.setInside(false); gb.interior.setDoor(0);
+    });
+    mergeStatic(gb.group, (m) => moving.has(m) || m.name === 'roof' || gb.windows.includes(m));
+    const all = () => { const out: InstanceType<typeof THREE.Mesh>[] = []; gb.group.traverse((o) => { if ((o as InstanceType<typeof THREE.Mesh>).isMesh) out.push(o as InstanceType<typeof THREE.Mesh>); }); return out; };
+    gb.group.updateMatrixWorld(true);
+    const at = new Map(all().map((m) => [m, m.matrixWorld.elements.slice()]));
+    gb.interior.setDoor(1);
+    gb.group.updateMatrixWorld(true);
+    expect(all().some((m) => at.get(m)?.some((x, i) => Math.abs(x - m.matrixWorld.elements[i]) > 1e-6))).toBe(true);
+  });
 });

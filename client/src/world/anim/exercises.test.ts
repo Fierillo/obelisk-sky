@@ -165,3 +165,61 @@ describe('the lotus pose', () => {
     }
   });
 });
+
+describe('jumping jacks', () => {
+  const pos = (o: THREE.Object3D, n: string) => o.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+  const sole = (f: THREE.Object3D) => Math.min(y(f, 'foot_l'), y(f, 'foot_r'), y(f, 'ball_l'), y(f, 'ball_r'));
+  it('opens feet apart with the hands overhead, closes with them down, and hops between', () => {
+    const clip = buildExerciseClip('jacks', figure(), 0);
+    const closed = poseAt(clip, 0), open = poseAt(clip, 0.43), hop = poseAt(clip, 0.18);
+    const feetApart = (f: THREE.Object3D) => pos(f, 'foot_l').x - pos(f, 'foot_r').x;
+    expect(feetApart(open)).toBeGreaterThan(feetApart(closed) + 0.3);
+    expect(y(open, 'hand_l')).toBeGreaterThan(y(open, 'Head'));
+    expect(y(open, 'hand_r')).toBeGreaterThan(y(open, 'Head'));
+    expect(y(closed, 'hand_l')).toBeLessThan(y(closed, 'pelvis'));
+    // On the ground at both ends, in the air between.
+    expect(Math.abs(sole(closed))).toBeLessThan(0.02);
+    expect(Math.abs(sole(open))).toBeLessThan(0.02);
+    expect(sole(hop)).toBeGreaterThan(0.05);
+  });
+});
+
+describe('the groove', () => {
+  const pos = (o: THREE.Object3D, n: string) => o.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+  const sole = (f: THREE.Object3D) => Math.min(y(f, 'foot_l'), y(f, 'foot_r'), y(f, 'ball_l'), y(f, 'ball_r'));
+  it('loops two bars at 120 BPM, feet on the ground, pointing up left then right', () => {
+    const clip = buildExerciseClip('groove', figure(), 0);
+    expect(clip.duration).toBe(4);
+    for (const t of [0, 0.5, 1, 1.5, 2, 3.5]) expect(Math.abs(sole(poseAt(clip, t)))).toBeLessThan(0.05);
+    const left = poseAt(clip, 0.5), right = poseAt(clip, 1.5);
+    expect(y(left, 'hand_l')).toBeGreaterThan(y(left, 'Head'));
+    expect(y(left, 'hand_r')).toBeLessThan(y(left, 'pelvis') + 0.3);
+    expect(y(right, 'hand_r')).toBeGreaterThan(y(right, 'Head'));
+    // The hips sway to the side that points.
+    expect(pos(left, 'pelvis').x).toBeGreaterThan(pos(right, 'pelvis').x);
+    // Raise the roof: both hands up.
+    const roof = poseAt(clip, 2);
+    expect(Math.min(y(roof, 'hand_l'), y(roof, 'hand_r'))).toBeGreaterThan(y(roof, 'Head'));
+  });
+});
+
+describe('Sangreee...', () => {
+  const pos = (o: THREE.Object3D, n: string) => o.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+  const sole = (f: THREE.Object3D) => Math.min(y(f, 'foot_l'), y(f, 'foot_r'), y(f, 'ball_l'), y(f, 'ball_r'));
+  it('lasts as long as its sound: fists low, then both arms up in a V, feet on the ground', () => {
+    const clip = buildExerciseClip('sangre', figure(), 0);
+    expect(clip.duration).toBe(7);
+    const low = poseAt(clip, 0.2);
+    expect(y(low, 'hand_l')).toBeLessThan(y(low, 'Head') - 0.3);
+    for (const t of [1, 2.1, 3.3, 5.8]) {
+      const f = poseAt(clip, t);
+      expect(Math.abs(sole(f))).toBeLessThan(0.05);
+      expect(Math.min(y(f, 'hand_l'), y(f, 'hand_r'))).toBeGreaterThan(y(f, 'Head'));
+      // A V: each hand well out to its own side.
+      expect(pos(f, 'hand_l').x).toBeGreaterThan(0.4);
+      expect(pos(f, 'hand_r').x).toBeLessThan(-0.4);
+    }
+    // It trembles up there.
+    expect(pos(poseAt(clip, 2.05), 'hand_l').distanceTo(pos(poseAt(clip, 2.3), 'hand_l'))).toBeGreaterThan(0.01);
+  });
+});

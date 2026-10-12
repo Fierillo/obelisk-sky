@@ -5,10 +5,11 @@ import * as THREE from 'three';
 import { shortNpub } from '../nostr/sanitize';
 import type { WireGroup, WireMessage, WireProfile } from '../nostr/wire';
 import { renderContent } from '../ui/content';
+import { pingReason } from '../nostr/pings';
 import { model } from './assets';
 import { buildBuilding, tierFor, type Building } from './buildings';
 import { Cameraman } from './cameraman';
-import { Character, pubkeyColor, CHAR_HEIGHT, PERSON_SCALE, SIT_SEAT_HEIGHT, registerClip } from './character';
+import { Character, pubkeyColor, CHAR_HEIGHT, PERSON_SCALE, SIT_SEAT_HEIGHT, registerClip, setBadgeResolution } from './character';
 import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises';
 import { buildPerson, skinTone } from '../people/people';
 import { FpHands } from './fpHands';
@@ -19,7 +20,7 @@ import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bri
 import {
   assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
-  millSite, type MillSite, turnedHalf,
+  millSite, type MillSite, turnedHalf, bridgePoints, parkSite,
 } from './layout';
 import { fbm2 } from './noise';
 import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
@@ -43,7 +44,7 @@ import { PropBatch } from './props';
 import { Sky, type TimeOverride } from './sky';
 import type { Prefs } from '../prefs';
 import { arcPoint, coinCount, flightTime, zapAssets } from './zapFlight';
-import { emoteOf, lotusClipName, type EmoteKind } from './emotes';
+import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } from './emotes';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
 const PAVING_TOP = 0.03, COBBLE_TOP = 0.02, FLOOR_TOP = 0.006;
@@ -222,6 +223,7 @@ export class World {
       const want = grassFor(this.grassPref, level);
       if (this.built && Math.abs((this.grass?.count ?? 0) - want) > 500) this.buildGrass(want);
       this.grassWanted = want;
+      setBadgeResolution(level === 'high' || level === 'ultra' ? 256 : 128);
     };
     this.overlay = new Overlay(overlayEl, this.camera);
     this.plan = planIsland();
@@ -306,8 +308,8 @@ export class World {
       const b = gym ? buildGym(slot, buildBuilding(g, slot, tier, district).roofColor) : buildBuilding(g, slot, tier, district);
       if (gym) {
         const gb = b as GymBuild;
-        const moving = findDynamic(gb.group, () => {
-          gb.interior.setDoor(1); gb.interior.setInside(true); gb.interior.setInside(false); gb.interior.setDoor(0);
+        const moving = findDynamic(gb.group, (mark) => {
+          gb.interior.setDoor(1); mark(); gb.interior.setInside(true); mark(); gb.interior.setInside(false); gb.interior.setDoor(0);
         });
         this.meshesMerged += mergeStatic(gb.group, (m) => moving.has(m) || m.name === 'roof' || gb.windows.includes(m));
         this.setGym(gb, g.id, slot);
@@ -498,10 +500,7 @@ export class World {
     const plan = this.plan;
 
     // Bridges where the paths will cross the river.
-    const rp = this.island.riverPts;
-    const pondIdx = rp.reduce((best, p, i) => (dist(p, plan.pond.c) < dist(rp[best], plan.pond.c) ? i : best), 0);
-    const bridgeIdx = [Math.floor(pondIdx * 0.45), Math.floor(pondIdx + (rp.length - pondIdx) * 0.45)];
-    this.bridges = bridgeIdx.map((i) => rp[i]);
+    this.bridges = bridgePoints(this.island.riverPts, plan.pond.c);
     // Arched footbridges: their deck is raised ground (groundAt).
     this.bridgeSpecs = bridgeSpecs(plan, this.bridges);
     for (const b of this.bridgeSpecs) this.staticRoot.add(buildBridge(b));
@@ -627,13 +626,13 @@ export class World {
       b.group.position.set(s.pos.x + fwd.x * d.forward, 0, s.pos.z + fwd.z * d.forward);
       b.group.rotation.y = s.rot;
       // Fewer draw calls: merge what never moves (see findDynamic).
-      const moving = findDynamic(b.group, () => {
-        for (const t of [0.4, 2.9, 7.3, 13.1]) b.update?.(0.016, t);
-        b.setNight(1, 1);
-        b.interior?.setDoor(1);
-        b.interior?.setInside(true);
-        b.pulse?.();
-        b.update?.(0.5, 17);
+      const moving = findDynamic(b.group, (mark) => {
+        for (const t of [0.4, 2.9, 7.3, 13.1]) { b.update?.(0.016, t); mark(); }
+        b.setNight(1, 1); mark();
+        b.interior?.setDoor(1); mark();
+        b.interior?.setInside(true); mark();
+        b.pulse?.(); mark();
+        b.update?.(0.5, 17); mark();
         b.interior?.setInside(false);
         b.interior?.setDoor(0);
         b.setNight(0, 1);
@@ -839,23 +838,9 @@ export class World {
   private buildSportsGround(): void {
     if (!this.track) return;
     this.staticRoot.add(buildTrack(this.track));
-    // The park goes beside or past the end of the track, wherever no
-    // building slot (used now or later) and no water is in the way.
+    // The park goes beside or past the end of the track (layout.ts parkSite).
     const t = this.track;
-    const tan = { x: Math.cos(t.rot), z: Math.sin(t.rot) };
-    const nrm = { x: -Math.sin(t.rot), z: Math.cos(t.rot) };
-    const candidates = [
-      { x: t.c.x + tan.x * 5.4, z: t.c.z + tan.z * 5.4 },
-      { x: t.c.x - tan.x * 5.4, z: t.c.z - tan.z * 5.4 },
-      { x: t.c.x + nrm.x * 3.2, z: t.c.z + nrm.z * 3.2 },
-      { x: t.c.x - nrm.x * 3.2, z: t.c.z - nrm.z * 3.2 },
-    ];
-    const clearance = (p: Vec2) => Math.min(
-      ...this.plan.slots.filter((sl) => !onTrack(sl.pos, t, sl.w * 0.7 + 0.6)).map((sl) => dist(p, sl.pos) - sl.w * 0.75),
-      distToPolyline(p, this.island.riverPts) - 1,
-      this.plan.radiusAt(Math.atan2(p.z, p.x)) - Math.hypot(p.x, p.z) - 1.2,
-    );
-    const parkAt = candidates.reduce((best, p) => (clearance(p) > clearance(best) ? p : best));
+    const parkAt = parkSite(this.plan, t, this.island.riverPts);
     const park = buildCalisthenics(parkAt, -t.rot);
     this.staticRoot.add(park);
     this.blockAround(parkAt, 0.9);
@@ -1667,10 +1652,12 @@ export class World {
       accent: pubkeyColor(pk),
       seconds,
       reply: to ? this.nameOf(to) : null,
-      render: (el) => renderContent(el, msg.content ?? text, { nameOf: (p) => this.nameOf(p), images: msg.images, emojis: msg.emojis }),
+      render: (el) => renderContent(el, msg.content ?? text, { nameOf: (p) => this.nameOf(p), images: msg.images, emojis: msg.emojis, onMention: (p) => this.hooks.onPersonClick?.(p) }),
       headerOf: () => `${this.nameOf(pk)} · ${g?.name ?? ''}`.toUpperCase(),
       replyOf: () => (to ? this.nameOf(to) : null),
       onClick: () => this.hooks.onBubbleClick?.(msg.id),
+      // For you (a reply or your name in it): it stands out.
+      ping: !!this.playerPk && pingReason(msg, this.playerPk) !== null,
     });
     const pts = [c.root.position.clone()];
     const partner = to ? this.people.get(to) : null;
@@ -2223,24 +2210,57 @@ export class World {
 
   /** Play an emote where they stand (emotes.ts), or stop it (null).
    *  Not while seated or training. Returns whether it's playing. */
-  setEmote(pk: string, kind: EmoteKind | null): boolean {
+  setEmote(pk: string, kind: EmoteKind | null, since = Date.now()): boolean {
     const c = this.people.get(pk);
     if (!c) return false;
     const e = emoteOf(kind);
     if (!e || this.seatOf.has(pk) || this.trainingAt.has(pk) || c.exercise) { c.setEmote(null); return false; }
     let { lower, upper } = e;
-    if (e.kind === 'lotus') {
-      // Built for this body's skeleton, once.
-      lower = upper = lotusClipName(c.look.body);
+    if (e.built) {
+      // Built for this body's skeleton, once (push-ups on the floor: grip 0).
+      lower = upper = builtClipName(e.built, c.look.body);
       if (!this.builtClips.has(lower)) {
         const model = buildPerson(c.look)?.root;
         if (!model) return false;
-        registerClip(buildExerciseClip('lotus', model, 0, lower));
+        registerClip(buildExerciseClip(e.built, model, 0, lower));
         this.builtClips.add(lower);
       }
     }
-    c.setEmote({ kind: e.kind, lower, upper, grounded: e.grounded, seconds: e.seconds });
+    // In step with the others (emotes.ts sync): the grid, or whoever near began first.
+    const near: (number | null)[] = [];
+    if (e.sync === 'leader') for (const o of this.people.values()) if (o !== c && o.emote?.kind === e.kind && dist(o.pos, c.pos) <= EMOTE_SYNC_M) near.push(o.emoteAnchor);
+    c.setEmote({ kind: e.kind, lower, upper, grounded: e.grounded, seconds: e.seconds, since, anchor: emoteAnchor(e, since, near) });
     return true;
+  }
+
+  /** When someone's emote began (wall clock, ms), if they're playing one. */
+  emoteSinceOf(pk: string): number | null {
+    const c = this.people.get(pk);
+    return c?.emote ? c.emoteSince : null;
+  }
+
+  /** Everyone playing an emote, where, and since when (audio/emoteMusic.ts picks the music). */
+  dancers(): { pk: string; x: number; z: number; kind: EmoteKind; since: number; anchor: number | null }[] {
+    const out: { pk: string; x: number; z: number; kind: EmoteKind; since: number; anchor: number | null }[] = [];
+    for (const c of this.people.values()) {
+      if (!c.emote || c.opacity < 0.5) continue;
+      out.push({ pk: c.pk, x: c.pos.x, z: c.pos.z, kind: c.emote.kind as EmoteKind, since: c.emoteSince, anchor: c.emoteAnchor });
+    }
+    return out;
+  }
+
+  /** Where places with music are (audio/placeMusic.ts): the parrilla, and every campfire (the logs by the pond, each voice tree's). */
+  musicPlaces(): { kind: 'parrilla' | 'campfire'; x: number; z: number }[] {
+    const out: { kind: 'parrilla' | 'campfire'; x: number; z: number }[] = [{ kind: 'campfire', x: this.plan.campfire.x, z: this.plan.campfire.z }];
+    const grill = this.landmarkSlots.get('parrilla');
+    if (grill) out.push({ kind: 'parrilla', x: grill.pos.x, z: grill.pos.z });
+    const p = new THREE.Vector3();
+    for (const b of this.buildings.values()) {
+      if (!b.tree) continue;
+      b.tree.fire.group.getWorldPosition(p);
+      out.push({ kind: 'campfire', x: p.x, z: p.z });
+    }
+    return out;
   }
 
   /** The emote someone is playing, if any. */
@@ -2413,6 +2433,7 @@ export class World {
     if (!s) return null;
     if (s.type === 'station') return this.stations[s.index] ?? null;
     if (s.type === 'lane') return this.lanes[s.index] ?? null;
+    if (s.type === 'here') return null;
     let best: Seat | null = null, bd = 0.5;
     for (const seat of this.seats) {
       if (seatSpotId(seat.pos) === id) return seat;
@@ -2434,7 +2455,8 @@ export class World {
    * to their own life.
    */
   syncClaims(list: Claim[]): void {
-    const next = new Map(list.filter((c) => c.pk !== this.playerPk && !this.residents.has(c.pk)).map((c) => [c.pk, c]));
+    // Emotes on the spot aren't a place to go: main.ts plays them as movement.
+    const next = new Map(list.filter((c) => c.pk !== this.playerPk && !this.residents.has(c.pk) && !c.kind.startsWith('emote:')).map((c) => [c.pk, c]));
     for (const pk of [...this.claims.keys()]) if (!next.has(pk)) this.releaseClaim(pk);
     for (const c of next.values()) {
       const cur = this.claims.get(c.pk);
@@ -2582,8 +2604,11 @@ export class World {
       else if (far && !path && this.insideWalkable(ch.pos)) path = [target];
       // Standing still with an emote: play it once they're there.
       const emote = m.moving ? null : m.emote ?? null;
-      if (path) { ch.walk(path, m.run, () => this.setEmote(pk, emote)); if (!m.moving) ch.setEmote(null); }
-      else { ch.halt(); if (ch.emote?.kind !== emote) this.setEmote(pk, emote); }
+      // Standing, they face where they face over there (and look up or down).
+      const settle = () => { if (!m.moving && m.yaw !== undefined) ch.face(m.yaw); this.setEmote(pk, emote, m.emoteSince); };
+      ch.lookPitch = m.pitch ?? 0;
+      if (path) { ch.walk(path, m.run, settle); if (!m.moving) ch.setEmote(null); }
+      else { ch.halt(); if (!m.moving && m.yaw !== undefined) ch.face(m.yaw); if (ch.emote?.kind !== emote) this.setEmote(pk, emote, m.emoteSince); }
     };
     if (c.opacity < 0.5 && c.targetOpacity === 1) { go(); return; }
     if (dist(c.pos, now) > MOVER_BLINK_M) this.blink(c, now, go);
@@ -2598,7 +2623,7 @@ export class World {
       if (until > this.elapsed) continue;
       this.movers.delete(pk);
       const c = this.people.get(pk);
-      if (c) { c.pace = null; c.idleFor = 0; }
+      if (c) { c.pace = null; c.idleFor = 0; c.lookPitch = 0; }
       if (this.claims.get(pk)?.place) continue;
       const spawned = this.claimSpawned.delete(pk);
       if (this.despawnLater.delete(pk) || spawned) this.despawn(pk);
@@ -2666,10 +2691,12 @@ export class World {
   }
 
   private setBodyDrawn(c: Character, drawn: boolean): void {
+    c.bodyDrawn = drawn;
     c.body.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
       if (!m) return;
-      for (const mat of Array.isArray(m) ? m : [m]) { mat.colorWrite = drawn; mat.depthWrite = drawn; }
+      // Materials props share between bodies (sangre.ts) are hidden by Character instead.
+      for (const mat of Array.isArray(m) ? m : [m]) if (!mat.userData.shared) { mat.colorWrite = drawn; mat.depthWrite = drawn; }
     });
   }
 

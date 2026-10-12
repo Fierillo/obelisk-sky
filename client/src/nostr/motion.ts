@@ -48,7 +48,16 @@ export interface Motion {
   jump?: boolean;
   /** Standing still and playing an emote (content `e`, world/emotes.ts). */
   emote?: EmoteKind;
+  /** When that emote began (content `es`, the sender's wall clock, ms): everyone plays it from the same beat. */
+  emoteSince?: number;
+  /** Which way the body faces (content `y`, radians, atan2(dx, dz)): standing still, it's all the others have. */
+  yaw?: number;
+  /** Looking up (+) or down (−) in first person (content `lp`, radians, at most ±LOOK_PITCH_MAX). */
+  pitch?: number;
 }
+
+/** The furthest a head tilts up or down for a remote look (radians). */
+export const LOOK_PITCH_MAX = 0.6;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const finite = (v: unknown, lim = 1000): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= lim;
@@ -60,9 +69,14 @@ export function motionTemplate(m: Motion, at = Math.floor(m.t / 1000)): EventTem
   if (m.moving) c.mv = 1;
   if (m.run) c.run = 1;
   if (m.jump) c.j = 1;
-  if (!m.moving && m.emote) c.e = m.emote;
+  if (!m.moving && m.emote) {
+    c.e = m.emote;
+    if (m.emoteSince) c.es = Math.round(m.emoteSince);
+  }
   if (m.moving && m.dest) c.d = [r2(m.dest.x), r2(m.dest.z)];
   else if (m.moving && m.heading !== null) c.h = Math.round(m.heading * 1000) / 1000;
+  if (m.yaw !== undefined) c.y = r2(m.yaw);
+  if (m.pitch !== undefined && Math.abs(m.pitch) >= 0.05) c.lp = r2(Math.max(-LOOK_PITCH_MAX, Math.min(LOOK_PITCH_MAX, m.pitch)));
   return {
     kind: KIND_SKY_MOTION,
     created_at: at,
@@ -84,7 +98,14 @@ export function parseMotion(ev: NostrEvent): (Motion & { pk: string }) | null {
   const heading = moving && !dest && finite(j.h, 10) ? j.h : null;
   const isMoving = moving && (!!dest || heading !== null);
   const emote = !isMoving && typeof j.e === 'string' && EMOTE_KINDS.has(j.e) ? (j.e as EmoteKind) : undefined;
-  return { pk: ev.pubkey, t: j.t, p, moving: isMoving, run: j.run === 1, dest, heading, jump: j.j === 1, ...(emote ? { emote } : {}) };
+  // A start in the future (a clock ahead) is clamped to the event's own time.
+  const emoteSince = emote && finite(j.es, 1e14) && j.es > 0 ? Math.min(j.es, j.t) : undefined;
+  const yaw = finite(j.y, 10) ? j.y : undefined;
+  const pitch = finite(j.lp, LOOK_PITCH_MAX) ? j.lp : undefined;
+  return {
+    pk: ev.pubkey, t: j.t, p, moving: isMoving, run: j.run === 1, dest, heading, jump: j.j === 1,
+    ...(emote ? { emote } : {}), ...(emoteSince ? { emoteSince } : {}), ...(yaw !== undefined ? { yaw } : {}), ...(pitch !== undefined ? { pitch } : {}),
+  };
 }
 
 /** Where someone walking by keys should be `seconds` after their event. */
@@ -149,7 +170,13 @@ export class MotionStore {
 }
 
 /** The viewer's movement this frame, as the controller sees it. */
-export interface PlayerMotionState { p: Vec2; moving: boolean; run: boolean; dest: Vec2 | null; heading: number; jumped?: boolean; emote?: EmoteKind | null }
+export interface PlayerMotionState {
+  p: Vec2; moving: boolean; run: boolean; dest: Vec2 | null; heading: number; jumped?: boolean; emote?: EmoteKind | null;
+  /** When the emote began (wall clock, ms). */
+  emoteSince?: number | null;
+  /** Where the body faces (radians) and, in first person, how far the eyes look up or down. */
+  yaw?: number; pitch?: number;
+}
 
 /** A jump goes out at once, but never closer than this to the last event (ms). */
 export const JUMP_GAP_MS = 400;
@@ -162,6 +189,7 @@ export class MotionBeacon {
   private lastSig = '';
   private lastSent = -Infinity;
   private backoff = 1;
+  private lastEmote: EmoteKind | null = null;
 
   update(s: PlayerMotionState, nowMs: number): Motion | null {
     const sig = signature(s);
@@ -172,11 +200,21 @@ export class MotionBeacon {
       this.lastSent = nowMs;
       return { ...snapshot(s, nowMs), jump: true };
     }
+    // Starting or ending an emote goes out at the normal pace even while
+    // backing off: a nod lasts 2.4 s and would otherwise come and go unseen.
+    const emote = s.moving ? null : s.emote ?? null;
+    if (emote !== this.lastEmote && since >= MIN_GAP_MS) {
+      this.lastEmote = emote;
+      this.lastSig = sig;
+      this.lastSent = nowMs;
+      return snapshot(s, nowMs);
+    }
     if (since < MIN_GAP_MS * this.backoff) return null;
     const due = sig !== this.lastSig
       || (s.moving && since >= (s.dest ? PATH_CORRECTION_MS : KEYS_CORRECTION_MS) * this.backoff)
       || since >= IDLE_HEARTBEAT_MS;
     if (!due) return null;
+    this.lastEmote = emote;
     this.lastSig = sig;
     this.lastSent = nowMs;
     return snapshot(s, nowMs);
@@ -200,18 +238,36 @@ export class MotionBeacon {
     this.lastSig = '';
     this.lastSent = -Infinity;
     this.backoff = 1;
+    this.lastEmote = null;
   }
 }
 
 function snapshot(s: PlayerMotionState, nowMs: number): Motion {
   const m: Motion = { t: nowMs, p: { ...s.p }, moving: s.moving, run: s.moving && s.run, dest: s.moving && s.dest ? { ...s.dest } : null, heading: s.moving && !s.dest ? s.heading : null };
-  if (!s.moving && s.emote) m.emote = s.emote;
+  if (!s.moving && s.emote) {
+    m.emote = s.emote;
+    if (s.emoteSince) m.emoteSince = s.emoteSince;
+  }
+  if (s.yaw !== undefined && Number.isFinite(s.yaw)) m.yaw = s.yaw;
+  if (s.pitch !== undefined && Number.isFinite(s.pitch)) m.pitch = s.pitch;
   return m;
 }
 
-/** What counts as a change worth sending: start/stop, a new click, running, a turn of more than ~22°, an emote. */
+/** Steps of facing and look that count as a turn worth sending while standing. */
+const YAW_STEP = Math.PI / 6;
+const PITCH_STEP = 0.25;
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/**
+ * What counts as a change worth sending: start/stop, a new click, running, a
+ * turn of more than ~22°, an emote, and standing still: turning round (30°
+ * steps) or looking up and down.
+ */
 function signature(s: PlayerMotionState): string {
-  if (!s.moving) return s.emote ? `idle:${s.emote}` : 'idle';
+  if (!s.moving) {
+    const look = s.yaw !== undefined ? `:${Math.round(wrap(s.yaw) / YAW_STEP) % 12}:${Math.round((s.pitch ?? 0) / PITCH_STEP)}` : '';
+    return `${s.emote ? `idle:${s.emote}` : 'idle'}${look}`;
+  }
   if (s.dest) return `d:${Math.round(s.dest.x * 2)}:${Math.round(s.dest.z * 2)}:${s.run ? 1 : 0}`;
   return `h:${Math.round(s.heading / (Math.PI / 8))}:${s.run ? 1 : 0}`;
 }

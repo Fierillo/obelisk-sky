@@ -1,8 +1,11 @@
 // The emote menu: dance, the lotus pose, a nod… Opens from the bottom bar or
-// with G; while it's open, 1–6 pick. Picking the emote you're already doing
+// with G; while it's open, 1–9 and 0 (the tenth) pick. Picking the emote you're already doing
 // stops it. What an emote does is world/emotes.ts.
 
 import { EMOTES, type EmoteKind } from '../world/emotes';
+
+/** The number key for the `i`th emote: 1–9, then 0; none past ten. */
+const keyOf = (i: number): string => (i < 9 ? String(i + 1) : i === 9 ? '0' : '');
 
 export class EmoteMenu {
   readonly el: HTMLDivElement;
@@ -20,11 +23,11 @@ export class EmoteMenu {
       b.className = 'emote-btn';
       b.setAttribute('role', 'menuitem');
       b.dataset.kind = e.kind;
-      b.title = `${e.label} (${i + 1})`;
+      b.title = `${e.label} (${keyOf(i)})`;
       b.innerHTML = `<span class="emote-icon" aria-hidden="true"></span><span class="emote-label"></span><kbd></kbd>`;
       (b.querySelector('.emote-icon') as HTMLElement).textContent = e.icon;
       (b.querySelector('.emote-label') as HTMLElement).textContent = e.label;
-      (b.querySelector('kbd') as HTMLElement).textContent = String(i + 1);
+      (b.querySelector('kbd') as HTMLElement).textContent = keyOf(i);
       b.addEventListener('click', () => this.choose(e.kind));
       this.buttons.set(e.kind, b);
       this.el.append(b);
@@ -41,12 +44,12 @@ export class EmoteMenu {
     if (open) this.render();
   }
 
-  /** A key while open: 1–6 pick, Escape closes. Returns true when it was handled. */
+  /** A key while open: 1–9 and 0 pick, Escape closes. Returns true when it was handled. */
   key(k: string): boolean {
     if (!this.open) return false;
     if (k === 'Escape') { this.toggle(false); return true; }
-    const n = Number(k);
-    if (Number.isInteger(n) && n >= 1 && n <= EMOTES.length) { this.choose(EMOTES[n - 1].kind); return true; }
+    const i = k ? EMOTES.findIndex((_, j) => keyOf(j) === k) : -1;
+    if (i >= 0) { this.choose(EMOTES[i].kind); return true; }
     return false;
   }
 

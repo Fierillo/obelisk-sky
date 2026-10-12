@@ -19,3 +19,13 @@ describe('changing MSAA between quality levels', () => {
     expect(disposed).toBe(4);
   });
 });
+
+describe('the toy-town blur', () => {
+  it('samples densely enough that a bright point blurs smooth, not into a grid of dots', async () => {
+    const { TILT_MAX_RADIUS, TILT_STEP, TILT_TAPS } = await import('./post');
+    // Neighbouring taps, at the strongest blur, in texels.
+    expect(TILT_MAX_RADIUS * TILT_STEP).toBeLessThanOrEqual(3);
+    // And the kernel still reaches about as far as before (±10 texels).
+    expect(TILT_MAX_RADIUS * TILT_STEP * TILT_TAPS).toBeGreaterThan(10);
+  });
+});

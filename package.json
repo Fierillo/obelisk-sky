@@ -21,6 +21,7 @@
     "@nostr-wot/relay": "^0.2.1",
     "@nostr-wot/signers": "^1.2.2",
     "@nostr-wot/ui": "^0.8.2",
+    "@nostr-wot/wallet": "^0.4.3",
     "buffer": "^6.0.3",
     "events": "^3.3.0",
     "mediasoup-client": "^3.24.5",

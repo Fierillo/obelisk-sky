@@ -31,6 +31,8 @@ export interface ChatPanelDeps {
   /** A mention chip in a message was clicked. */
   onProfile?: (pubkey: string) => void;
   newGame?: (groupId: string) => void;
+  /** `/zap …` in this channel: open the zap sheet, or say why not. */
+  zap?: (groupId: string, command: string, replyTo: { id: string; pubkey: string } | null) => string | null;
   /** Everyone the @-picker may offer (the relay's members, posters, people in the village). */
   people?: (groupId: string) => MentionPerson[];
   /** The group relay (bots advertise their commands per relay). */
@@ -144,6 +146,12 @@ export class ChatPanel {
   private composerLoading = false;
   private focusWhenLoaded = false;
 
+  /** Fetch the message bar and renderer ahead of time (after the village is up), so opening a chat is instant. */
+  preload(): void {
+    void import('../chat/messageBody').catch(() => {});
+    void import('../chat/composer/mount').catch(() => {});
+  }
+
   private loadComposer(): void {
     if (this.composer || this.composerLoading) return;
     this.composerLoading = true;
@@ -174,6 +182,8 @@ export class ChatPanel {
       },
       onSend: (text, tags, to) => this.submit(g, text, tags, to && reply && to.id === reply.id ? reply : null),
       onNewGame: () => this.deps.newGame?.(g.id),
+      // null is "opened": only a missing handler is an error.
+      onZap: (command, to) => (this.deps.zap ? this.deps.zap(g.id, command, to) : 'Zaps aren’t available here.'),
       people: () => this.deps.people?.(g.id) ?? [],
     });
   }

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LoadingScreen, STAGES, islandMap, mapViewBox, stageAt } from './loading';
-import { planIsland, ISLAND_R } from '../world/layout';
+import { LoadingScreen, STAGES, islandMap, mapFeatures, mapViewBox, stageAt } from './loading';
+import { dist, distToPolyline, onTrack, planIsland, ISLAND_R } from '../world/layout';
+import { LANDMARKS } from '../world/landmarks';
 import { TOP_DOWN_MARGIN } from '../world/cameraman';
 
 describe('loading stages', () => {
@@ -31,6 +32,29 @@ describe('the map', () => {
     expect(svg.querySelectorAll('.lm-trees > *').length).toBeGreaterThan(10);
     expect(svg.querySelectorAll('.lm-houses > *').length).toBeGreaterThan(5);
     expect(svg.querySelectorAll('.lm-people > *').length).toBeGreaterThan(3);
+  });
+});
+
+describe('the map matches the village', () => {
+  const plan = planIsland();
+  const f = mapFeatures(plan);
+  it('marks every landmark in its own slot, and the track and park', () => {
+    expect(f.landmarks.map((l) => l.id).sort()).toEqual(LANDMARKS.map((d) => d.id).sort());
+    expect(f.track).not.toBeNull();
+    expect(f.park).not.toBeNull();
+    expect(f.bridges).toHaveLength(2);
+    const svg = islandMap(plan, f);
+    for (const id of LANDMARKS.map((d) => d.id)) expect(svg.querySelector(`.lm-${id}`), id).not.toBeNull();
+    for (const c of ['lm-track', 'lm-park', 'lm-bridge', 'lm-campfire']) expect(svg.querySelector(`.${c}`), c).not.toBeNull();
+  });
+  it('puts no house or tree on the river, the track or a landmark', () => {
+    const spots = [...f.houses, ...f.trees];
+    for (const p of spots) {
+      expect(distToPolyline(p, f.river)).toBeGreaterThan(plan.riverWidth * 0.5);
+      expect(onTrack(p, f.track!, 0.2)).toBe(false);
+    }
+    for (const h of f.houses) for (const l of f.landmarks) expect(dist(h, l.pos)).toBeGreaterThan(0.5);
+    expect(f.trees.length).toBeGreaterThan(20);
   });
 });
 

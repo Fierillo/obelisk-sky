@@ -14,6 +14,8 @@ import * as THREE from 'three';
 import { GRAVITY, JUMP_SPEED } from '../player/controller';
 import { buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, type PersonLook } from '../people/people';
 import { hashStr, type Vec2 } from './layout';
+import { SangreFx } from './sangre';
+import { clipPhase } from './emotes';
 
 export const CHAR_HEIGHT = 0.72;
 const SCALE = CHAR_HEIGHT / MODEL_HEIGHT;
@@ -73,6 +75,52 @@ export type Activity = 'idle' | 'walk' | 'run' | 'sit' | 'talk' | 'cheer' | 'hid
 
 const badgeCache = new Map<string, THREE.Texture>();
 
+/** Badge texture size: 256 on high and ultra (crisp at DPR 2), 128 below. */
+let badgeRes = 128;
+export function setBadgeResolution(px: number): void {
+  if (px === badgeRes) return;
+  badgeRes = px;
+  // Badges already drawn keep theirs; new ones are drawn at the new size.
+  badgeCache.clear();
+}
+
+/**
+ * A badge's cache key. The ring is the person's own colour (or the official
+ * mark), so two people with one picture don't share a texture.
+ */
+export function badgeCacheKey(pk: string, avatar: string, mark: string | null): string {
+  return `${avatar}|${mark ?? ''}|${pk}|${badgeRes}`;
+}
+
+/** Where a picture is asked for after its host refused CORS: sky's own server (server/avatarProxy.ts). */
+export function proxiedAvatar(url: string): string {
+  return `/api/avatar?url=${encodeURIComponent(url)}`;
+}
+
+/**
+ * Load a picture we can draw into WebGL: straight from its host when it sends
+ * CORS, else through the server. Null when neither works (the letter stays).
+ * One load per URL, shared by everyone wearing it.
+ */
+const pictures = new Map<string, Promise<HTMLImageElement | null>>();
+export function loadPicture(url: string): Promise<HTMLImageElement | null> {
+  let p = pictures.get(url);
+  if (!p) {
+    const one = (src: string) => new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.referrerPolicy = 'no-referrer';
+      img.decoding = 'async';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    p = one(url).then((img) => img ?? (/^https?:/i.test(url) ? one(proxiedAvatar(url)) : null));
+    pictures.set(url, p);
+  }
+  return p;
+}
+
 export function pubkeyColor(pk: string): string {
   const h = hashStr(pk) % 360;
   return `hsl(${h} 70% 58%)`;
@@ -80,8 +128,11 @@ export function pubkeyColor(pk: string): string {
 
 function drawBadge(pk: string, name: string, img: HTMLImageElement | null, mark: string | null = null): THREE.CanvasTexture {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = badgeRes;
   const g = c.getContext('2d')!;
+  // Drawn on a 128 grid, scaled to the texture size.
+  g.scale(badgeRes / 128, badgeRes / 128);
+  g.imageSmoothingQuality = 'high';
   g.beginPath();
   g.arc(64, 64, 60, 0, Math.PI * 2);
   g.fillStyle = '#fff';
@@ -91,8 +142,12 @@ function drawBadge(pk: string, name: string, img: HTMLImageElement | null, mark:
   g.arc(64, 64, 52, 0, Math.PI * 2);
   g.clip();
   if (img) {
-    const s = Math.min(img.width, img.height);
-    g.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 12, 12, 104, 104);
+    // The centre square; an SVG without a size of its own just fills the circle.
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (w > 0 && h > 0) {
+      const s = Math.min(w, h);
+      g.drawImage(img, (w - s) / 2, (h - s) / 2, s, s, 12, 12, 104, 104);
+    } else g.drawImage(img, 12, 12, 104, 104);
   } else {
     g.fillStyle = pubkeyColor(pk);
     g.fillRect(0, 0, 128, 128);
@@ -146,6 +201,8 @@ export class Character {
   private presenceMark: THREE.Sprite | null = null;
   private presenceNow: 'online' | 'afk' | 'offline' = 'offline';
   private badgeKey = '';
+  /** The body's fade (spawning, leaving): the badge follows it, dimmed further while AFK. */
+  private fade = 1;
   path: Vec2[] = [];
   running = false;
   activity: Activity = 'idle';
@@ -195,6 +252,20 @@ export class Character {
   /** An emote played while standing still (emotes.ts); moving ends it. */
   emote: { kind: string; lower: string; upper: string; grounded?: boolean } | null = null;
   private emoteLeft = Infinity;
+  /** When the current emote began (wall clock, ms; the sender's, for someone remote): the first dancer picks the music. */
+  emoteSince = 0;
+  /** The wall-clock time (ms) the emote's clip counts its rounds from, so every
+   *  screen plays it on the same beat (emotes.ts emoteAnchor); null: unsynced. */
+  emoteAnchor: number | null = null;
+  /** The "Sangreee..." emote's knives and blood (sangre.ts), while it plays. */
+  sangre: SangreFx | null = null;
+  /** Called as each foot comes down walking or running (main.ts: your footsteps). */
+  onStep: ((running: boolean) => void) | null = null;
+  /** Which foot is lowest while walking (a change is a step), and whether it's walking at all this frame. */
+  private lowFoot: 'l' | 'r' | null = null;
+  private striding = false;
+  /** False while first person hides this body (world.ts setBodyDrawn): its props hide too. */
+  bodyDrawn = true;
   /** Ground speed this frame, for picking and pacing the gait. */
   private speed = 0;
   private lastPos = new THREE.Vector3();
@@ -287,25 +358,21 @@ export class Character {
     const key = `${name}|${avatar ?? ''}|${this.mark ?? ''}`;
     if (key === this.badgeKey) return;
     this.badgeKey = key;
-    const cacheKey = avatar ? `${avatar}|${this.mark ?? ''}` : '';
+    const cacheKey = avatar ? badgeCacheKey(this.pk, avatar, this.mark) : '';
     const cached = avatar ? badgeCache.get(cacheKey) : undefined;
     const mat = this.badge.material;
     if (cached) { mat.map = cached; mat.needsUpdate = true; return; }
     mat.map = drawBadge(this.pk, name, null, this.mark);
     mat.needsUpdate = true;
     if (avatar) {
-      // Without CORS headers the picture would taint the WebGL canvas, so
-      // ask for it anonymously; a host that refuses keeps the initial badge.
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.referrerPolicy = 'no-referrer';
-      img.onload = () => {
-        const t = drawBadge(this.pk, name, img, this.mark);
+      void loadPicture(avatar).then((img) => {
+        // A newer name or picture came meanwhile: this one's stale.
+        if (!img || this.badgeKey !== key) return;
+        const t = badgeCache.get(cacheKey) ?? drawBadge(this.pk, name, img, this.mark);
         badgeCache.set(cacheKey, t);
         mat.map = t;
         mat.needsUpdate = true;
-      };
-      img.src = avatar;
+      });
     }
   }
 
@@ -377,6 +444,31 @@ export class Character {
     this.landFor = 0;
   }
 
+  /** Turn to face `yaw` (radians, atan2(dx, dz)), as a remote player standing still does. */
+  face(yaw: number): void {
+    this.facing = yaw;
+  }
+
+  /** Where a remote player looks up (+) or down (−), radians: the head tilts that way (eased). */
+  lookPitch = 0;
+  private lookNow = 0;
+  private lookQ = new THREE.Quaternion();
+  private lookQp = new THREE.Quaternion();
+  private lookAxis = new THREE.Vector3();
+
+  /** Tilt the head (after the clip has posed it) about the body's sideways axis. */
+  private tiltHead(dt: number): void {
+    this.lookNow = THREE.MathUtils.damp(this.lookNow, this.lookPitch, 8, dt);
+    if (Math.abs(this.lookNow) < 0.005) return;
+    const head = this.bones.get('Head');
+    if (!head?.parent) return;
+    head.parent.updateMatrixWorld(true);
+    const yaw = this.body.rotation.y;
+    // The body's right, in the head's parent frame; a positive turn about it tips the face down.
+    this.lookAxis.set(Math.cos(yaw), 0, -Math.sin(yaw)).applyQuaternion(head.parent.getWorldQuaternion(this.lookQp).invert()).normalize();
+    head.quaternion.premultiply(this.lookQ.setFromAxisAngle(this.lookAxis, -this.lookNow * 0.8));
+  }
+
   faceToward(p: Vec2): void {
     this.facing = Math.atan2(p.x - this.root.position.x, p.z - this.root.position.z);
   }
@@ -389,7 +481,11 @@ export class Character {
   }
 
   /** Start an emote (or stop it with null). `seconds`: it ends on its own. */
-  setEmote(e: { kind: string; lower: string; upper: string; grounded?: boolean; seconds?: number } | null): void {
+  setEmote(e: { kind: string; lower: string; upper: string; grounded?: boolean; seconds?: number; since?: number; anchor?: number | null } | null): void {
+    if (e && e.kind !== this.emote?.kind) {
+      this.emoteSince = e.since ?? Date.now();
+      this.emoteAnchor = e.anchor ?? null;
+    }
     this.emote = e ? { kind: e.kind, lower: e.lower, upper: e.upper, grounded: e.grounded } : null;
     this.emoteLeft = e?.seconds ?? Infinity;
     if (e) { this.idleFor = 0; this.talkingFor = 0; }
@@ -463,7 +559,8 @@ export class Character {
       m.transparent = o < 0.999;
       m.opacity = o;
     }
-    (this.badge.material as THREE.SpriteMaterial).opacity = o;
+    this.fade = o;
+    (this.badge.material as THREE.SpriteMaterial).opacity = o * (this.presenceNow === 'afk' ? 0.55 : 1);
     this.root.visible = o > 0.01;
   }
 
@@ -541,6 +638,7 @@ export class Character {
     if (this.airborne && !inAir) this.landFor = 0.28;
     this.airborne = inAir;
 
+    this.striding = !inAir && moving;
     if (inAir) {
       this.pose('Jump_Loop', 'Jump_Loop', 0.08);
     } else if (this.landFor > 0 && !moving) {
@@ -567,10 +665,15 @@ export class Character {
       this.pose('Idle_Loop', 'Idle_Loop', 0.3);
       this.idleFor += dt;
     }
+    const sangre = this.emote?.kind === 'sangre' && !!this.model;
+    if (sangre && !this.sangre) this.body.add((this.sangre = new SangreFx()).group);
+    else if (!sangre && this.sangre) { this.sangre.dispose(); this.sangre = null; }
     if (this.offscreen) { this.skipped += dt; return true; }
+    if (this.emote && this.emoteAnchor !== null) this.keepBeat(dt + this.skipped);
     this.mixer?.update(dt + this.skipped);
     this.skipped = 0;
     if ((this.mate || this.reachK > 0) && this.activity === 'sit' && this.model) this.holdProp();
+    if (this.model && (this.lookPitch !== 0 || this.lookNow !== 0)) this.tiltHead(dt);
 
     // The name badge rides above the head (jumps, pull-ups, push-ups, sitting).
     if (this.model) {
@@ -595,6 +698,15 @@ export class Character {
         this.heldBar.position.copy(l).add(r).multiplyScalar(0.5);
         this.heldBar.quaternion.setFromUnitVectors(BAR_AXIS, r.sub(l).normalize());
       }
+    }
+    if (this.onStep && this.model) this.feelSteps();
+    if (this.sangre) {
+      this.sangre.group.visible = this.bodyDrawn;
+      // Blood pools on the ground under them, not on the bench they stand on.
+      this.sangre.update(dt, (n, out) => {
+        const p = this.bonePosition(n, out);
+        return p && this.body.worldToLocal(p);
+      }, -(this.lift + this.seatY + this.jumpY + this.soleLift));
     }
     // Props follow their bones: hat on the head, mate in the left hand.
     if (this.model && (this.hat || this.mate)) {
@@ -690,13 +802,37 @@ export class Character {
     aim(lo, new THREE.Vector3().subVectors(v(hand), v(lo)), new THREE.Vector3().subVectors(T, v(lo)));
   }
 
+  /** Striding: a step is the other foot becoming the lower one (it just came down). */
+  private feelSteps(): void {
+    if (!this.striding) { this.lowFoot = null; return; }
+    const l = this.bonePosition('foot_l', this.tmp2), r = this.bonePosition('foot_r', this.tmp3);
+    if (!l || !r) return;
+    const gap = l.y - r.y;
+    if (Math.abs(gap) < 0.008) return; // too close to tell: wait
+    const low = gap < 0 ? 'l' : 'r';
+    if (this.lowFoot && low !== this.lowFoot) this.onStep!(this.running);
+    this.lowFoot = low;
+  }
+
+  /** A synced emote: put its clips where the shared clock says (after this frame's step of `step` seconds). */
+  private keepBeat(step: number): void {
+    const e = this.emote!;
+    if (this.lowerKey !== `${e.lower}|L`) return; // posing something else (a landing)
+    for (const key of [this.lowerKey, this.upperKey]) {
+      const a = this.actions.get(key);
+      const d = a?.getClip().duration;
+      if (!a || !d) continue;
+      a.time = clipPhase(Date.now() - step * 1000 * a.timeScale, this.emoteAnchor!, d);
+    }
+  }
+
   /** Show whether the person behind this character is here right now. */
   setPresence(p: 'online' | 'afk' | 'offline'): void {
     if (p === this.presenceNow) return;
     this.presenceNow = p;
     this.presenceMark?.removeFromParent();
     this.presenceMark = null;
-    (this.badge.material as THREE.SpriteMaterial).opacity = p === 'afk' ? 0.55 : 1;
+    (this.badge.material as THREE.SpriteMaterial).opacity = this.fade * (p === 'afk' ? 0.55 : 1);
     if (p === 'offline') return;
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: presenceTexture(p), depthWrite: false, transparent: true }));
     s.scale.set(p === 'afk' ? 0.16 : 0.045, p === 'afk' ? 0.06 : 0.045, 1);
@@ -708,6 +844,7 @@ export class Character {
 
   dispose(): void {
     this.mixer?.stopAllAction();
+    this.sangre?.dispose();
     this.root.removeFromParent();
   }
 }

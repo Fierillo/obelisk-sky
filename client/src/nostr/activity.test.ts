@@ -169,3 +169,22 @@ describe('track lanes and gym lifts', () => {
     expect(parseSpot('lane:12')).toBeNull();
   });
 });
+
+describe('emotes on the spot (remote signers)', () => {
+  it('names where you stand and pairs it only with an emote', async () => {
+    const { hereSpotId, emoteActivity, emoteOfActivity } = await import('./activity');
+    const spot = hereSpotId({ x: 1.23, z: -4.56 });
+    expect(spot).toBe('here:12:-46');
+    expect(parseSpot(spot)).toEqual({ type: 'here', pos: { x: 1.2, z: -4.6 } });
+    expect(validActivity(spot, emoteActivity('dance'))).toBe(true);
+    expect(validActivity(spot, 'sit')).toBe(false);
+    expect(validActivity(spot, 'emote:backflip')).toBe(false);
+    expect(validActivity('seat:0:0', 'emote:dance')).toBe(false);
+    expect(emoteOfActivity('emote:lotus')).toBe('lotus');
+    expect(emoteOfActivity('sit')).toBeNull();
+  });
+  it('round-trips through an event', () => {
+    const ev = { ...activityTemplate({ spot: 'here:10:20', kind: 'emote:dance' }, 100, 0, 100), pubkey: 'a'.repeat(64), id: 'x', sig: 'y' };
+    expect(parseActivity(ev as never)?.activity).toEqual({ spot: 'here:10:20', kind: 'emote:dance' });
+  });
+});

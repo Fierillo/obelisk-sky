@@ -25,6 +25,8 @@ interface Sign {
   pip: HTMLSpanElement;
   count: HTMLSpanElement;
   ping?: boolean;
+  /** "Ana mentioned you in #general": on the sign's tooltip and beside its compass arrow. */
+  pingLabel?: string | null;
   unread?: number;
   arrow?: HTMLDivElement;
 }
@@ -52,12 +54,12 @@ export class Overlay {
   }
 
   /** A speech bubble. `key` replaces any bubble already shown for that key. */
-  say(key: string, anchor: Anchor, header: string, text: string, opts: { accent: string; quote?: boolean; seconds: number; reply?: string | null; render?: (el: HTMLElement) => void; onClick?: () => void; headerOf?: () => string; replyOf?: () => string | null }): void {
+  say(key: string, anchor: Anchor, header: string, text: string, opts: { accent: string; quote?: boolean; seconds: number; reply?: string | null; render?: (el: HTMLElement) => void; onClick?: () => void; headerOf?: () => string; replyOf?: () => string | null; ping?: boolean }): void {
     if (!this.showBubbles) return;
     const existing = this.bubbles.find((b) => b.key === key);
     if (existing) this.removeBubble(existing);
     const el = document.createElement('div');
-    el.className = 'bubble';
+    el.className = opts.ping ? 'bubble ping' : 'bubble';
     const hd = document.createElement('div');
     hd.className = 'bubble-h';
     hd.style.color = opts.accent;
@@ -140,10 +142,12 @@ export class Overlay {
     s.el.dataset.kind = kind;
   }
 
-  /** Unread (red count) and ping (a mention or reply for you) on a sign. */
-  setSignUnread(id: string, unread: number, ping: boolean): void {
+  /** Unread (red count) and ping (a mention or reply for you) on a sign; `label` says who and where. */
+  setSignUnread(id: string, unread: number, ping: boolean, label: string | null = null): void {
     const s = this.signs.get(id);
     if (!s) return;
+    s.pingLabel = ping ? label : null;
+    s.el.title = s.pingLabel ?? '';
     s.count.textContent = unread > 0 ? (unread > 99 ? '99+' : String(unread)) : '';
     s.count.style.display = unread > 0 ? '' : 'none';
     s.el.classList.toggle('ping', ping);
@@ -197,8 +201,14 @@ export class Overlay {
         s.arrow.style.transform = `translate(${ax}px, ${ay}px) translate(-50%, -50%)`;
         s.arrow.style.setProperty('--rot', `${ang}rad`);
         s.arrow.classList.toggle('ping', !!s.ping);
-        s.arrow.textContent = s.ping ? '@' : String(s.unread ?? '');
-        s.arrow.title = (s.el.children[1] as HTMLElement).textContent ?? '';
+        const text = s.ping ? '@' : String(s.unread ?? '');
+        if (s.arrow.dataset.text !== text) { s.arrow.dataset.text = text; s.arrow.textContent = text; }
+        const name = (s.el.children[1] as HTMLElement).textContent ?? '';
+        s.arrow.title = s.ping && s.pingLabel ? s.pingLabel : name;
+        s.arrow.setAttribute('aria-label', s.arrow.title);
+        // Which channel, beside the arrow (the side away from the screen edge).
+        s.arrow.dataset.label = s.ping ? `#${name}` : '';
+        s.arrow.classList.toggle('left', ax > W / 2);
       } else if (s.arrow) {
         s.arrow.remove();
         s.arrow = undefined;

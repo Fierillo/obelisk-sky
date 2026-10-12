@@ -13,8 +13,18 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { maskAo } from './aoMask';
 import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 
+/** The tilt-shift's strongest blur (texels per unit of the kernel) and its taps either side. */
+export const TILT_MAX_RADIUS = 3.2;
+export const TILT_TAPS = 4;
+/** Kernel units between taps: with the per-pixel jitter, taps never sit more than ~3 texels apart. */
+export const TILT_STEP = 0.9;
+
+// Toy-town blur above and below a sharp band. Nine taps, each pixel's set
+// shifted by a little noise: five sparse taps turned every bright point
+// (a star, an orb, a badge's glow) into a grid of dots.
 const TiltShift = (horizontal: boolean) => ({
   uniforms: {
     tDiffuse: { value: null },
@@ -28,12 +38,19 @@ const TiltShift = (horizontal: boolean) => ({
     uniform sampler2D tDiffuse; uniform float uAmount, uFocus, uBand; uniform vec2 uTexel; varying vec2 vUv;
     void main(){
       float d = max(abs(vUv.y - uFocus) - uBand, 0.0);
-      float r = clamp(d * 9.0, 0.0, 1.0) * 3.2 * uAmount;
-      vec2 dir = ${horizontal ? 'vec2(uTexel.x, 0.0)' : 'vec2(0.0, uTexel.y)'} * r;
-      vec4 s = texture2D(tDiffuse, vUv) * 0.227;
-      s += (texture2D(tDiffuse, vUv + dir * 1.385) + texture2D(tDiffuse, vUv - dir * 1.385)) * 0.316;
-      s += (texture2D(tDiffuse, vUv + dir * 3.231) + texture2D(tDiffuse, vUv - dir * 3.231)) * 0.0703;
-      gl_FragColor = s;
+      float r = clamp(d * 9.0, 0.0, 1.0) * ${TILT_MAX_RADIUS.toFixed(1)} * uAmount;
+      if (r < 0.01) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
+      vec2 dir = ${horizontal ? 'vec2(uTexel.x, 0.0)' : 'vec2(0.0, uTexel.y)'} * r * ${TILT_STEP.toFixed(2)};
+      // Interleaved gradient noise: a different half-step shift for each pixel.
+      float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+      vec4 s = vec4(0.0); float wsum = 0.0;
+      for (int i = -${TILT_TAPS}; i <= ${TILT_TAPS}; i++) {
+        float t = float(i) + n;
+        float w = exp(-t * t / 8.0);
+        s += texture2D(tDiffuse, vUv + dir * t) * w;
+        wsum += w;
+      }
+      gl_FragColor = s / wsum;
     }`,
 });
 
@@ -160,6 +177,8 @@ export class Post {
     this.safeScene = new ShaderPass(SafeColor);
     this.composer.addPass(this.safeScene);
     this.gtao = new GTAOPass(scene, camera, 1, 1);
+    // Sprites and glows would be drawn as opaque squares into the AO's normals.
+    maskAo(this.gtao as unknown as Parameters<typeof maskAo>[0]);
     this.gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.3, thickness: 1.5, scale: 1.1, samples: 12 });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
     // Soft: strong AO turns pets' bellies and people's undersides black.

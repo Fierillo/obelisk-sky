@@ -13,6 +13,7 @@ import { nsecToHex } from '@nostr-wot/data';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools';
 import { isSealedBox, openSessionVault, type SealedBox } from '@/lib/crypto';
 import { ANONYMOUS_IDENTITY, activeRelay } from './hub';
+import { RemoteSigner } from './remoteSigner';
 
 export const SESSION_KEY = 'obelisk-sky/session';
 const AAD = 'obelisk-sky/session/v1';
@@ -95,7 +96,13 @@ export class SessionManager {
       secrets.bunkerUri = args.bunkerUri;
       if (args.clientNsec) secrets.clientSecretHex = nsecToHex(args.clientNsec) ?? undefined;
     }
-    this.install({ pubkey: args.pubkey, method, signer: args.signer });
+    // A remote signer: our own, on the client key the widget paired (its own
+    // one is closed when the login modal goes away). nostr/remoteSigner.ts.
+    let signer = args.signer;
+    if (method === 'nip46' && args.bunkerUri && secrets.clientSecretHex) {
+      signer = await RemoteSigner.fromPairing(args.bunkerUri, secrets.clientSecretHex, args.pubkey);
+    }
+    this.install({ pubkey: args.pubkey, method, signer });
     await this.persist(args.pubkey, method, secrets).catch((e) => {
       console.warn('[sky] session kept in memory only', e);
     });
@@ -116,9 +123,9 @@ export class SessionManager {
         const secrets = JSON.parse(new TextDecoder().decode(bytes)) as Secrets;
         if (stored.method === 'nsec' && secrets.skHex) signer = new PrivateKeySigner(secrets.skHex);
         else if (stored.method === 'nip46' && secrets.bunkerUri) {
-          signer = await Nip46Signer.fromBunkerUri(secrets.bunkerUri, {
-            ...(secrets.clientSecretHex ? { clientSecretKey: secrets.clientSecretHex } : {}),
-          });
+          signer = secrets.clientSecretHex
+            ? await RemoteSigner.restore(secrets.bunkerUri, secrets.clientSecretHex, stored.pubkey)
+            : await Nip46Signer.fromBunkerUri(secrets.bunkerUri);
         } else return false;
       }
       // An extension can switch accounts between visits: trust only a match.

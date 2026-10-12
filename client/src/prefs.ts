@@ -38,6 +38,14 @@ export interface Prefs {
   // Sound
   sound: boolean;
   volume: number; // 0 .. 1
+  /** Music while people near you dance or work out (audio/emoteMusic.ts). */
+  emoteMusic: boolean;
+  /** The world's own sounds (crickets at night), apart from emotes and music. */
+  ambience: boolean;
+  /** Your steps, walking and running (sound.ts footstep). */
+  footsteps: boolean;
+  /** Music where it plays: cumbia at the parrilla, a guitar by the campfires (audio/placeMusic.ts). */
+  placeMusic: boolean;
   // Relay
   relay: string; // the group relay being browsed ('' = Obelisk's default)
   customRelays: string[]; // relays you added to the picker
@@ -65,6 +73,10 @@ export const DEFAULT_PREFS: Prefs = {
   chatOpen: 'ask',
   sound: false,
   volume: 0.6,
+  emoteMusic: true,
+  ambience: true,
+  footsteps: true,
+  placeMusic: true,
   relay: '',
   customRelays: [],
 };
@@ -102,6 +114,10 @@ export function normalizePrefs(raw: unknown): Prefs {
     chatOpen: oneOf(CHAT_OPEN_PREFS, r.chatOpen, d.chatOpen),
     sound: bool(r.sound, d.sound),
     volume: num(r.volume, d.volume, 0, 1),
+    emoteMusic: bool(r.emoteMusic, d.emoteMusic),
+    ambience: bool(r.ambience, d.ambience),
+    footsteps: bool(r.footsteps, d.footsteps),
+    placeMusic: bool(r.placeMusic, d.placeMusic),
     relay: typeof r.relay === 'string' && /^wss?:\/\/[^\s]+$/i.test(r.relay) ? r.relay : '',
     customRelays: Array.isArray(r.customRelays)
       ? [...new Set(r.customRelays.filter((u): u is string => typeof u === 'string' && /^wss?:\/\/[^\s]+$/i.test(u)))].slice(0, 20)

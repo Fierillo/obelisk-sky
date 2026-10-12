@@ -27,6 +27,10 @@ export interface PoseSpec {
   /** The left hand (the right mirrors it): which way it points, which way the
    *  palm faces, and how far the fingers curl (radians per joint). */
   hands?: { dir: Dir; palm: Dir; curl: number };
+  /** Standing poses only: lift the whole body (a hop) and shift it sideways
+   *  (a sway), as fractions of its height. */
+  rise?: number;
+  sway?: number;
 }
 interface Key { t: number; pose: PoseSpec }
 
@@ -92,6 +96,73 @@ export const LOTUS: { keys: Key[]; grip: 'ground' } = {
   keys: [{ t: 0, pose: LOTUS_IN }, { t: 2.4, pose: LOTUS_OUT }, { t: 4.8, pose: LOTUS_IN }],
 };
 
+// Jumping jacks (an emote): feet together and arms down, a hop, feet apart
+// and arms overhead, a hop back. One jack a second.
+const JACK_HANDS_DOWN = { dir: [0.05, -1, 0] as Dir, palm: [-1, 0, 0.1] as Dir, curl: 0.3 };
+const JACK_HANDS_UP = { dir: [0.25, 1, 0] as Dir, palm: [0, 0, 1] as Dir, curl: 0.2 };
+const JACK_CLOSED: PoseSpec = { hands: JACK_HANDS_DOWN, aim: merge(both('upperarm', [0.14, -1, 0.02]), both('lowerarm', [0.08, -1, 0.06]), STRAIGHT_LEGS) };
+const JACK_MID: PoseSpec = { rise: 0.07, hands: JACK_HANDS_DOWN, aim: merge(both('upperarm', [1, 0.05, 0.02]), both('lowerarm', [1, 0.25, 0]), both('thigh', [0.2, -1, 0]), both('calf', [0.18, -1, -0.02])) };
+const JACK_OPEN: PoseSpec = { hands: JACK_HANDS_UP, aim: merge(both('upperarm', [0.5, 1, 0.02]), both('lowerarm', [0.25, 1, 0]), both('thigh', [0.36, -1, 0]), both('calf', [0.34, -1, -0.02])) };
+export const JACKS: { keys: Key[]; grip: 'stand' } = {
+  grip: 'stand',
+  keys: [
+    { t: 0, pose: JACK_CLOSED }, { t: 0.18, pose: JACK_MID }, { t: 0.36, pose: JACK_OPEN }, { t: 0.5, pose: JACK_OPEN },
+    { t: 0.68, pose: JACK_MID }, { t: 0.86, pose: JACK_CLOSED }, { t: 1.0, pose: JACK_CLOSED },
+  ],
+};
+
+// A groove (the dance emote): two bars at 120 BPM, a key on every beat.
+// The knees bounce on each beat; the arms go point-up left, pump, point-up
+// right, pump, raise the roof twice and roll. The hips sway to the side
+// that points. Timed to the dance loop (audio/synthLoops.ts DANCE_BPM).
+const BOUNCE_LEGS = merge(both('thigh', [0.06, -1, 0.3]), both('calf', [0, -1, -0.3]));
+const OPEN_HANDS = { dir: [0.1, 1, 0.3] as Dir, palm: [0, 0, 1] as Dir, curl: 0.15 };
+const FIST = { dir: [0, 0.4, 1] as Dir, palm: [-1, 0, 0] as Dir, curl: 1.1 };
+const PUMP: PoseSpec = { rise: -0.03, pitch: 0.06, hands: FIST, aim: merge(both('upperarm', [0.5, -0.75, 0.35]), both('lowerarm', [-0.15, 0.55, 1]), BOUNCE_LEGS) };
+const POINT_L: PoseSpec = {
+  sway: 0.06, hands: OPEN_HANDS,
+  aim: merge(
+    { upperarm_l: [0.45, 1, 0.25], lowerarm_l: [0.3, 1, 0.2], upperarm_r: [-0.25, -1, 0.2], lowerarm_r: [0.2, -0.6, 0.8] },
+    { thigh_l: [0.18, -1, 0.05], calf_l: [0.1, -1, -0.02], thigh_r: [-0.04, -1, 0.15], calf_r: [0, -1, -0.15] },
+  ),
+};
+const POINT_R: PoseSpec = {
+  sway: -0.06, hands: OPEN_HANDS,
+  aim: merge(
+    { upperarm_r: [-0.45, 1, 0.25], lowerarm_r: [-0.3, 1, 0.2], upperarm_l: [0.25, -1, 0.2], lowerarm_l: [-0.2, -0.6, 0.8] },
+    { thigh_r: [-0.18, -1, 0.05], calf_r: [-0.1, -1, -0.02], thigh_l: [0.04, -1, 0.15], calf_l: [0, -1, -0.15] },
+  ),
+};
+const ROOF: PoseSpec = { rise: 0.01, pitch: -0.05, hands: { dir: [0, 1, 0], palm: [0, 1, 0.2], curl: 0.1 }, aim: merge(both('upperarm', [0.75, 0.45, 0.1]), both('lowerarm', [0.15, 1, 0.05]), STRAIGHT_LEGS) };
+const ROLL: PoseSpec = { rise: -0.03, pitch: 0.1, hands: FIST, aim: merge({ upperarm_l: [0.45, -0.3, 1], lowerarm_l: [-0.7, 0.35, 0.5], upperarm_r: [-0.45, -0.45, 1], lowerarm_r: [0.7, 0.1, 0.6] }, BOUNCE_LEGS) };
+export const GROOVE: { keys: Key[]; grip: 'stand' } = {
+  grip: 'stand',
+  keys: [
+    { t: 0, pose: PUMP }, { t: 0.5, pose: POINT_L }, { t: 1.0, pose: PUMP }, { t: 1.5, pose: POINT_R },
+    { t: 2.0, pose: ROOF }, { t: 2.5, pose: PUMP }, { t: 3.0, pose: ROOF }, { t: 3.5, pose: ROLL }, { t: 4.0, pose: PUMP },
+  ],
+};
+
+// "Sangreee...": a knife in each fist (world/sangre.ts). Fists low, then
+// both arms thrown up in a V, chest out and head back, trembling there
+// until the scream ends; seven seconds, the length of its sound.
+const KNIFE_FIST = { dir: [0.3, 1, 0.15] as Dir, palm: [-1, 0, 0.2] as Dir, curl: 1.1 };
+const KNIFE_LOW: PoseSpec = { pitch: 0.08, hands: { dir: [0.1, -0.3, 1], palm: [-1, 0, 0], curl: 1.1 }, aim: merge(both('upperarm', [0.25, -1, 0.15]), both('lowerarm', [0.15, -0.6, 1]), { neck_01: [0, 1, 0.3] }, BOUNCE_LEGS) };
+const V_HIGH: PoseSpec = { rise: 0.01, pitch: -0.1, hands: KNIFE_FIST, aim: merge(both('upperarm', [0.6, 1, 0.12]), both('lowerarm', [0.45, 1, 0.12]), { neck_01: [0, 1, -0.3] }, STRAIGHT_LEGS) };
+const V_SHAKE: PoseSpec = { rise: -0.01, pitch: -0.06, hands: KNIFE_FIST, aim: merge(both('upperarm', [0.7, 0.9, 0.2]), both('lowerarm', [0.55, 1, 0.22]), { neck_01: [0, 1, -0.2] }, BOUNCE_LEGS) };
+export const SANGRE: { keys: Key[]; grip: 'stand' } = {
+  grip: 'stand',
+  keys: [
+    { t: 0, pose: KNIFE_LOW }, { t: 0.45, pose: KNIFE_LOW }, { t: 0.8, pose: V_HIGH },
+    ...Array.from({ length: 22 }, (_, i) => ({ t: 1.05 + i * 0.25, pose: i % 2 ? V_HIGH : V_SHAKE })),
+    { t: 6.6, pose: V_HIGH }, { t: 7, pose: KNIFE_LOW },
+  ],
+};
+
+/** Clips built like the exercises that are emotes, not training. */
+export const EMOTE_CLIPS = { lotus: LOTUS, jacks: JACKS, groove: GROOVE, sangre: SANGRE } as const;
+export type EmoteClipKind = keyof typeof EMOTE_CLIPS;
+
 /**
  * Key poses and timing (seconds) of one repetition; the last key returns to
  * the first. Grip: hands on a bar at its height, hands on the floor, feet on
@@ -123,7 +194,7 @@ interface Rest { bone: THREE.Bone; q: THREE.Quaternion; p: THREE.Vector3 }
  * model in its rest pose (not animated), unscaled.
  */
 export function buildExerciseClip(
-  kind: ExerciseKind | 'lotus', model: THREE.Object3D, gripY: number, name = `${kind}@${gripY.toFixed(2)}`,
+  kind: ExerciseKind | EmoteClipKind, model: THREE.Object3D, gripY: number, name = `${kind}@${gripY.toFixed(2)}`,
   /** Half the distance between the two grips (parallel bars), model units. */
   gripHalf?: number,
   /** The bar's radius (model units): the fingers close round it. */
@@ -146,7 +217,7 @@ export function buildExerciseClip(
 
   const alignForward = kind === 'pullup' || kind === 'muscleup';
   const onFloor = kind === 'pushup';
-  const spec: { keys: Key[]; grip: 'bar' | 'floor' | 'stand' | 'lie' | 'ground' } = kind === 'lotus' ? LOTUS : EXERCISES[kind];
+  const spec: { keys: Key[]; grip: 'bar' | 'floor' | 'stand' | 'lie' | 'ground' } = kind in EMOTE_CLIPS ? EMOTE_CLIPS[kind as EmoteClipKind] : EXERCISES[kind as ExerciseKind];
   const grip = spec.grip;
   // Standing lifts keep the feet where they stand; lying ones put the back
   // on the bench. Measured at rest: the soles, and the back's depth below
@@ -273,6 +344,12 @@ export function buildExerciseClip(
       root.position.x += restFeet.x - f.x;
       root.position.z += restFeet.z - f.z;
       root.position.y += restFeet.y - f.y;
+      // A hop or a sway: the whole body, by a share of its height.
+      if (pose.rise || pose.sway) {
+        const tall = wp('Head').y - restFeet.y;
+        root.position.y += (pose.rise ?? 0) * tall;
+        root.position.x += (pose.sway ?? 0) * tall * sx;
+      }
       model.updateMatrixWorld(true);
       return;
     }

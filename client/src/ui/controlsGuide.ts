@@ -32,7 +32,7 @@ const DESKTOP: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['E'], text: 'Sit on a nearby bench or stool and drink mate, at the café for a coffee and a laptop, or at the parrilla for asado; E again to stand' },
       { keys: ['E', '2'], text: 'In the sports park: E trains at the nearest bar (pull-ups, dips, push-ups), 2 does muscle-ups at the pull-up bar; walk off to stop' },
-      { keys: ['G'], text: 'Emotes: dance, sit in the lotus pose, nod, fold your arms… then 1–6 to pick; walk off to stop' },
+      { keys: ['G'], text: 'Emotes: dance, sit in the lotus pose, nod, fold your arms… then 1–9 or 0 to pick; walk off to stop' },
       { keys: ['Join call'], text: 'In a voice channel’s pavilion, join the call' },
       { keys: ['Game'], text: 'In a channel, start a game; click a table to play' },
       { keys: ['Your name'], text: 'Top right: change your look and your pet' },

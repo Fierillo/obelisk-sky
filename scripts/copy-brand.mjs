@@ -14,6 +14,8 @@ writeFileSync(`${OUT}/manifest.webmanifest`, JSON.stringify({
   description: 'The Obelisk village: walk to a channel and talk there.',
   start_url: '/app',
   display: 'standalone',
+  // The village is played sideways on phones (ui/orientation.ts asks the browser too).
+  orientation: 'landscape',
   background_color: '#cfeaff',
   theme_color: '#cfeaff',
   icons: [

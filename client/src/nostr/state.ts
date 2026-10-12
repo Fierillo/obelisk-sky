@@ -58,7 +58,45 @@ interface Profile {
   name: string | null;
   picture: string | null;
   nip05: string | null;
+  /** Lightning address (kind 0 `lud16`): where a zap is paid. */
+  lud16: string | null;
   createdAt: number;
+}
+
+/** A Lightning address, `name@host`, or null. */
+export function cleanLud16(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().toLowerCase();
+  return /^[a-z0-9._+-]{1,64}@[a-z0-9.-]{1,253}\.[a-z]{2,}$/.test(v) ? v : null;
+}
+
+/**
+ * obelisk-dex's zap marker (services/wallet/send-zap.ts): after the wallet
+ * pays, the zapper posts a kind 7 "⚡" reaction to the channel with the
+ * recipient (`p`), the message (`e`, when a message was zapped), `amount` in
+ * msat and the `bolt11`. That is how a zap from Obelisk reaches the channel,
+ * so it flies as a zap here, not as a ⚡ emoji. Null for an ordinary reaction.
+ */
+export function parseZapMarker(tags: string[][], content: string): { target: string; targetId: string | null; sats: number } | null {
+  if (!content.includes('⚡')) return null;
+  const target = tags.find((t) => t[0] === 'p' && /^[0-9a-f]{64}$/.test(t[1] ?? ''))?.[1];
+  if (!target) return null;
+  let msat = 0;
+  for (const name of ['amount', 'msat', 'msats', 'sat', 'sats']) {
+    const t = tags.find((x) => x[0] === name);
+    const n = Number(t?.[1]);
+    if (!t || !Number.isFinite(n) || n <= 0) continue;
+    const unit = (t[2] || (name.startsWith('sat') ? 'sat' : 'msat')).toLowerCase();
+    msat = unit.startsWith('sat') ? n * 1000 : n;
+    break;
+  }
+  if (!msat) {
+    const bolt11 = tags.find((t) => t[0] === 'bolt11')?.[1];
+    if (bolt11) { try { msat = getSatoshisAmountFromBolt11(bolt11) * 1000; } catch { msat = 0; } }
+  }
+  const sats = Math.floor(msat / 1000);
+  if (sats <= 0) return null;
+  return { target, targetId: tags.find((t) => t[0] === 'e')?.[1] ?? null, sats };
 }
 
 /**
@@ -215,6 +253,7 @@ export class SkyState {
       createdAt: m.createdAt,
     };
     if (m.zapNote) out.zapNote = true;
+    if (m.mentions.length) out.mentions = m.mentions;
     return out;
   }
 
@@ -243,6 +282,12 @@ export class SkyState {
     if (ev.kind !== 7 || this.reactions.has(ev.id)) return;
     const groupId = ev.tags.find((t) => t[0] === 'h')?.[1];
     if (!groupId || !this.visible.has(groupId)) return;
+    // A zap from Obelisk (its ⚡ marker): a zap, flown, counted once with its receipt.
+    const marker = parseZapMarker(ev.tags, ev.content);
+    if (marker) {
+      this.addZap({ id: `marker:${ev.id}`, from: ev.pubkey, target: marker.target, targetId: marker.targetId ?? ev.id, groupId, sats: marker.sats, createdAt: ev.created_at });
+      return;
+    }
     const targetId = [...ev.tags].reverse().find((t) => t[0] === 'e')?.[1];
     if (!targetId) return;
     const parent = this.messages.get(targetId);
@@ -312,6 +357,7 @@ export class SkyState {
       name: cleanName(j.display_name) ?? cleanName(j.displayName) ?? cleanName(j.name),
       picture: pic,
       nip05: cleanName(j.nip05),
+      lud16: cleanLud16(j.lud16),
       createdAt: ev.created_at,
     });
     if (this.people.has(ev.pubkey)) this.emit({ t: 'profile', profile: this.wireProfile(ev.pubkey) });
@@ -339,6 +385,7 @@ export class SkyState {
       name: p?.name ?? shortNpub(pk),
       avatar: p?.picture ?? null,
       nip05: p?.nip05 ?? null,
+      lud16: p?.lud16 ?? null,
       loaded: !!p,
     };
   }

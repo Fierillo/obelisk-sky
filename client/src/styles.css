@@ -172,6 +172,15 @@ button { font: inherit; color: inherit; }
 .lm-trees { fill: #3f8a4a; }
 .lm-houses { fill: #f6efe2; stroke: #b5543c; stroke-width: 0.25; }
 .lm-people { fill: var(--ink); }
+.lm-track { fill: #c8553d; }
+.lm-field { fill: #79c25d; }
+.lm-park { fill: #d9cdb2; stroke: #a8916a; stroke-width: 0.15; }
+.lm-bridge { fill: #b07a45; }
+.lm-waterfall { fill: #bfe8ff; }
+.lm-campfire { fill: #ff9a3c; }
+.lm-landmark path { fill: var(--lm); stroke: #fff; }
+.lm-landmark text { font: 700 1px var(--sans); fill: #fff; stroke: none; }
+.lm-mill circle { fill: #f6efe2; stroke: #7a5a3a; stroke-width: 0.25; }
 .loading[data-stage="1"] .lm-trees > *, .loading[data-stage="2"] .lm-trees > *, .loading[data-stage="3"] .lm-trees > *,
 .loading[data-stage="2"] .lm-houses > *, .loading[data-stage="3"] .lm-houses > *,
 .loading[data-stage="3"] .lm-people > * { animation: lm-pop 0.45s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--i) * 45ms); }
@@ -330,6 +339,12 @@ img.emoji { height: 1.3em; width: auto; vertical-align: -0.3em; }
 .compass::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid transparent; border-right-color: var(--white); transform: rotate(var(--rot)); }
 .compass.ping { background: var(--green); color: #0a0a0a; border-color: var(--green); }
 .compass.ping::after { border-right-color: var(--green); }
+/* The channel a ping is in, beside its arrow. */
+.compass[data-label]:not([data-label=""])::before { content: attr(data-label); position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+  padding: 2px 8px; border-radius: 999px; background: rgba(16, 16, 20, 0.85); color: var(--green); font: 700 11px var(--sans); pointer-events: none; }
+.compass.left[data-label]:not([data-label=""])::before { left: auto; right: calc(100% + 8px); }
+/* A bubble for you: a reply, or your name in it. */
+.bubble.ping { box-shadow: 0 0 0 2px var(--green), 0 8px 26px rgba(30, 20, 40, 0.3); }
 
 /* ── bell + toasts ─────────────────────────────────────────── */
 .bell-wrap { position: relative; }
@@ -712,3 +727,108 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
 @media (max-width: 360px) { body.menu-open .controls { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 440px) { .top > .brand { display: none; } }
 @media (max-width: 720px), (pointer: coarse) and (max-width: 1024px) { .status-more { display: none; } }
+
+/* ── the prompts dock: at the bottom, over the controls ─────
+   The voice call bar is the dock's first child, so it sits lowest; chat,
+   seat and someone-near stack above it (column-reverse). */
+.dock { bottom: 84px; }
+.dock .callbar { max-width: 100%; }
+
+/* ── phones held upright: turn sideways (ui/orientation.ts) ── */
+.rotate { display: none; }
+@media (pointer: coarse) and (orientation: portrait) and (max-width: 600px) {
+  .rotate { position: fixed; inset: 0; z-index: 2147483000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center;
+    background: linear-gradient(180deg, var(--sky-top), var(--sky) 60%, var(--cloud)); color: var(--ink); font-family: var(--sans); }
+  .rotate-phone { width: 74px; height: 124px; border: 4px solid var(--ink); border-radius: 16px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.6); animation: rotate-hint 2.4s ease-in-out infinite; margin-bottom: 14px; }
+  .rotate-phone img { width: 46px; height: 46px; }
+  .rotate-title { font: 800 21px var(--sans); }
+  .rotate-text { font: 500 14px/1.4 var(--sans); color: var(--ink-muted); max-width: 260px; }
+  .rotate .account-btn { margin-top: 10px; }
+}
+@keyframes rotate-hint { 0%, 25% { transform: rotate(0deg); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
+@media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; transform: rotate(-90deg); } }
+
+/* ── phones sideways: panels at the sides, the middle kept for the island ──
+   Header on top; the person and place cards on the right; the chat on the
+   left; the prompts on the right over Jump; the menu a scrolling sheet. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 540px) {
+  :root { --land-top: calc(var(--pill-h) + 20px); --land-edge: max(8px, env(safe-area-inset-right)); }
+  .top { padding-top: 8px; padding-bottom: 8px; }
+
+  /* Cards: a side sheet, full height, scrolling; no drag grip. */
+  .card { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); left: auto; right: var(--land-edge); width: min(400px, 48vw); max-height: none; border-radius: 16px; padding-bottom: 0; }
+  .card-head { height: 0; touch-action: auto; cursor: default; }
+  .card-grip { display: none; }
+  .card-close { top: 8px; right: 8px; }
+  .card .card-banner { aspect-ratio: auto; height: min(30vh, 120px); margin-top: -18px; border-radius: 16px 16px 0 0; }
+
+  /* The chat: a panel on the left, the card's twin. */
+  .chat { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); left: max(8px, env(safe-area-inset-left)); right: auto; width: min(400px, 46vw); height: auto; border-radius: 16px; }
+  .chat.min { bottom: auto; }
+  .chat:has(.sky-picker) { height: auto; }
+  .sky-picker { height: min(220px, 40vh); }
+
+  /* Channels and members: the same left column. */
+  .side { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); }
+
+  /* The menu: a sheet on the right that scrolls when it's taller than the screen. */
+  body.menu-open .controls { top: var(--land-top); bottom: auto; max-height: calc(100% - var(--land-top) - 8px); left: auto; right: var(--land-edge); width: min(520px, 72vw); grid-template-columns: repeat(5, minmax(0, 1fr)); align-content: start; overflow-y: auto; overscroll-behavior: contain; }
+  body.menu-open .controls button { height: 58px; }
+
+  /* The prompts: a column on the right edge, over Jump. */
+  .dock { right: var(--land-edge); bottom: max(136px, calc(env(safe-area-inset-bottom) + 124px)); max-width: min(44vw, 360px); max-height: calc(100% - var(--land-top) - 140px); overflow: visible; gap: 6px; }
+  .dock .callbar { flex-wrap: wrap; justify-content: flex-end; border-radius: 18px; padding: 5px 6px 5px 12px; gap: 6px; }
+  .dock .callbar .account-btn { height: 32px; padding: 0 10px; }
+  .dock .callbar-who { max-width: 22vw; }
+  .dock .seat-hint, .dock .chat-hint { padding: 9px 14px; }
+
+  /* Emotes: between the stick and Jump. */
+  .emote-menu { bottom: max(10px, env(safe-area-inset-bottom)); max-width: calc(100vw - 360px); }
+  .feed { bottom: 190px; max-width: 40vw; }
+  .pcall { top: var(--land-top); }
+
+  /* Your look: the preview on the left, the choices on the right. */
+  .creator { top: 8px; bottom: 8px; right: var(--land-edge); width: min(640px, calc(100vw - 16px)); max-height: none; background: #171717; display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+  .creator > .themes-head { grid-column: 1 / -1; padding: 10px 14px 8px; }
+  .creator .themes-title { font-size: 15px; }
+  .creator .themes-sub { font-size: 12px; margin-top: 2px; }
+  .creator > .look-preview { grid-column: 1; grid-row: 2; height: 100%; min-height: 0; border-bottom: 0; border-right: 1px solid var(--border); }
+  .creator > .creator-body { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .creator > .themes-foot { grid-column: 1 / -1; padding: 8px 14px; }
+
+  /* Settings and other centred sheets: never taller than the screen. */
+  .themes { max-height: calc(100% - 16px); }
+
+  /* The login modal (@nostr-wot/ui): wide and short, two columns of methods. */
+  .nui-modal-overlay { padding: 8px; }
+  .nui-modal { max-width: min(720px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); padding: 16px 18px; }
+  .nui-widget { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .nui-widget > :not(.nui-method-button) { grid-column: 1 / -1; }
+  .nui-widget-subtitle { margin-bottom: 2px; }
+  .nui-method-button { padding: 8px 10px; }
+  .nui-qr svg { width: min(200px, 52vh); height: min(200px, 52vh); }
+}
+/* History open: the timeline sits over the controls, the prompts go above it. */
+body:has(#timeline-panel:not([hidden])) .dock { bottom: 190px; }
+@media (pointer: coarse) { body:has(#timeline-panel:not([hidden])) .dock { bottom: max(136px, calc(env(safe-area-inset-bottom) + 124px)); } }
+/* The card's × reads over any banner photo. */
+.card-close { color: var(--white); background: rgba(16, 16, 20, 0.78); border-color: rgba(255, 255, 255, 0.28); }
+@media (pointer: coarse) { .card-close { width: 38px; height: 38px; } .card-close svg { width: 16px; height: 16px; } }
+/* Sideways phones: with a card open on the right, the prompts move to its left. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 540px) {
+  body:has(#card:not([hidden])) .dock { right: calc(min(400px, 48vw) + var(--land-edge) + 10px); max-width: min(30vw, 300px); }
+}
+/* A hidden control (Districts for non-operators) stays hidden in the menu sheet. */
+body.menu-open .controls button[hidden] { display: none; }
+
+/* ── the zap sheet (ui/zapSheet.ts) ── */
+.zap-sheet { z-index: 13; }
+.zap-amount { width: 120px; max-width: 50%; text-align: right; }
+.zap-quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.zap-comment, .zap-uri { width: 100%; max-width: none; box-sizing: border-box; }
+.zap-wallet { margin-top: 12px; font: 13px/1.45 var(--sans); color: var(--muted); }
+.zap-connect-title { font: 700 13px var(--sans); color: var(--white); margin-bottom: 4px; }
+.zap-hint { font-size: 12px; margin-bottom: 8px; }
+.zap-connect { display: flex; gap: 8px; align-items: center; }
+.zap-error { margin-top: 10px; font: 12.5px/1.4 var(--sans); color: #ffb4a8; }
+.zap-error:empty { display: none; }

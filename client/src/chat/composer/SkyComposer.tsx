@@ -42,6 +42,7 @@ export interface SkyComposerProps {
   setReplyingTo: (m: ReplyTarget | null) => void;
   onSend: (text: string, tags: string[][], replyTo: ReplyTarget | null) => Promise<string | null>;
   onNewGame?: () => void;
+  onZap?: (command: string, replyTo: ReplyTarget | null) => string | null;
   people: () => MentionPerson[];
   /** Filled with the textarea, so the panel can focus it. */
   inputRef?: { current: HTMLTextAreaElement | null };

@@ -10,6 +10,16 @@ function grid() {
 }
 
 describe('PlayerController', () => {
+  it('stops dead for an emote: no coast left to cancel it', () => {
+    const g = grid();
+    const c = new PlayerController(() => g, { x: 0, z: 0 });
+    c.step(0.5, { x: 0, y: 1, run: true }, 0);
+    c.stopNow();
+    const z = c.pos.z;
+    c.step(0.05, { x: 0, y: 0, run: false }, 0);
+    expect(c.moving).toBe(false);
+    expect(c.pos.z).toBe(z);
+  });
   it('walks away from the camera on "forward"', () => {
     const g = grid();
     const c = new PlayerController(() => g, { x: 0, z: 0 });

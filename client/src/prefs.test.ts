@@ -19,6 +19,16 @@ describe('prefs', () => {
     expect(normalizePrefs({ chatOpen: 'sometimes' }).chatOpen).toBe('ask');
     expect(normalizePrefs({ chatOpen: 'off' }).chatOpen).toBe('off');
   });
+  it('ambient sounds and footsteps are their own switches, on by default', () => {
+    expect(DEFAULT_PREFS.ambience).toBe(true);
+    expect(DEFAULT_PREFS.footsteps).toBe(true);
+    expect(DEFAULT_PREFS.placeMusic).toBe(true);
+    expect(normalizePrefs({ placeMusic: false }).placeMusic).toBe(false);
+    const p = normalizePrefs({ ambience: false, footsteps: 'no', emoteMusic: true });
+    expect(p.ambience).toBe(false);
+    expect(p.footsteps).toBe(true);
+    expect(p.emoteMusic).toBe(true);
+  });
   it('persists, survives junk, notifies, and resets', () => {
     const s = mem();
     s.setItem(PREFS_KEY, '{not json');

@@ -16,6 +16,7 @@ import type { Event as NostrEvent, EventTemplate } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import type { ExerciseKind } from '../world/anim/exercises';
 import { activeRelay } from './hub';
+import { EMOTE_KINDS, type EmoteKind } from '../world/emotes';
 
 export const ACTIVITY_D_TAG = 'obelisk-sky:activity:v1';
 export const ACTIVITY_T_TAG = 'obelisk-sky-activity';
@@ -27,7 +28,13 @@ export const HEARTBEAT_S = 45;
  *  people watching you walk up don't see you stand there before you sit. */
 export const DEBOUNCE_MS = 300;
 
-export type ActivityKind = ExerciseKind | 'sit' | 'run';
+/**
+ * An emote standing on the spot (`here:<x*10>:<z*10>`). Only remote signers
+ * send these: their live movement is off (a bunker can't sign every second),
+ * so an emote rides on this slower event instead of motion's `e`.
+ */
+export type EmoteActivity = `emote:${EmoteKind}`;
+export type ActivityKind = ExerciseKind | 'sit' | 'run' | EmoteActivity;
 const KINDS: readonly ActivityKind[] = ['pushup', 'pullup', 'muscleup', 'dip', 'benchpress', 'squat', 'curl', 'sit', 'run'];
 
 export interface Activity { spot: string; kind: ActivityKind }
@@ -37,27 +44,38 @@ export interface Claim extends Activity { pk: string; since: number; id: string;
 
 type Vec2 = { x: number; z: number };
 
-const SPOT_RE = /^(?:station:(\d{1,2})|seat:(-?\d{1,6}):(-?\d{1,6})|lane:(\d))$/;
+const SPOT_RE = /^(?:station:(\d{1,2})|seat:(-?\d{1,6}):(-?\d{1,6})|lane:(\d)|here:(-?\d{1,6}):(-?\d{1,6}))$/;
 
 export const stationSpotId = (index: number): string => `station:${index}`;
 export const seatSpotId = (p: Vec2): string => `seat:${Math.round(p.x * 10)}:${Math.round(p.z * 10)}`;
 /** A lane of the running track (0 inside … 2 outside). */
 export const laneSpotId = (index: number): string => `lane:${index}`;
 
-export type ParsedSpot = { type: 'station'; index: number } | { type: 'seat'; pos: Vec2 } | { type: 'lane'; index: number };
+/** Wherever you stand (an emote). */
+export const hereSpotId = (p: Vec2): string => `here:${Math.round(p.x * 10)}:${Math.round(p.z * 10)}`;
+export const emoteActivity = (kind: EmoteKind): EmoteActivity => `emote:${kind}`;
+/** The emote an activity kind names, if it is one. */
+export function emoteOfActivity(kind: string): EmoteKind | null {
+  const k = kind.startsWith('emote:') ? kind.slice(6) : '';
+  return EMOTE_KINDS.has(k) ? (k as EmoteKind) : null;
+}
+export type ParsedSpot = { type: 'station'; index: number } | { type: 'seat'; pos: Vec2 } | { type: 'lane'; index: number } | { type: 'here'; pos: Vec2 };
 
 export function parseSpot(id: string): ParsedSpot | null {
   const m = SPOT_RE.exec(id);
   if (!m) return null;
   if (m[1] !== undefined) return { type: 'station', index: Number(m[1]) };
   if (m[4] !== undefined) return { type: 'lane', index: Number(m[4]) };
+  if (m[5] !== undefined) return { type: 'here', pos: { x: Number(m[5]) / 10, z: Number(m[6]) / 10 } };
   return { type: 'seat', pos: { x: Number(m[2]) / 10, z: Number(m[3]) / 10 } };
 }
 
 /** A spot and a kind that belong together: exercises at stations, sitting on seats, running in lanes. */
 export function validActivity(spot: string, kind: unknown): kind is ActivityKind {
   const s = parseSpot(spot);
-  if (!s || !KINDS.includes(kind as ActivityKind)) return false;
+  if (!s) return false;
+  if (s.type === 'here') return typeof kind === 'string' && emoteOfActivity(kind) !== null;
+  if (!KINDS.includes(kind as ActivityKind)) return false;
   if (s.type === 'seat') return kind === 'sit';
   if (s.type === 'lane') return kind === 'run';
   return kind !== 'sit' && kind !== 'run';

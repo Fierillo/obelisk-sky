@@ -146,12 +146,27 @@ describe("SkyComposer (obelisk-dex's message bar)", { timeout: 20_000 }, () => {
     const { input, type, onSend } = setup({ onNewGame });
     type('/');
     expect((await screen.findAllByTestId('slash-option')).some((r) => r.textContent?.includes('/play'))).toBe(true);
-    expect(screen.queryByText('/zap')).toBeNull();
     type('/pl');
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(input.value).toBe('/play '));
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(onNewGame).toHaveBeenCalled());
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('/zap opens the zap sheet instead of posting, and shows why when it can\'t', async () => {
+    const onZap = vi.fn((cmd: string) => (cmd.includes('@nobody') ? 'Nobody here is called “@nobody”.' : null));
+    const { input, type, onSend } = setup({ onZap });
+    type('/');
+    expect((await screen.findAllByTestId('slash-option')).some((r) => r.textContent?.includes('/zap'))).toBe(true);
+    type('/zap 21');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(onZap).toHaveBeenCalledWith('/zap 21', null));
+    await waitFor(() => expect(input.value).toBe(''));
+    type('/zap @nobody');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await screen.findByText('Nobody here is called “@nobody”.');
+    expect(input.value).toBe('/zap @nobody');
     expect(onSend).not.toHaveBeenCalled();
   });
 });

@@ -23,7 +23,7 @@ export function setProfileRequester(fn: ((pk: string) => void) | null): void {
 export function putProfile(p: WireProfile): void {
   if (p.loaded === false) return;
   const prev = profiles.get(p.pubkey);
-  if (prev && prev.name === p.name && prev.picture === p.avatar && prev.nip05 === p.nip05) return;
+  if (prev && prev.name === p.name && prev.picture === p.avatar && prev.nip05 === p.nip05 && prev.lud16 === (p.lud16 ?? null)) return;
   profiles.set(p.pubkey, {
     pubkey: p.pubkey,
     name: p.name,
@@ -32,7 +32,7 @@ export function putProfile(p: WireProfile): void {
     nip05: p.nip05,
     about: null,
     banner: null,
-    lud16: null,
+    lud16: p.lud16 ?? null,
     website: null,
   });
   for (const l of listeners.get(p.pubkey) ?? []) l();

@@ -104,7 +104,8 @@ export function renderContent(el: HTMLElement, content: string, opts: RenderOpts
         b.type = 'button';
         b.className = 'mention';
         b.textContent = `@${opts.nameOf(tok.pubkey)}`;
-        b.addEventListener('click', () => opts.onMention?.(tok.pubkey));
+        // The bubble or message around it has a click of its own (reply): the chip is the person.
+        b.addEventListener('click', (e) => { e.stopPropagation(); opts.onMention?.(tok.pubkey); });
         el.append(b);
         break;
       }

@@ -162,4 +162,50 @@ describe('emotes', () => {
     expect(b.update(at({ emote: 'dance' }), MIN_GAP_MS * 3)).toBeNull();
     expect(b.update(at({ emote: null }), MIN_GAP_MS * 4)!.emote).toBeUndefined();
   });
+  it('says when the emote began (es), so every screen plays it on the same beat', () => {
+    const b = new MotionBeacon();
+    b.update(at({}), 0);
+    const m = b.update(at({ emote: 'sangre', emoteSince: 1_700_000_000_123 }), MIN_GAP_MS)!;
+    const ev = finalizeEvent(motionTemplate({ ...m, t: 1_700_000_001_000 }), sk);
+    expect(JSON.parse(ev.content).es).toBe(1_700_000_000_123);
+    expect(parseMotion(ev)).toMatchObject({ emote: 'sangre', emoteSince: 1_700_000_000_123 });
+    // A start after the event itself (a clock running ahead) is the event's time; none without an emote.
+    const ahead = finalizeEvent({ ...motionTemplate(idle), content: JSON.stringify({ v: 1, t: 5000, p: [0, 0], e: 'groove', es: 9000 }) }, sk);
+    expect(parseMotion(ahead)!.emoteSince).toBe(5000);
+    const bare = finalizeEvent({ ...motionTemplate(idle), content: JSON.stringify({ v: 1, t: 5000, p: [0, 0], es: 4000 }) }, sk);
+    expect(parseMotion(bare)!.emoteSince).toBeUndefined();
+  });
+});
+
+describe('emotes while backing off', () => {
+  const at = (p: Partial<PlayerMotionState>): PlayerMotionState => ({ p: { x: 0, z: 0 }, moving: false, run: false, dest: null, heading: 0, ...p });
+  it('a short nod still goes out when the relay has slowed us down', () => {
+    const b = new MotionBeacon();
+    b.update(at({}), 0);
+    b.fail(); b.fail(); // 4× slower
+    expect(b.update(at({ emote: 'yes' }), MIN_GAP_MS)).toMatchObject({ emote: 'yes' });
+    // An ordinary turn still waits for the slower pace.
+    expect(b.update(at({ emote: 'yes', yaw: 2 }), MIN_GAP_MS * 2.5)).toBeNull();
+  });
+});
+
+describe('facing and looking', () => {
+  const at = (p: Partial<PlayerMotionState>): PlayerMotionState => ({ p: { x: 0, z: 0 }, moving: false, run: false, dest: null, heading: 0, ...p });
+  it('carries the body yaw and a clamped look pitch', () => {
+    const m = parseMotion(sign({ ...idle, yaw: 1.234, pitch: 2 }))!;
+    expect(m.yaw).toBeCloseTo(1.23, 2);
+    expect(m.pitch).toBeCloseTo(0.6, 2);
+    expect(parseMotion(sign({ ...idle, yaw: 0.5, pitch: 0.01 }))!.pitch).toBeUndefined();
+    const bad = finalizeEvent({ ...motionTemplate(idle), content: JSON.stringify({ v: 1, t: 1, p: [0, 0], y: 'x', lp: 9 }) }, sk);
+    expect(parseMotion(bad)).toMatchObject({ moving: false });
+    expect(parseMotion(bad)!.yaw).toBeUndefined();
+    expect(parseMotion(bad)!.pitch).toBeUndefined();
+  });
+  it('sends a turn on the spot, not a twitch', () => {
+    const b = new MotionBeacon();
+    b.update(at({ yaw: 0 }), 0);
+    expect(b.update(at({ yaw: 0.1 }), MIN_GAP_MS * 2)).toBeNull();
+    expect(b.update(at({ yaw: 1.2 }), MIN_GAP_MS * 3)).toMatchObject({ yaw: 1.2 });
+    expect(b.update(at({ yaw: 1.2, pitch: 0.5 }), MIN_GAP_MS * 5)).toMatchObject({ pitch: 0.5 });
+  });
 });

@@ -1,16 +1,19 @@
-// Synthesized ambience — no audio files. Wind always, birds by day,
-// crickets by night, a soft voice blip per message (pitch from the
-// speaker's pubkey), a coin shimmer for zaps. Muted until the viewer opts in.
+// Synthesized ambience — no audio files. Crickets by night (`ambience`), your
+// footsteps (`footsteps`: a soft scuff walking, a harder slap running), a soft
+// voice blip per message (pitch from the speaker's pubkey), a coin shimmer for zaps. Muted until the viewer opts in.
 
 import { hashStr } from './world/layout';
 
 export class Soundscape {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private wind: GainNode | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   enabled = false;
   night = false;
+  /** Crickets and the like: their own switch, apart from emotes and music. */
+  ambience = true;
+  footsteps = true;
+  private noise: AudioBuffer | null = null;
 
   volume = 0.6;
 
@@ -25,11 +28,23 @@ export class Soundscape {
     if (this.ctx && this.master && this.enabled) this.master.gain.setTargetAtTime(v * 0.8, this.ctx.currentTime, 0.2);
   }
 
+  /** The audio graph other sounds (emote music) join, while sound is on. */
+  audio(): { ctx: AudioContext; out: AudioNode } | null {
+    return this.enabled && this.ctx && this.master ? { ctx: this.ctx, out: this.master } : null;
+  }
+
   toggle(): boolean {
     this.enabled = !this.enabled;
     if (this.enabled) this.start();
     else this.stop();
     return this.enabled;
+  }
+
+  /** Sound is on but the browser holds the audio (created before a gesture
+   *  it accepts, or suspended by the phone or a hidden tab): ask again.
+   *  Call from a user gesture. */
+  wake(): void {
+    if (this.enabled && this.ctx && this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
   }
 
   private start(): void {
@@ -38,7 +53,6 @@ export class Soundscape {
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume * 0.8;
       this.master.connect(this.ctx.destination);
-      this.startWind();
     }
     void this.ctx.resume();
     this.master!.gain.setTargetAtTime(this.volume * 0.8, this.ctx.currentTime, 0.4);
@@ -50,34 +64,9 @@ export class Soundscape {
     if (this.ctx && this.master) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
   }
 
-  private startWind(): void {
-    const ctx = this.ctx!;
-    const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < d.length; i++) { last = (last + (Math.random() * 2 - 1) * 0.02) * 0.995; d[i] = last * 6; }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.loop = true;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 500;
-    this.wind = ctx.createGain();
-    this.wind.gain.value = 0.18;
-    const lfo = ctx.createOscillator();
-    const lfoGain = ctx.createGain();
-    lfo.frequency.value = 0.07;
-    lfoGain.gain.value = 0.08;
-    lfo.connect(lfoGain).connect(this.wind.gain);
-    src.connect(filter).connect(this.wind).connect(this.master!);
-    src.start();
-    lfo.start();
-  }
-
   private ambient(): void {
     if (!this.enabled || !this.ctx) return;
-    if (this.night) { if (Math.random() < 0.5) this.cricket(); }
-    else if (Math.random() < 0.18) this.bird();
+    if (this.ambience && this.night && Math.random() < 0.5) this.cricket();
   }
 
   private tone(freq: number, dur: number, type: OscillatorType, vol: number, glide?: number, delay = 0): void {
@@ -96,14 +85,37 @@ export class Soundscape {
     o.stop(t + dur + 0.05);
   }
 
-  private bird(): void {
-    const base = 2200 + Math.random() * 1600;
-    const n = 2 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < n; i++) this.tone(base * (1 + Math.random() * 0.2), 0.09, 'sine', 0.05, base * 1.4, i * 0.12);
-  }
-
   private cricket(): void {
     for (let i = 0; i < 3; i++) this.tone(4400, 0.03, 'triangle', 0.02, undefined, i * 0.06);
+  }
+
+  /** One of your steps: a short burst of filtered noise and a low thud; running, brighter and heavier. */
+  footstep(running: boolean): void {
+    if (!this.enabled || !this.footsteps || !this.ctx || this.ctx.state !== 'running') return;
+    const ctx = this.ctx;
+    if (!this.noise) {
+      this.noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.25), ctx.sampleRate);
+      const d = this.noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const t = ctx.currentTime;
+    const vary = 0.88 + Math.random() * 0.24;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = vary;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = (running ? 1150 : 650) * vary;
+    band.Q.value = running ? 0.8 : 1.3;
+    const g = ctx.createGain();
+    const vol = running ? 0.3 : 0.2;
+    const dur = running ? 0.07 : 0.11;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(band).connect(g).connect(this.master!);
+    src.start(t, Math.random() * 0.1, dur + 0.02);
+    this.tone((running ? 115 : 85) * vary, running ? 0.08 : 0.06, 'sine', running ? 0.22 : 0.1, running ? 50 : 55);
   }
 
   blip(pk: string): void {

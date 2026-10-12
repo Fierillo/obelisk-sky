@@ -58,8 +58,10 @@ export function mergeStatic(root: THREE.Object3D, keep: (m: THREE.Mesh) => boole
  * own hooks (its frame update at a few times, night, doors, going inside),
  * and every mesh whose transform, visibility, shadow flag or geometry moved
  * meanwhile, or sits under a node that did, is reported. Merge the rest.
+ * Hooks usually put things back at the end (a door opened, then closed), so
+ * `poke` calls `mark()` after each hook: a change seen at any mark counts.
  */
-export function findDynamic(root: THREE.Object3D, poke: () => void): Set<THREE.Object3D> {
+export function findDynamic(root: THREE.Object3D, poke: (mark: () => void) => void): Set<THREE.Object3D> {
   type Snap = { m: number[]; v: boolean; c: boolean; g: number };
   const snap = new Map<THREE.Object3D, Snap>();
   const read = (o: THREE.Object3D): Snap => {
@@ -69,14 +71,18 @@ export function findDynamic(root: THREE.Object3D, poke: () => void): Set<THREE.O
     return { m: o.matrix.elements.slice(), v: o.visible, c: o.castShadow, g: ver };
   };
   root.traverse((o) => { snap.set(o, read(o)); });
-  poke();
   const changed = new Set<THREE.Object3D>();
-  root.traverse((o) => {
-    const a = snap.get(o);
-    if (!a) { changed.add(o); return; } // added by a hook
-    const b = read(o);
-    if (a.v !== b.v || a.c !== b.c || a.g !== b.g || a.m.some((x, i) => Math.abs(x - b.m[i]) > 1e-7)) changed.add(o);
-  });
+  const mark = () => {
+    root.traverse((o) => {
+      if (changed.has(o)) return;
+      const a = snap.get(o);
+      if (!a) { changed.add(o); return; } // added by a hook
+      const b = read(o);
+      if (a.v !== b.v || a.c !== b.c || a.g !== b.g || a.m.some((x, i) => Math.abs(x - b.m[i]) > 1e-7)) changed.add(o);
+    });
+  };
+  poke(mark);
+  mark();
   const out = new Set<THREE.Object3D>();
   root.traverse((o) => {
     for (let p: THREE.Object3D | null = o; p && p !== root.parent; p = p.parent) if (changed.has(p) && p !== root) { out.add(o); break; }

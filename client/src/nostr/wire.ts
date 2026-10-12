@@ -17,6 +17,8 @@ export interface WireProfile {
   /** The kind 0 picture (https only), or null. */
   avatar: string | null;
   nip05: string | null;
+  /** Lightning address (kind 0 `lud16`), for zaps. */
+  lud16?: string | null;
   /** False while the kind 0 hasn't arrived (`name` is then a short npub). */
   loaded?: boolean;
 }
@@ -38,6 +40,8 @@ export interface WireMessage {
   createdAt: number;
   /** A zap bot's announcement: shown in the chat, flown as a zap in the world (its zap comes separately). */
   zapNote?: boolean;
+  /** Everyone it names: `nostr:` mentions in the content and `p` tags (a ping, like obelisk-dex). */
+  mentions?: string[];
 }
 
 export interface WireReaction {

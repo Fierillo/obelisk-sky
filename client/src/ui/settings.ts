@@ -117,8 +117,12 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   row('Panel opacity', slider('chatOpacity', 0.15, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
 
   section('Sound');
-  row('Ambient sound', toggle('sound'));
+  row('Sound', toggle('sound'));
   row('Volume', slider('volume', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
+  row('Ambient sounds', toggle('ambience'), '(crickets at night)');
+  row('Footsteps', toggle('footsteps'), '(walking and running)');
+  row('Emote music', toggle('emoteMusic'), '(heard near people dancing)');
+  row('Music at places', toggle('placeMusic'), '(the parrilla, the campfires)');
 
   const foot = document.createElement('div');
   foot.className = 'themes-foot';

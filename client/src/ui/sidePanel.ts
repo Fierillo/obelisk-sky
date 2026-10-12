@@ -29,11 +29,17 @@ export class SidePanel {
   readonly el: HTMLElement;
   private body: HTMLElement;
   private title: HTMLElement;
+  /** The members tab's channel picker: built once, so a redraw never closes it while open. */
+  private pick: HTMLSelectElement;
+  private list: HTMLElement;
   tab: SideTab | null = null;
   private channel: string | null = null;
   private offlineOpen = false;
   private ranks: Record<string, readonly Rank[]> = {};
   private token = 0;
+  /** What the list and picker last showed: a redraw with nothing new is skipped. */
+  private shown = '';
+  private options = '';
 
   constructor(parent: HTMLElement, private deps: SidePanelDeps) {
     this.el = div('side');
@@ -47,6 +53,11 @@ export class SidePanel {
     x.addEventListener('click', () => this.close());
     head.append(this.title, x);
     this.body = div('side-body');
+    this.pick = document.createElement('select');
+    this.pick.className = 'themes-select side-pick';
+    this.pick.addEventListener('change', () => this.choose(this.pick.value));
+    this.list = div('side-list');
+    this.body.append(this.pick, this.list);
     this.el.append(head, this.body);
     parent.appendChild(this.el);
   }
@@ -56,6 +67,7 @@ export class SidePanel {
     if (this.tab === tab && !this.el.hidden) { this.close(); return; }
     this.tab = tab;
     this.el.hidden = false;
+    this.shown = '';
     document.body.classList.add('side-open');
     if (tab === 'members') this.channel = this.channel && this.deps.channels().some((c) => c.id === this.channel) ? this.channel : this.deps.defaultChannel();
     this.render();
@@ -69,14 +81,23 @@ export class SidePanel {
 
   /** Show `groupId`'s members. */
   showMembers(groupId: string): void {
-    this.channel = groupId;
-    if (this.tab !== 'members' || this.el.hidden) this.toggle('members');
-    else this.render();
+    if (this.tab !== 'members' || this.el.hidden) { this.channel = groupId; this.toggle('members'); }
+    else this.choose(groupId);
   }
 
   /** Data changed (presence, unread, profiles): redraw what's showing. */
   refresh(): void {
-    if (!this.el.hidden) this.render();
+    // A picker that's open (focused) keeps its list: rebuilding it would close it.
+    if (this.el.hidden || document.activeElement === this.pick) return;
+    this.render();
+  }
+
+  private choose(id: string): void {
+    if (id === this.channel) return;
+    this.channel = id;
+    this.shown = '';
+    this.list.replaceChildren(div('side-empty', 'Loading members…'));
+    void this.renderMembers();
   }
 
   private render(): void {
@@ -84,67 +105,83 @@ export class SidePanel {
     else if (this.tab === 'members') void this.renderMembers();
   }
 
+  /** Swap the list's rows in, unless they'd look just like what's there. */
+  private show(sig: string, rows: () => HTMLElement[]): void {
+    if (sig === this.shown) return;
+    this.shown = sig;
+    this.list.replaceChildren(...rows());
+  }
+
   private renderChannels(): void {
     const rows = this.deps.channels();
     this.title.textContent = `Channels · ${rows.length}`;
-    const list = div('side-list');
-    for (const c of rows) {
-      const b = document.createElement('button');
-      b.className = `side-row${c.unread ? ' unread' : ''}`;
-      const icon = span('side-ico', c.kind.startsWith('voice') ? '🔊' : c.kind === 'forum' ? '📰' : '#');
-      const name = span('side-name', c.name);
-      b.append(icon, name);
-      if (c.here) b.append(span('side-here', `${c.here} here`));
-      if (c.unread || c.mention) b.append(span(`side-badge${c.mention ? ' ping' : ''}`, c.mention ? '@' : String(c.unread)));
-      b.addEventListener('click', () => this.deps.onChannel(c.id));
-      const members = document.createElement('button');
-      members.className = 'side-mini';
-      members.title = 'Members';
-      members.textContent = '👥';
-      members.addEventListener('click', (e) => { e.stopPropagation(); this.showMembers(c.id); });
-      b.append(members);
-      list.append(b);
+    this.pick.hidden = true;
+    this.show(`c|${JSON.stringify(rows)}`, () => {
+      if (!rows.length) return [div('side-empty', 'No channels on this relay yet.')];
+      return rows.map((c) => {
+        const b = document.createElement('button');
+        b.className = `side-row${c.unread ? ' unread' : ''}`;
+        const icon = span('side-ico', c.kind.startsWith('voice') ? '🔊' : c.kind === 'forum' ? '📰' : '#');
+        const name = span('side-name', c.name);
+        b.append(icon, name);
+        if (c.here) b.append(span('side-here', `${c.here} here`));
+        if (c.unread || c.mention) b.append(span(`side-badge${c.mention ? ' ping' : ''}`, c.mention ? '@' : String(c.unread)));
+        b.addEventListener('click', () => this.deps.onChannel(c.id));
+        const members = document.createElement('button');
+        members.className = 'side-mini';
+        members.title = 'Members';
+        members.textContent = '👥';
+        members.addEventListener('click', (e) => { e.stopPropagation(); this.showMembers(c.id); });
+        b.append(members);
+        return b;
+      });
+    });
+  }
+
+  /** The picker's options, rebuilt only when the channels themselves change. */
+  private fillPicker(): void {
+    const channels = this.deps.channels();
+    const sig = channels.map((c) => `${c.id}\u0000${c.name}`).join('\u0001');
+    if (sig !== this.options) {
+      this.options = sig;
+      this.pick.replaceChildren(...channels.map((c) => {
+        const o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = c.name;
+        return o;
+      }));
     }
-    if (!rows.length) list.append(div('side-empty', 'No channels on this relay yet.'));
-    this.body.replaceChildren(list);
+    if (this.channel && this.pick.value !== this.channel) this.pick.value = this.channel;
   }
 
   private async renderMembers(): Promise<void> {
     const token = ++this.token;
-    const channels = this.deps.channels();
     const id = this.channel;
-    this.title.textContent = 'Members';
-    // Which channel: a picker at the top.
-    const pick = document.createElement('select');
-    pick.className = 'themes-select side-pick';
-    for (const c of channels) {
-      const o = document.createElement('option');
-      o.value = c.id;
-      o.textContent = c.name;
-      pick.append(o);
-    }
-    if (id) pick.value = id;
-    pick.addEventListener('change', () => { this.channel = pick.value; void this.renderMembers(); });
-    if (!id) { this.body.replaceChildren(pick, div('side-empty', 'No channels yet.')); return; }
-    if (this.body.querySelector('.side-pick') === null) this.body.replaceChildren(pick, div('side-empty', 'Loading members…'));
+    this.pick.hidden = false;
+    this.fillPicker();
+    if (!id) { this.title.textContent = 'Members'; this.show('m|none', () => [div('side-empty', 'No channels yet.')]); return; }
+    if (!this.shown.startsWith(`m|${id}|`)) { this.title.textContent = 'Members'; if (!this.list.querySelector('.side-empty')) this.list.replaceChildren(div('side-empty', 'Loading members…')); }
     const [m, ranks] = await Promise.all([this.deps.loadMembers(id), this.deps.loadRanks()]);
-    if (token !== this.token) return;
+    if (token !== this.token || this.tab !== 'members') return;
     this.ranks = ranks;
     const pks = [...new Set([...m.members, ...this.deps.posters(id), ...(this.deps.me() ? [this.deps.me()!] : [])])];
     const sections = groupMembers(pks, new Set(m.admins), (pk) => this.ranks[pk], (pk) => this.deps.presenceOf(pk), (pk) => this.deps.profile(pk).name);
     this.title.textContent = `Members · ${pks.length}`;
-    const list = div('side-list');
-    for (const s of sections) {
-      const offline = s.key === 'offline';
-      const h = document.createElement('button');
-      h.className = 'side-section';
-      h.textContent = `${offline ? (this.offlineOpen ? '▾ ' : '▸ ') : ''}${s.label} — ${s.rows.length}`;
-      if (offline) h.addEventListener('click', () => { this.offlineOpen = !this.offlineOpen; void this.renderMembers(); });
-      list.append(h);
-      if (offline && !this.offlineOpen) continue;
-      for (const r of s.rows) list.append(this.memberRow(r.pk, r.admin, r.presence, r.rank));
-    }
-    this.body.replaceChildren(pick, list);
+    const sig = `m|${id}|${this.offlineOpen}|${JSON.stringify(sections.map((s) => [s.key, s.rows.map((r) => [r.pk, r.admin, r.presence, r.rank?.name ?? '', this.deps.profile(r.pk)])]))}`;
+    this.show(sig, () => {
+      const out: HTMLElement[] = [];
+      for (const s of sections) {
+        const offline = s.key === 'offline';
+        const h = document.createElement('button');
+        h.className = 'side-section';
+        h.textContent = `${offline ? (this.offlineOpen ? '▾ ' : '▸ ') : ''}${s.label} — ${s.rows.length}`;
+        if (offline) h.addEventListener('click', () => { this.offlineOpen = !this.offlineOpen; void this.renderMembers(); });
+        out.push(h);
+        if (offline && !this.offlineOpen) continue;
+        for (const r of s.rows) out.push(this.memberRow(r.pk, r.admin, r.presence, r.rank));
+      }
+      return out;
+    });
   }
 
   private memberRow(pk: string, admin: boolean, presence: Presence, rank: Rank | null): HTMLElement {

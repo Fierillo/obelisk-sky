@@ -76,6 +76,20 @@ describe('finding what moves', () => {
     for (const m of [spun, hidden, wall, leaf, knob]) expect(moving.has(m)).toBe(true);
   });
 
+  it('reports a door that is opened and closed again during the poke', async () => {
+    const { findDynamic } = await import('./merge');
+    const root = new THREE.Group();
+    const glass = new THREE.MeshStandardMaterial();
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), glass);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), glass);
+    root.add(pane, leaf);
+    const moving = findDynamic(root, (mark) => { leaf.position.x = 0.8; mark(); leaf.position.x = 0; });
+    expect(moving.has(leaf)).toBe(true);
+    expect(moving.has(pane)).toBe(false);
+    mergeStatic(root, (m) => moving.has(m));
+    expect(leaf.parent).toBe(root);
+  });
+
   it('keeps every landmark whole: what it animates stays out of the merge', async () => {
     const { findDynamic } = await import('./merge');
     const { LANDMARKS } = await import('./landmarks');
@@ -85,13 +99,13 @@ describe('finding what moves', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noop as never);
     for (const d of LANDMARKS) {
       const b = d.build();
-      const poke = () => {
-        for (const t of [0.4, 2.9, 7.3, 13.1]) b.update?.(0.016, t);
-        b.setNight(1, 1);
-        b.interior?.setDoor(1);
-        b.interior?.setInside(true);
-        b.pulse?.();
-        b.update?.(0.5, 17);
+      const poke = (mark: () => void = () => {}) => {
+        for (const t of [0.4, 2.9, 7.3, 13.1]) { b.update?.(0.016, t); mark(); }
+        b.setNight(1, 1); mark();
+        b.interior?.setDoor(1); mark();
+        b.interior?.setInside(true); mark();
+        b.pulse?.(); mark();
+        b.update?.(0.5, 17); mark();
         b.interior?.setInside(false);
         b.interior?.setDoor(0);
         b.setNight(0, 1);
@@ -103,7 +117,17 @@ describe('finding what moves', () => {
       // Every mesh the hooks still move survived the merge.
       for (const m of moving) if ((m as THREE.Mesh).isMesh) expect(m.parent).not.toBeNull();
       // And the hooks still run on what's left.
-      expect(poke).not.toThrow();
+      expect(() => poke()).not.toThrow();
+      // A door still opens: some mesh left in the scene moves when it does.
+      if (b.interior) {
+        b.group.updateMatrixWorld(true);
+        const at = new Map(meshes(b.group).map((m) => [m, m.matrixWorld.elements.slice()]));
+        b.interior.setDoor(1);
+        b.group.updateMatrixWorld(true);
+        const moved = meshes(b.group).some((m) => { const a = at.get(m); return !!a && m.matrixWorld.elements.some((x, i) => Math.abs(x - a[i]) > 1e-6); });
+        expect(moved, `${d.id} door`).toBe(true);
+        b.interior.setDoor(0);
+      }
     }
   });
 });

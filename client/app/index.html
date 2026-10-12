@@ -13,7 +13,7 @@
   <meta property="og:title" content="Obelisk Sky: walk into Nostr conversations" />
   <meta property="og:description" content="A 3D village of Obelisk channels. Log in with your Nostr key, walk to a channel's house and talk there, join calls, play games, drink mate on the plaza." />
   <meta property="og:url" content="https://sky.obelisk.ar/app" />
-  <meta property="og:image" content="https://sky.obelisk.ar/og.jpg?v=3" />
+  <meta property="og:image" content="https://sky.obelisk.ar/og.jpg?v=5" />
   <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -21,7 +21,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Obelisk Sky: walk into Nostr conversations" />
   <meta name="twitter:description" content="A 3D village of Obelisk channels: chat, calls, games and mate on the plaza." />
-  <meta name="twitter:image" content="https://sky.obelisk.ar/og.jpg?v=3" />
+  <meta name="twitter:image" content="https://sky.obelisk.ar/og.jpg?v=5" />
   <meta name="twitter:image:alt" content="A floating low-poly village around a green obelisk." />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" href="/brand/sky-mark-flat.svg" type="image/svg+xml" />
@@ -178,15 +178,16 @@
         <div class="loading-bar"><div id="loading-fill"></div></div>
       </div>
     </div>
-    <div id="callbar" class="callbar" hidden>
-      <div class="callbar-info"><span class="callbar-dot"></span><span id="call-title"></span><span id="call-who" class="callbar-who"></span></div>
-      <button id="call-join" class="account-btn primary">Join call</button>
-      <button id="call-stay" class="account-btn" hidden title="Stay in the call wherever you walk">Stay</button>
-      <button id="call-mic" class="account-btn" hidden>Mute</button>
-      <button id="call-leave" class="account-btn danger" hidden>Leave</button>
-      <a id="call-app" class="account-btn" target="_blank" rel="noopener" hidden>Open in Obelisk</a>
-    </div>
+    <!-- The prompts, stacked bottom-up: the voice call, then chat, seat, someone near. -->
     <div id="dock" class="dock">
+      <div id="callbar" class="callbar" hidden>
+        <div class="callbar-info"><span class="callbar-dot"></span><span id="call-title"></span><span id="call-who" class="callbar-who"></span></div>
+        <button id="call-join" class="account-btn primary">Join call</button>
+        <button id="call-stay" class="account-btn" hidden title="Stay in the call wherever you walk">Stay</button>
+        <button id="call-mic" class="account-btn" hidden>Mute</button>
+        <button id="call-leave" class="account-btn danger" hidden>Leave</button>
+        <a id="call-app" class="account-btn" target="_blank" rel="noopener" hidden>Open in Obelisk</a>
+      </div>
       <button id="seat-hint" class="seat-hint" hidden></button>
       <button id="chat-hint" class="seat-hint chat-hint" hidden></button>
       <div id="near-hint" class="near-hint" hidden>
@@ -202,6 +203,12 @@
       <button id="pcall-end" class="account-btn danger">Hang up</button>
     </div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
+    <div id="rotate" class="rotate" role="dialog" aria-modal="true" aria-labelledby="rotate-title">
+      <div class="rotate-phone" aria-hidden="true"><img src="/brand/sky-mark.svg" alt="" /></div>
+      <div id="rotate-title" class="rotate-title">Turn your phone sideways</div>
+      <div class="rotate-text">The village is played in landscape.</div>
+      <button type="button" class="account-btn primary big">Go full screen</button>
+    </div>
     <div id="wipe" class="wipe"></div>
   </div>
   <script type="module" src="/src/main.ts"></script>

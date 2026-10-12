@@ -4,6 +4,7 @@
   "description": "The Obelisk village: walk to a channel and talk there.",
   "start_url": "/app",
   "display": "standalone",
+  "orientation": "landscape",
   "background_color": "#cfeaff",
   "theme_color": "#cfeaff",
   "icons": [
