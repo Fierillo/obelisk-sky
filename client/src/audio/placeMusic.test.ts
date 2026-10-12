@@ -17,10 +17,15 @@ describe('music at places', () => {
     expect(nearestPlaces(places, { x: 8, z: 1 })).toEqual([{ kind: 'campfire', x: 8, z: 0 }]);
   });
 
-  it('the parrilla\'s cumbia stops before the café (its spot 4.5 m away)', () => {
+  it('the parrilla is heard further, but never in the café\'s or the HQ\'s ground', () => {
+    // The village's layout: grill (-7, 5.5), café (-6, 0.5), nostr-wot HQ (-2, 5.5), La Crypta (3.5, 5).
     const grill = { kind: 'parrilla' as const, x: -7, z: 5.5 };
-    expect(nearestPlaces([grill], { x: -6.5, z: 1 })).toEqual([]);
-    expect(nearestPlaces([grill], { x: -7, z: 4.5 })).toEqual([grill]);
+    const quiet = [{ x: -6, z: 0.5 }, { x: -2, z: 5.5 }, { x: 3.5, z: 5 }];
+    expect(nearestPlaces([grill], { x: -10.8, z: 4.5 }, quiet)).toEqual([grill]); // 3.9 m out, past the old 3.5 m
+    expect(nearestPlaces([grill], { x: -10.5, z: 6 }, quiet)).toEqual([grill]); // behind it
+    expect(nearestPlaces([grill], { x: -6.3, z: 2 }, quiet)).toEqual([]); // nearer the café
+    expect(nearestPlaces([grill], { x: -4, z: 5.5 }, quiet)).toEqual([]); // nearer the HQ
+    expect(nearestPlaces([grill], { x: -7, z: 0.4 }, quiet)).toEqual([]); // past its reach
   });
 
   it('nothing past a track\'s reach', () => {

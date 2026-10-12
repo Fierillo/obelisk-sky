@@ -65,6 +65,34 @@ describe('exercise clips', () => {
     }
     expect(y(down, 'spine_01')).toBeLessThan(y(up, 'spine_01') - 0.05);
   });
+  it('push-ups keep fingertips and toe tips above the floor, not through it', () => {
+    // Tips hanging below the palm and past the ball of the foot, as the people's skeletons have.
+    const withTips = () => {
+      const f = figure();
+      for (const sd of ['l', 'r']) {
+        const tip = new THREE.Bone();
+        tip.name = `thumb_04_leaf_${sd}`;
+        tip.position.set(0, -0.12, 0.05);
+        f.getObjectByName(`hand_${sd}`)!.add(tip);
+        const toe = new THREE.Bone();
+        toe.name = `ball_leaf_${sd}`;
+        toe.position.set(0, -0.04, 0.06);
+        f.getObjectByName(`ball_${sd}`)!.add(toe);
+      }
+      f.updateMatrixWorld(true);
+      return f;
+    };
+    const clip = buildExerciseClip('pushup', withTips(), 0);
+    for (const t of [0, 0.4, 0.9, 1.4]) {
+      const f = withTips();
+      const mixer = new THREE.AnimationMixer(f);
+      mixer.clipAction(clip).play();
+      mixer.setTime(t);
+      f.updateMatrixWorld(true);
+      for (const n of ['thumb_04_leaf_l', 'thumb_04_leaf_r', 'ball_leaf_l', 'ball_leaf_r']) expect(y(f, n)).toBeGreaterThan(-0.005);
+      expect(palmY(f)).toBeLessThan(0.2);
+    }
+  });
   it('counts finished repetitions', () => {
     expect(repsDone('pullup', 0)).toBe(0);
     expect(repsDone('pullup', 2.29)).toBe(0);

@@ -25,10 +25,35 @@ export function isAccessRefusal(reason: string): boolean {
   return /^restricted:/i.test(reason) && /whitelist|not allowed|access denied|not admitted|web of trust|wot/i.test(reason);
 }
 
-/** A relay set may miss a kind 0 once: ask again after 30 s, 2 min, then every 10 min. */
+/** A relay set may miss a kind 0 (or a new account publishes it minutes
+ *  after it first shows up): ask again after 30 s, 1 min, 2 min, then every 5 min. */
 export function nextProfileRetry(tries: number, now: number): number {
-  const waits = [30_000, 120_000, 600_000];
+  const waits = [30_000, 60_000, 120_000, 300_000];
   return now + waits[Math.min(tries - 1, waits.length - 1)];
+}
+
+/** A kind 0 we hold is asked for again after this (obelisk-dex refreshes
+ *  others' after 6 h; a village session is shorter, and a new account often
+ *  adds its picture a few seconds after its name). */
+export const PROFILE_REFRESH_MS = 20 * 60_000;
+
+export type ProfileAsks = Map<string, { tries: number; next: number }>;
+
+/**
+ * Who to ask for now, and when to ask each again: people with no kind 0 on
+ * the miss backoff, people with one after PROFILE_REFRESH_MS (missing ones
+ * first). Updates `asks`.
+ */
+export function profilesDue(people: readonly string[], has: (pk: string) => boolean, asks: ProfileAsks, now: number, max = 150): string[] {
+  const due = people.filter((p) => (asks.get(p)?.next ?? 0) <= now);
+  due.sort((a, b) => Number(has(a)) - Number(has(b)));
+  const out = due.slice(0, max);
+  for (const p of out) {
+    if (has(p)) { asks.set(p, { tries: 0, next: now + PROFILE_REFRESH_MS }); continue; }
+    const tries = (asks.get(p)?.tries ?? 0) + 1;
+    asks.set(p, { tries, next: nextProfileRetry(tries, now) });
+  }
+  return out;
 }
 
 export class Feed {
@@ -39,7 +64,7 @@ export class Feed {
   private resubTimer: ReturnType<typeof setTimeout> | null = null;
   private timers: ReturnType<typeof setInterval>[] = [];
   /** Profile lookups so far: tries made and when the next may go out. */
-  private requested = new Map<string, { tries: number; next: number }>();
+  private requested: ProfileAsks = new Map();
   private zapSince = 0;
   private stopped = false;
   private unStatus: (() => void) | null = null;
@@ -144,17 +169,13 @@ export class Feed {
   }
 
   private fetchProfiles(): void {
-    const now = Date.now();
-    const missing = this.state.missingProfiles().filter((p) => (this.requested.get(p)?.next ?? 0) <= now).slice(0, 150);
-    if (!missing.length) return;
-    for (const p of missing) {
-      const tries = (this.requested.get(p)?.tries ?? 0) + 1;
-      this.requested.set(p, { tries, next: nextProfileRetry(tries, now) });
-    }
+    const due = profilesDue(this.state.knownPeople(), (p) => this.state.hasProfile(p), this.requested, Date.now());
+    if (!due.length) return;
     void this.hub.query({
       relays: profileRelays(),
-      filters: [{ kinds: [0], authors: missing }],
+      filters: [{ kinds: [0], authors: due }],
       maxWaitMs: 5000,
+      cache: { mode: 'bypass' },
       label: 'sky-profiles',
     }).then((r) => { for (const ev of r.events) this.state.ingestProfile(ev); }).catch(() => {});
   }

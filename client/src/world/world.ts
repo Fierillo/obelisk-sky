@@ -23,7 +23,7 @@ import {
   millSite, type MillSite, turnedHalf, bridgePoints, parkSite,
 } from './layout';
 import { fbm2 } from './noise';
-import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, TRACK_LANES, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
+import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, PARK_MAT, TRACK_LANES, TRACK_TOP, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
 import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
 import { Flock } from './nostrich';
 import { WalkPin } from './walkPin';
@@ -89,6 +89,8 @@ export interface WorldHooks {
   /** The WebGL context was lost (false) or came back (true). */
   onContext?: (ok: boolean) => void;
   onArrive?: () => void;
+  /** Someone new is drawn in the village (walked in live, a claim, a resident): fetch their profile. */
+  onPersonMade?: (pk: string) => void;
   onGroundClick?: (p: Vec2) => void;
   onGameClick?: (gameId: string) => void;
   onLandmarkClick?: (id: LandmarkId) => void;
@@ -737,6 +739,9 @@ export class World {
       if (this.grid.inBounds(i, j) && this.pathCells.has(this.grid.idx(i, j))) h = Math.max(h, COBBLE_TOP);
     }
     if (h < FLOOR_TOP && this.insideWalkable(p)) h = FLOOR_TOP;
+    // The running track and the park's mat are drawn above the lawn: stand on them.
+    if (this.track && onTrack(p, this.track)) h = Math.max(h, TRACK_TOP);
+    else if (this.parkMat && this.onParkMat(p)) h = Math.max(h, PARK_MAT.top);
     // Raised ground counts only where there is some: off a bridge's deck or a
     // landmark's steps these say 0, which isn't "the lawn is at 0" (the lawn
     // dips below 0 in places, and under every building).
@@ -753,6 +758,16 @@ export class World {
       raise(this.gym!.groundAt({ x: dx * c - dz * sn, z: dx * sn + dz * c }));
     }
     return h;
+  }
+
+  /** Where the park's mat lies (buildSportsGround). */
+  private parkMat: { at: Vec2; rot: number } | null = null;
+
+  private onParkMat(p: Vec2): boolean {
+    const { at, rot } = this.parkMat!;
+    const dx = p.x - at.x, dz = p.z - at.z, c = Math.cos(rot), s = Math.sin(rot);
+    // World to the park's own frame (the inverse of the stations' turn).
+    return Math.abs(dx * c - dz * s) <= PARK_MAT.halfX && Math.abs(dx * s + dz * c) <= PARK_MAT.halfZ;
   }
 
   /** Debugging: how far each standing person's lowest point (shoe soles,
@@ -843,6 +858,7 @@ export class World {
     const parkAt = parkSite(this.plan, t, this.island.riverPts);
     const park = buildCalisthenics(parkAt, -t.rot);
     this.staticRoot.add(park);
+    this.parkMat = { at: parkAt, rot: -t.rot };
     this.blockAround(parkAt, 0.9);
     // Its training spots, in world space.
     const r = -t.rot, cos = Math.cos(r), sin = Math.sin(r);
@@ -1456,6 +1472,7 @@ export class World {
     this.people.set(pk, c);
     this.applyAvatar(c);
     this.scene.add(c.root);
+    this.hooks.onPersonMade?.(pk);
     c.idleFor = this.wanderRng() * 8;
     return c;
   }
@@ -2266,6 +2283,11 @@ export class World {
       out.push({ kind: 'campfire', x: p.x, z: p.z });
     }
     return out;
+  }
+
+  /** The other landmarks (café, HQ, La Crypta, Liberture): the parrilla's music keeps out of their ground. */
+  quietPlaces(): Vec2[] {
+    return [...this.landmarkSlots].filter(([id]) => id !== 'parrilla').map(([, s]) => ({ x: s.pos.x, z: s.pos.z }));
   }
 
   /** The emote someone is playing, if any. */

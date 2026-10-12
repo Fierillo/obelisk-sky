@@ -9,11 +9,14 @@ import { TRACK, type Vec2 } from './layout';
 const mat = (color: number, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
   new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
 
+/** The track's surface height: raised a touch, since the grass undulates by a
+ *  few cm and must not poke through. People stand on it (World.groundAt). */
+export const TRACK_TOP = 0.07;
+
 /** A stadium-shaped track (two straights, two bends), lanes painted white. */
 export function buildTrack(site: { c: Vec2; rot: number }): THREE.Group {
   const g = new THREE.Group();
-  // Raised a touch: the grass undulates by a few cm and must not poke through.
-  g.position.set(site.c.x, 0.07, site.c.z);
+  g.position.set(site.c.x, TRACK_TOP, site.c.z);
   g.rotation.y = -site.rot;
   const { halfLength: L, radius: R } = TRACK;
   const width = TRACK_WIDTH;
@@ -83,10 +86,15 @@ export function trackLap(site: { c: Vec2; rot: number }, n = 24, lane?: number):
  * on (under or between the bars), which way they face (as atan2(dx, dz)),
  * the grip height and the exercises it offers. Matches the geometry below.
  */
+/** The park's rubber mat (local half sizes and its top): people stand on it
+ *  (World.groundAt), so the grips below are heights above it. */
+export const PARK_MAT = { halfX: 1.3, halfZ: 0.7, top: 0.03 };
+
 export const CALISTHENICS_STATIONS: { at: Vec2; face: number; grip: number; half?: number; kinds: ExerciseKind[] }[] = [
-  { at: { x: -0.7, z: -0.4 }, face: 0, grip: 1.12, kinds: ['pullup', 'muscleup'] },
-  { at: { x: -0.55, z: 0.375 }, face: Math.PI / 2, grip: 0.5, half: 0.11, kinds: ['dip'] },
-  { at: { x: 0.65, z: -0.5 }, face: Math.PI / 2, grip: 0.03, kinds: ['pushup'] },
+  { at: { x: -0.7, z: -0.4 }, face: 0, grip: 1.12 - PARK_MAT.top, kinds: ['pullup', 'muscleup'] },
+  { at: { x: -0.55, z: 0.375 }, face: Math.PI / 2, grip: 0.5 - PARK_MAT.top, half: 0.11, kinds: ['dip'] },
+  // Hands flat on the mat.
+  { at: { x: 0.65, z: -0.5 }, face: Math.PI / 2, grip: 0, kinds: ['pushup'] },
 ];
 
 /** Where a street lamp may stand: each corner of the park's mat (2.6 × 1.4),
@@ -114,8 +122,8 @@ export function buildCalisthenics(at: Vec2, rot: number): THREE.Group {
     b.castShadow = true;
     g.add(b);
   };
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.03, 1.4), padMat);
-  pad.position.y = 0.015;
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(PARK_MAT.halfX * 2, PARK_MAT.top, PARK_MAT.halfZ * 2), padMat);
+  pad.position.y = PARK_MAT.top / 2;
   pad.receiveShadow = true;
   g.add(pad);
   // Pull-up bar.

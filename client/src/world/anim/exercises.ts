@@ -45,6 +45,10 @@ const merge = (...parts: Record<string, Dir>[]): Record<string, Dir> => Object.a
 const OVER_BAR = { dir: [0, 1, 0] as Dir, palm: [0, 0, 1] as Dir, curl: 0.85 };
 const ON_BAR = { dir: [0, -1, 0.3] as Dir, palm: [0, 0.3, 1] as Dir, curl: 0.8 };
 const ON_PARALLEL = { dir: [0.15, -1, 0.15] as Dir, palm: [-1, -0.1, 0] as Dir, curl: 0.95 };
+/** Bones at the ends of fingers and toes (the people's `*_03`, `*_04_leaf`, `ball_leaf`). */
+const FLOOR_TIP = /^(thumb|index|middle|ring|pinky)_0[34](_leaf)?_[lr]$|^ball_leaf_[lr]$/;
+/** How far those tips stay above the floor (model units: 4 cm, 1.6 cm in the village). */
+const FLOOR_SKIN = 0.04;
 const FLAT = { dir: [0, 1, 0] as Dir, palm: [0, 0, 1] as Dir, curl: 0.08 };
 
 const STRAIGHT_LEGS = merge(both('thigh', [0.03, -1, 0]), both('calf', [0, -1, -0.02]));
@@ -304,7 +308,7 @@ export function buildExerciseClip(
     }
   };
 
-  const apply = (pose0: PoseSpec, pitch: number, spread = 0) => {
+  const apply = (pose0: PoseSpec, pitch: number, spread = 0, clearTips = true) => {
     // `spread` pushes both arms outward (x) to reach grips wider than the pose's.
     const pose: PoseSpec = spread ? { ...pose0, aim: { ...pose0.aim } } : pose0;
     if (spread) {
@@ -370,6 +374,13 @@ export function buildExerciseClip(
     // Grip: move the body so the bar's centre sits where each hand holds it.
     const y = (anchor('l').y + anchor('r').y) / 2;
     root.position.y += gripY - y;
+    if (onFloor && clearTips) {
+      // The fingertips, thumb tips and toe tips hang below the palm and the
+      // ball of the foot: keep them (and the skin and soles round them) above the floor.
+      const tips = [...bones.values()].filter((b) => FLOOR_TIP.test(b.name)).map((b) => wp(b.name).y);
+      const low = tips.length ? Math.min(...tips) : Infinity;
+      if (low < gripY + FLOOR_SKIN) root.position.y += gripY + FLOOR_SKIN - low;
+    }
     if (alignForward) {
       // The bar is straight above (or in front of) the spot: hold it there
       // front-to-back too, so the body swings under it and never through it.
@@ -382,7 +393,7 @@ export function buildExerciseClip(
   const solvePitch = (pose: PoseSpec) => {
     let best = 1.4, bestErr = Infinity;
     for (let p = 1.0; p <= 1.62; p += 0.02) {
-      apply(pose, p);
+      apply(pose, p, 0, false);
       const toes = Math.min(wp('ball_l').y, wp('ball_r').y);
       const err = Math.abs(toes - gripY);
       if (err < bestErr) { bestErr = err; best = p; }

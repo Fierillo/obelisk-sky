@@ -153,6 +153,15 @@ export class SkyState {
     return [...this.people].filter((p) => !this.profiles.has(p));
   }
 
+  /** Everyone whose kind 0 we want (held or not: held ones are refreshed). */
+  knownPeople(): string[] {
+    return [...this.people];
+  }
+
+  hasProfile(pk: string): boolean {
+    return this.profiles.has(pk);
+  }
+
   // ── groups ─────────────────────────────────────────────────────────────
 
   /** Returns true when the visible set changed (relay.ts re-subscribes). */

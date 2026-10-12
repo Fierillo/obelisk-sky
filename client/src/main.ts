@@ -237,6 +237,8 @@ world.hooks = {
     showGroup(id);
   },
   onZap: () => sound.coin(),
+  // Everyone drawn gets a name and picture, posted or not (obelisk-dex asks wherever it shows a pubkey).
+  onPersonMade: (pk) => feed?.state.watch(pk),
   onContext: (ok) => {
     // The phone took the graphics away (short of memory): say so, and if
     // they don't come back by themselves, offer a reload.
@@ -1869,7 +1871,7 @@ function frame(): void {
     const t = world.cam.controls.target;
     const at = controller ? controller.pos : { x: t.x, z: t.z };
     emoteMusic.update(world.dancers(), { ...at, yaw: world.cameraYaw() }, world.playerPk);
-    placeMusic.update(world.musicPlaces(), at);
+    placeMusic.update(world.musicPlaces(), at, world.quietPlaces());
   }
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }

@@ -63,12 +63,14 @@ describe('emote music', () => {
 
   it('is heard only nearby, the nearest groups first', () => {
     const cs = clusterDancers([
-      { pk: 'a', x: 5, z: 0, kind: 'groove', since: 1 },
-      { pk: 'b', x: 15, z: 0, kind: 'groove', since: 1 },
-      { pk: 'c', x: -20, z: 0, kind: 'groove', since: 1 },
-      { pk: 'd', x: 60, z: 0, kind: 'groove', since: 1 },
+      { pk: 'a', x: 2, z: 0, kind: 'groove', since: 1 },
+      { pk: 'b', x: -4.5, z: 0, kind: 'groove', since: 1 },
+      { pk: 'c', x: 0, z: 5.5, kind: 'groove', since: 1 },
+      { pk: 'd', x: 12, z: 0, kind: 'groove', since: 1 },
     ]);
     expect(audible(cs, { x: 0, z: 0 }).map((c) => c.leader)).toEqual(['a', 'b']);
+    // Not from across the plaza: past HEAR_M (6 m) there's nothing.
+    expect(audible(cs, { x: 0, z: -7 })).toEqual([]);
     expect(audible(cs, { x: 100, z: 0 })).toEqual([]);
   });
 

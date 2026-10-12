@@ -22,7 +22,8 @@ import { emoteOf, EMOTE_SYNC_M } from '../world/emotes';
 import { barSeconds, nextBar, SynthLoop, type MusicKind } from './synthLoops';
 
 export const CLUSTER_M = EMOTE_SYNC_M;
-export const HEAR_M = 25;
+/** Heard only near the dancers (m): a step or two round the group, not across the plaza. */
+export const HEAR_M = 6;
 export const MAX_VOICES = 2;
 /** Emote sounds skip the music bus: from someone else, and your own (not placed: it's you). */
 export const SHOT_GAIN = 1.1;
@@ -230,7 +231,7 @@ export class EmoteMusic {
     const panner = ctx.createPanner();
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'linear';
-    panner.refDistance = 3;
+    panner.refDistance = 1.5;
     panner.maxDistance = HEAR_M;
     panner.rolloffFactor = 1;
     return panner;

@@ -15,19 +15,28 @@ export interface Place { kind: PlaceKind; x: number; z: number }
 
 /** How far each is heard (m) and how loud, under the music bus. */
 export const PLACE_TRACKS: Record<PlaceKind, { reach: number; gain: number }> = {
-  // The café is about 4.5 m away: the cumbia stays under the parrilla's roof.
-  parrilla: { reach: 3.5, gain: 0.6 },
+  // Its neighbours (the café, the nostr-wot HQ, about 5 m off) keep their
+  // own ground: see `quiet` in nearestPlaces.
+  parrilla: { reach: 5, gain: 0.6 },
   campfire: { reach: 5.5, gain: 0.45 },
 };
 
 type Vec2 = { x: number; z: number };
 
-/** The place whose music `at` hears: the nearest in its own reach (as a share of the reach, so a big one wins its ground), or none. */
-export function nearestPlaces(places: readonly Place[], at: Vec2): Place[] {
+/**
+ * The place whose music `at` hears: the nearest in its own reach (as a share
+ * of the reach, so a big one wins its ground), or none. The parrilla is not
+ * heard nearer to a `quiet` spot (another landmark: the café, La Crypta)
+ * than to the grill, so its reach never spills into their yards.
+ */
+export function nearestPlaces(places: readonly Place[], at: Vec2, quiet: readonly Vec2[] = []): Place[] {
   let best: { p: Place; k: number } | null = null;
   for (const p of places) {
-    const k = Math.hypot(p.x - at.x, p.z - at.z) / PLACE_TRACKS[p.kind].reach;
-    if (k < 1 && (!best || k < best.k)) best = { p, k };
+    const d = Math.hypot(p.x - at.x, p.z - at.z);
+    const k = d / PLACE_TRACKS[p.kind].reach;
+    if (k >= 1) continue;
+    if (p.kind === 'parrilla' && quiet.some((q) => Math.hypot(q.x - at.x, q.z - at.z) < d)) continue;
+    if (!best || k < best.k) best = { p, k };
   }
   return best ? [best.p] : [];
 }
@@ -49,12 +58,12 @@ export class PlaceMusic {
   constructor(private audio: () => { ctx: AudioContext; out: AudioNode } | null) {}
 
   /** A few times a second: the places, and where the listener stands (the ear's pose is emoteMusic's). */
-  update(places: readonly Place[], listener: Vec2): void {
+  update(places: readonly Place[], listener: Vec2, quiet: readonly Vec2[] = []): void {
     const a = this.enabled ? this.audio() : null;
     if (!a) { this.silence(); return; }
     const { ctx } = a;
     if (!this.bus) { this.bus = ctx.createGain(); this.bus.gain.value = 0.6; this.bus.connect(a.out); }
-    const want = nearestPlaces(places, listener);
+    const want = nearestPlaces(places, listener, quiet);
     const keep = new Set(want.map((p) => p.kind));
     for (const [k, v] of this.voices) if (!keep.has(k)) this.fade(k, v);
     for (const p of want) {
