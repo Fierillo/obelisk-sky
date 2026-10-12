@@ -10,11 +10,11 @@ describe('music at places', () => {
     { kind: 'parrilla', x: 0, z: 40 },
   ];
 
-  it('one voice per track, from its nearest place in earshot', () => {
-    const near = nearestPlaces(places, { x: 0, z: 0 });
-    expect(near).toHaveLength(2);
-    expect(near.find((p) => p.kind === 'campfire')).toEqual({ kind: 'campfire', x: 3, z: 0 });
-    expect(near.find((p) => p.kind === 'parrilla')).toEqual({ kind: 'parrilla', x: 0, z: 12 });
+  it('only the nearest place plays: places never mix', () => {
+    expect(nearestPlaces(places, { x: 0, z: 0 })).toEqual([{ kind: 'campfire', x: 3, z: 0 }]);
+    // Halfway between a campfire and the parrilla: whichever is nearer for its reach, alone.
+    expect(nearestPlaces(places, { x: 0, z: 8 })).toEqual([{ kind: 'parrilla', x: 0, z: 12 }]);
+    expect(nearestPlaces(places, { x: 8, z: 1 })).toEqual([{ kind: 'campfire', x: 8, z: 0 }]);
   });
 
   it('nothing past a track\'s reach', () => {

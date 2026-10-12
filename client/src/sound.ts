@@ -89,7 +89,8 @@ export class Soundscape {
     for (let i = 0; i < 3; i++) this.tone(4400, 0.03, 'triangle', 0.02, undefined, i * 0.06);
   }
 
-  /** One of your steps: a short burst of filtered noise and a low thud; running, brighter and heavier. */
+  /** One of your steps: a soft scuff of low-passed noise, like grass under a shoe; running, a little
+   *  brighter and firmer with a faint thump. Kept well under everything else. */
   footstep(running: boolean): void {
     if (!this.enabled || !this.footsteps || !this.ctx || this.ctx.state !== 'running') return;
     const ctx = this.ctx;
@@ -103,19 +104,23 @@ export class Soundscape {
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.playbackRate.value = vary;
-    const band = ctx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.value = (running ? 1150 : 650) * vary;
-    band.Q.value = running ? 0.8 : 1.3;
+    const low = ctx.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = (running ? 1600 : 1000) * vary;
+    low.Q.value = 0.3;
+    const high = ctx.createBiquadFilter();
+    high.type = 'highpass';
+    high.frequency.value = 180;
     const g = ctx.createGain();
-    const vol = running ? 0.3 : 0.2;
-    const dur = running ? 0.07 : 0.11;
+    const vol = running ? 0.07 : 0.045;
+    const dur = running ? 0.09 : 0.13;
+    // A soft attack (no click), then a quick fall.
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.linearRampToValueAtTime(vol, t + 0.018);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(band).connect(g).connect(this.master!);
+    src.connect(high).connect(low).connect(g).connect(this.master!);
     src.start(t, Math.random() * 0.1, dur + 0.02);
-    this.tone((running ? 115 : 85) * vary, running ? 0.08 : 0.06, 'sine', running ? 0.22 : 0.1, running ? 50 : 55);
+    if (running) this.tone(70 * vary, 0.07, 'sine', 0.04, 45);
   }
 
   blip(pk: string): void {

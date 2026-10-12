@@ -1,7 +1,8 @@
 // Music that belongs to a place: cumbia at the parrilla, a guitar by the
-// campfires. Each track is one looping voice that sounds from the nearest
-// place playing it (an HRTF panner fading to silence at the track's reach),
-// so two campfires in earshot never play two guitars over each other. Where
+// campfires. Only the nearest place in reach plays (an HRTF panner fading to
+// silence at its reach), crossfading as you walk from one to another, so
+// the parrilla and a campfire never mix and two campfires never play two
+// guitars over each other. Where
 // in the track it is comes from the wall clock (Date.now), so everyone at
 // the parrilla, on every screen, hears the same bar.
 //
@@ -14,22 +15,20 @@ export interface Place { kind: PlaceKind; x: number; z: number }
 
 /** How far each is heard (m) and how loud, under the music bus. */
 export const PLACE_TRACKS: Record<PlaceKind, { reach: number; gain: number }> = {
-  parrilla: { reach: 16, gain: 0.5 },
-  campfire: { reach: 11, gain: 0.45 },
+  parrilla: { reach: 8, gain: 0.5 },
+  campfire: { reach: 5.5, gain: 0.45 },
 };
 
 type Vec2 = { x: number; z: number };
 
-/** For each kind in earshot of `at`, its nearest place. */
+/** The place whose music `at` hears: the nearest in its own reach (as a share of the reach, so a big one wins its ground), or none. */
 export function nearestPlaces(places: readonly Place[], at: Vec2): Place[] {
-  const best = new Map<PlaceKind, { p: Place; d: number }>();
+  let best: { p: Place; k: number } | null = null;
   for (const p of places) {
-    const d = Math.hypot(p.x - at.x, p.z - at.z);
-    if (d >= PLACE_TRACKS[p.kind].reach) continue;
-    const had = best.get(p.kind);
-    if (!had || d < had.d) best.set(p.kind, { p, d });
+    const k = Math.hypot(p.x - at.x, p.z - at.z) / PLACE_TRACKS[p.kind].reach;
+    if (k < 1 && (!best || k < best.k)) best = { p, k };
   }
-  return [...best.values()].map((b) => b.p);
+  return best ? [best.p] : [];
 }
 
 /** Where in a track of `duration` seconds every screen is at wall time `now` (ms). */
@@ -90,7 +89,7 @@ export class PlaceMusic {
     const panner = ctx.createPanner();
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'linear';
-    panner.refDistance = 2;
+    panner.refDistance = 1.5;
     panner.maxDistance = t.reach;
     panner.rolloffFactor = 1;
     const gain = ctx.createGain();
