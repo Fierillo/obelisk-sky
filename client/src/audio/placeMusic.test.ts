@@ -50,3 +50,12 @@ describe('place music under an emote', () => {
     expect(placeBusGain(true) * Math.max(...Object.values(PLACE_TRACKS).map((t) => t.gain))).toBeLessThan(0.45 / 5);
   });
 });
+
+describe('place music keeps to its place', () => {
+  it('a campfire is not heard nearer a house than the fire', () => {
+    const fire = { kind: 'campfire' as const, x: 0, z: 0 };
+    const house = { x: 4, z: 0 };
+    expect(nearestPlaces([fire], { x: 1.5, z: 0 }, [house])).toEqual([fire]);
+    expect(nearestPlaces([fire], { x: 2.5, z: 0 }, [house])).toEqual([]); // in the house's yard
+  });
+});

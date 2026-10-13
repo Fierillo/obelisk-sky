@@ -35,9 +35,9 @@ export function placeBusGain(ducked: boolean): number {
 
 /**
  * The place whose music `at` hears: the nearest in its own reach (as a share
- * of the reach, so a big one wins its ground), or none. The parrilla is not
- * heard nearer to a `quiet` spot (another landmark: the café, La Crypta)
- * than to the grill, so its reach never spills into their yards.
+ * of the reach, so a big one wins its ground), or none. No place is heard
+ * nearer to a `quiet` spot (another landmark, a channel's house) than to
+ * itself, so its music never spills into their yards.
  */
 export function nearestPlaces(places: readonly Place[], at: Vec2, quiet: readonly Vec2[] = []): Place[] {
   let best: { p: Place; k: number } | null = null;
@@ -45,7 +45,7 @@ export function nearestPlaces(places: readonly Place[], at: Vec2, quiet: readonl
     const d = Math.hypot(p.x - at.x, p.z - at.z);
     const k = d / PLACE_TRACKS[p.kind].reach;
     if (k >= 1) continue;
-    if (p.kind === 'parrilla' && quiet.some((q) => Math.hypot(q.x - at.x, q.z - at.z) < d)) continue;
+    if (quiet.some((q) => Math.hypot(q.x - at.x, q.z - at.z) < d)) continue;
     if (!best || k < best.k) best = { p, k };
   }
   return best ? [best.p] : [];

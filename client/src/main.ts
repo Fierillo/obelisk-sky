@@ -2378,7 +2378,8 @@ function frame(): void {
     // In the theater the outside doesn't reach you: no music from the village, no crickets.
     sound.hush = inTheaterHall;
     emoteMusic.update(inTheaterHall ? [] : world.dancers(), { ...at, yaw: world.cameraYaw() }, world.playerPk);
-    placeMusic.update(inTheaterHall ? [] : world.musicPlaces(), at, world.quietPlaces(), emoteMusic.playing);
+    // Steps back under emote music nearby, and while you're doing an emote yourself.
+    placeMusic.update(inTheaterHall ? [] : world.musicPlaces(), at, world.quietPlaces(), emoteMusic.playing || (!!world.playerPk && world.emoteOf(world.playerPk) !== null));
   }
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }

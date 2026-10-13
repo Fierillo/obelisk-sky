@@ -2391,9 +2391,16 @@ export class World {
     return out;
   }
 
-  /** The other landmarks (café, HQ, La Crypta, Liberture): the parrilla's music keeps out of their ground. */
+  /** The landmarks without music (café, HQ, La Crypta, Liberture…) and every channel's house: place music keeps out of their ground. */
   quietPlaces(): Vec2[] {
-    return [...this.landmarkSlots].filter(([id]) => id !== 'parrilla').map(([, s]) => ({ x: s.pos.x, z: s.pos.z }));
+    const out = [...this.landmarkSlots].filter(([id]) => id !== 'parrilla').map(([, s]) => ({ x: s.pos.x, z: s.pos.z }));
+    const p = new THREE.Vector3();
+    for (const b of this.buildings.values()) {
+      if (b.tree) continue;
+      b.group.getWorldPosition(p);
+      out.push({ x: p.x, z: p.z });
+    }
+    return out;
   }
 
   /** The emote someone is playing, if any. */
