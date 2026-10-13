@@ -32,6 +32,26 @@ describe('avatar config', () => {
   });
 });
 
+describe('favourite places (haunts)', () => {
+  const look = defaultLook(3);
+  it('round-trip with the look, v1 and v2', () => {
+    const v2 = { ...DEFAULT_AVATAR, v: 2 as const, look, haunts: ['parrilla' as const, 'pond' as const] };
+    expect(parseAvatar(avatarTemplate(v2).content)).toEqual(v2);
+    const v1 = { ...DEFAULT_AVATAR, haunts: ['gym' as const] };
+    expect(parseAvatar(avatarTemplate(v1).content)).toEqual(v1);
+  });
+  it('are left out of the event when there are none, and old events parse with none', () => {
+    expect(JSON.parse(avatarTemplate({ ...DEFAULT_AVATAR, haunts: [] }).content)).not.toHaveProperty('haunts');
+    expect(parseAvatar(JSON.stringify({ v: 2, skin: 'a', look }))).not.toHaveProperty('haunts');
+    expect(parseAvatar(JSON.stringify({ v: 1, skin: 'a' }))).not.toHaveProperty('haunts');
+  });
+  it('drop unknown places, repeats and junk, and keep three at most', () => {
+    const a = parseAvatar(JSON.stringify({ v: 2, skin: 'a', look, haunts: ['moon', 'pond', 'pond', 7, 'plaza', 'park', 'gym'] }))!;
+    expect(a.haunts).toEqual(['pond', 'plaza', 'park']);
+    expect(parseAvatar(JSON.stringify({ v: 1, haunts: 'pond' }))).not.toHaveProperty('haunts');
+  });
+});
+
 describe('avatar v2 (a full look)', () => {
   const look = { ...defaultLook(42), body: 'm' as const, outfit: 'ranger' as const, hood: true, beard: true };
   it('round-trips a look', () => {

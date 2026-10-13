@@ -1,4 +1,5 @@
-// Your 3D look in the village: body, hat and pet.
+// Your 3D look in the village: body, hat and pet, and the places your
+// character likes to hang around (`haunts`, world/places.ts).
 //
 // Replaceable kind 30078, d=`obelisk:avatar3d:v1` (no other obelisk d-tag
 // collides), JSON content, published to the group relay so everyone there
@@ -16,6 +17,7 @@ import type { Event as NostrEvent, EventTemplate } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import { activeRelay } from './hub';
 import { parseLook, type PersonLook } from '../people/people';
+import { parseHaunts, type PlaceId } from '../world/places';
 
 export const AVATAR_D_TAG = 'obelisk:avatar3d:v1';
 
@@ -41,6 +43,8 @@ export interface Avatar {
   hat: Hat;
   hatColor: string;
   pet: { kind: PetKind; name: string } | null;
+  /** Up to three favourite places your character hangs around (world/places.ts). */
+  haunts?: PlaceId[];
 }
 
 export const DEFAULT_AVATAR: Avatar = { v: 1, skin: 'a', look: null, hat: 'none', hatColor: HAT_COLORS[0], pet: null };
@@ -58,6 +62,7 @@ export function parseAvatar(content: string): Avatar | null {
   const pet = petRaw && typeof petRaw === 'object' && (PETS as readonly string[]).includes(petRaw.kind as string)
     ? { kind: petRaw.kind as PetKind, name: cleanPetName(petRaw.name) }
     : null;
+  const haunts = parseHaunts(j.haunts);
   return {
     v: look ? 2 : 1,
     skin: oneOf(SKINS, j.skin, 'a'),
@@ -65,6 +70,7 @@ export function parseAvatar(content: string): Avatar | null {
     hat: oneOf(HATS, j.hat, 'none'),
     hatColor: oneOf(HAT_COLORS, j.hatColor, HAT_COLORS[0]),
     pet,
+    ...(haunts.length ? { haunts } : {}),
   };
 }
 
@@ -74,12 +80,14 @@ export function cleanPetName(raw: unknown): string {
 }
 
 export function avatarTemplate(a: Avatar, prevCreatedAt = 0): EventTemplate {
+  const haunts = parseHaunts(a.haunts);
+  const extra = haunts.length ? { haunts } : {};
   return {
     kind: 30078,
     tags: [['d', AVATAR_D_TAG]],
     content: JSON.stringify(a.look
-      ? { v: 2, skin: a.skin, look: a.look, hat: a.hat, hatColor: a.hatColor, pet: a.pet }
-      : { v: 1, skin: a.skin, hat: a.hat, hatColor: a.hatColor, pet: a.pet }),
+      ? { v: 2, skin: a.skin, look: a.look, hat: a.hat, hatColor: a.hatColor, pet: a.pet, ...extra }
+      : { v: 1, skin: a.skin, hat: a.hat, hatColor: a.hatColor, pet: a.pet, ...extra }),
     created_at: Math.max(Math.floor(Date.now() / 1000), prevCreatedAt + 1),
   };
 }

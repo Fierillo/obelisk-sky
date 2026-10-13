@@ -61,3 +61,21 @@ describe('closing the look editor', () => {
     expect(closeCreator()).toBe(false);
   });
 });
+
+describe('favourite places in the look editor', () => {
+  beforeEach(() => { document.body.innerHTML = ''; stages.length = 0; });
+  it('picks up to three (a fourth replaces the oldest), unpicks, and saves them with the look', async () => {
+    const d = deps();
+    openCreator(document.body, d);
+    const chip = (v: string) => document.querySelector(`.creator .haunts .creator-chip[data-v="${v}"]`) as HTMLButtonElement;
+    expect(document.querySelectorAll('.creator .haunts .creator-chip').length).toBeGreaterThanOrEqual(10);
+    for (const v of ['pond', 'gym', 'plaza', 'market']) chip(v).click();
+    expect([...document.querySelectorAll('.creator .haunts .creator-chip.on')].map((b) => (b as HTMLElement).dataset.v).sort()).toEqual(['gym', 'market', 'plaza']);
+    chip('plaza').click();
+    expect(chip('plaza').classList.contains('on')).toBe(false);
+    // The hat chips don't light up with them.
+    expect(document.querySelectorAll('.creator .hats .creator-chip.on')).toHaveLength(1);
+    (document.querySelector('.creator .account-btn.primary') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(d.save).toHaveBeenCalledWith(expect.objectContaining({ haunts: ['gym', 'market'] })));
+  });
+});

@@ -41,6 +41,6 @@ describe('the look editor in the village’s language', () => {
   it('has every word in Spanish', async () => {
     const { CREATOR_WORDS } = await import('./creator');
     expect(Object.keys(CREATOR_WORDS.es).sort()).toEqual(Object.keys(CREATOR_WORDS.en).sort());
-    for (const k of ['hair_', 'outfit_', 'hat_'] as const) expect(Object.keys(CREATOR_WORDS.es[k]).sort()).toEqual(Object.keys(CREATOR_WORDS.en[k]).sort());
+    for (const k of ['hair_', 'outfit_', 'hat_', 'place_'] as const) expect(Object.keys(CREATOR_WORDS.es[k]).sort()).toEqual(Object.keys(CREATOR_WORDS.en[k]).sort());
   });
 });

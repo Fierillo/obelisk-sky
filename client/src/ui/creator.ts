@@ -1,4 +1,5 @@
-// "Your look": body, skin, hair, clothes and their colours, a hat and a pet.
+// "Your look": body, skin, hair, clothes and their colours, a hat, a pet,
+// and up to three favourite places your character hangs around (world/places.ts).
 // Every choice previews live on your own character; Save publishes it
 // (nostr/avatars.ts) so everyone in the village sees the same you.
 
@@ -8,6 +9,7 @@ import {
   type Hair, type Outfit, type PersonLook,
 } from '../people/people';
 import { LookPreview } from './lookPreview';
+import { MAX_HAUNTS, PLACE_IDS, toggleHaunt, type PlaceId } from '../world/places';
 import { lang, type Lang } from '../i18n/lang';
 
 /** What each skin tone looks like on a face, for the swatches. */
@@ -23,6 +25,11 @@ const EN = {
   hair_: { none: 'None', buzzed: 'Buzzed', simpleparted: 'Parted', long: 'Long', buns: 'Buns', buzzedfemale: 'Short' } as Record<Hair, string>,
   outfit_: { peasant: 'Shirt and trousers', ranger: 'Ranger' } as Record<Outfit, string>,
   hat_: { none: 'No hat', cap: 'Cap', beanie: 'Beanie', tophat: 'Top hat', crown: 'Crown', headband: 'Headband', boina: 'Boina' } as Record<Hat, string>,
+  places: 'Favourite places', placesHint: `Where your character hangs out when you're away. Pick up to ${MAX_HAUNTS}.`,
+  place_: {
+    coffee: 'Café', parrilla: 'Parrilla', nostrwot: 'nostr-wot HQ', lacrypta: 'La Crypta', campfire: 'Campfire', pond: 'Pond',
+    plaza: 'Plaza', park: 'Park', track: 'Running track', gym: 'Gym', market: 'Market', home: 'Home',
+  } as Record<PlaceId, string>,
 };
 
 const ES: typeof EN = {
@@ -35,6 +42,11 @@ const ES: typeof EN = {
   hair_: { none: 'Sin pelo', buzzed: 'Rapado', simpleparted: 'Con raya', long: 'Largo', buns: 'Rodetes', buzzedfemale: 'Corto' },
   outfit_: { peasant: 'Camisa y pantalón', ranger: 'Explorador' },
   hat_: { none: 'Sin sombrero', cap: 'Gorra', beanie: 'Gorro', tophat: 'Galera', crown: 'Corona', headband: 'Vincha', boina: 'Boina' },
+  places: 'Lugares favoritos', placesHint: `Dónde para tu personaje cuando no estás. Elegí hasta ${MAX_HAUNTS}.`,
+  place_: {
+    coffee: 'Café', parrilla: 'Parrilla', nostrwot: 'Sede de nostr-wot', lacrypta: 'La Crypta', campfire: 'Fogón', pond: 'Laguna',
+    plaza: 'Plaza', park: 'Parque', track: 'Pista', gym: 'Gimnasio', market: 'Mercado', home: 'Mi casa',
+  },
 };
 
 export const CREATOR_WORDS: Record<Lang, typeof EN> = { en: EN, es: ES };
@@ -179,7 +191,7 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   swatches('sw-shoes', SHOE_COLORS, (v) => { look().shoes = v; });
 
   section(W.hat);
-  const hats = grid('chips');
+  const hats = grid('chips hats');
   for (const h of HATS) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -236,6 +248,17 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   nameRow.append(nameLabel, name);
   body.append(nameRow);
 
+  section(W.places);
+  const hint = document.createElement('div');
+  hint.className = 'creator-hint';
+  hint.textContent = W.placesHint;
+  body.append(hint);
+  chips('haunts', PLACE_IDS, (v) => W.place_[v], (v) => {
+    const next = toggleHaunt(draft.haunts ?? [], v);
+    if (next.length) draft.haunts = next;
+    else delete draft.haunts;
+  });
+
   const foot = document.createElement('div');
   foot.className = 'themes-foot';
   const status = document.createElement('span');
@@ -279,7 +302,8 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
     beardBtn.disabled = L.body !== 'm';
     hoodBtn.classList.toggle('on', L.hood);
     hoodBtn.disabled = L.outfit !== 'ranger';
-    for (const b of el.querySelectorAll<HTMLElement>('.chips:not(.body):not(.hair):not(.outfit):not(.beard):not(.hood) .creator-chip')) b.classList.toggle('on', b.dataset.v === draft.hat);
+    for (const b of el.querySelectorAll<HTMLElement>('.hats .creator-chip')) b.classList.toggle('on', b.dataset.v === draft.hat);
+    on('.haunts .creator-chip', (v) => !!draft.haunts?.includes(v as PlaceId));
     for (const b of el.querySelectorAll<HTMLElement>('.hatcolor .creator-swatch')) b.classList.toggle('on', b.dataset.v === draft.hatColor);
     for (const b of el.querySelectorAll<HTMLElement>('.pets .creator-pick')) b.classList.toggle('on', (b.dataset.v || null) === (draft.pet?.kind ?? null));
     name.disabled = !draft.pet;

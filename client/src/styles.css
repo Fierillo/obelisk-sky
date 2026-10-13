@@ -697,6 +697,7 @@ body.side-open .feed { opacity: 0; pointer-events: none; }
 @media (max-width: 720px) { .relays-cols { grid-template-columns: 1fr; } .relays-rail { border-right: 0; border-bottom: 1px solid var(--border); max-height: 40vh; } .relay-btn .relay-txt, .relay-btn .relay-chev { display: none; } }
 .creator-sub { font: 600 11px var(--sans); color: var(--muted); margin: 6px 0 2px; text-transform: uppercase; letter-spacing: 0.06em; }
 .creator-chip:disabled { opacity: 0.4; cursor: not-allowed; }
+.creator-hint { font: 500 12px/1.4 var(--sans); color: var(--muted); margin: 0 0 4px; }
 .card .avatar.brand-logo { border-radius: 14px; object-fit: contain; background: #0c0e12; }
 .official-badge { display: inline-block; margin: 2px 0 6px; padding: 3px 10px; border-radius: 999px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(129, 140, 248, 0.6); color: #c7d2fe; font: 600 12px var(--sans); }
 .official-notes { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }

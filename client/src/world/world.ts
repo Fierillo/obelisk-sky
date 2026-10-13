@@ -46,6 +46,7 @@ import { Sky, type TimeOverride } from './sky';
 import type { Prefs } from '../prefs';
 import { ZAP_STALE_MS, ZapFlights } from './zapFlight';
 import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } from './emotes';
+import { parseHaunts, pickIdle, type PlaceId } from './places';
 import { vw } from '../i18n/village';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
@@ -1860,36 +1861,19 @@ export class World {
     if (c.idleFor < threshold) return;
     c.idleFor = 0;
     const home = this.homeGroup(c.pk);
-    const roll = this.wanderRng();
+    const daylight = 1 - this.sky.day < 0.3;
+    // Their favourite places first, about two times in three (world/places.ts).
+    const { roll, haunt } = pickIdle(this.wanderRng, { haunts: this.hauntsOf(c.pk), daylight, night: this.sky.night, hasHome: !!home });
+    if (haunt && this.goHaunt(c, haunt, home)) return;
     // By day, a coffee at the café now and then.
-    if (1 - this.sky.day < 0.3 && roll >= 0.6 && roll < 0.68) {
+    if (daylight && roll >= 0.6 && roll < 0.68) {
       const seat = this.seats.find((x) => x.landmark === 'coffee' && !x.taken);
-      if (seat) {
-        this.reserve(c.pk, seat);
-        this.walkTo(c, seat.pos, {
-          then: () => {
-            this.releasePending(c.pk);
-            this.sit(c.pk, seat);
-            this.seatedUntil.set(c.pk, this.elapsed + 25 + this.wanderRng() * 35);
-          },
-        });
-        return;
-      }
+      if (seat) { this.goSit(c, seat, 25, 35); return; }
     }
     // Evenings at the parrilla: some neighbours take a place at the table.
-    if (1 - this.sky.day > 0.3 && roll >= 0.35 && roll < 0.55) {
+    if (!daylight && roll >= 0.35 && roll < 0.55) {
       const seat = this.seats.find((x) => x.landmark === 'parrilla' && !x.taken);
-      if (seat) {
-        this.reserve(c.pk, seat);
-        this.walkTo(c, seat.pos, {
-          then: () => {
-            this.releasePending(c.pk);
-            this.sit(c.pk, seat);
-            this.seatedUntil.set(c.pk, this.elapsed + 40 + this.wanderRng() * 60);
-          },
-        });
-        return;
-      }
+      if (seat) { this.goSit(c, seat, 40, 60); return; }
     }
     // At night most idle folk head indoors for a while.
     if (this.sky.night && home && roll < 0.35) {
@@ -1898,64 +1882,17 @@ export class World {
       });
       return;
     }
-    // Sports folk run laps, each in a lane of their own.
-    const lane = this.lanes.find((x) => !x.taken);
-    if (home && this.districtFor(home) === 'sports' && lane && roll < 0.35) {
-      this.reserve(c.pk, lane);
-      this.walkTo(c, this.lanePath(lane.lane!, c.pos)[0], {
-        then: () => {
-          this.releasePending(c.pk);
-          if (this.train(c.pk, lane, 'run')) this.trainUntil.set(c.pk, this.elapsed + 20 + this.wanderRng() * 30);
-        },
-      });
-      return;
-    }
-    // …or lift at the gym: in through the door, then straight to a free machine.
-    const machine = this.stations.find((x) => x.gym && !x.taken);
-    if (home && this.districtFor(home) === 'sports' && machine && this.gym && this.gymId && roll >= 0.35 && roll < 0.45) {
-      const slot = this.slotFor(this.gymId);
-      if (slot) {
-        this.reserve(c.pk, machine);
-        const inside = this.buildingToWorld(slot, { x: 0, z: slot.d / 2 - 0.35 });
-        this.walkTo(c, this.doorOf(this.gymId), {
-          then: () => c.walk([inside, this.stationApproach(machine)], false, () => {
-            this.releasePending(c.pk);
-            const kind = machine.kinds[0];
-            if (this.train(c.pk, machine, kind)) this.trainUntil.set(c.pk, this.elapsed + 12 + this.wanderRng() * 16);
-          }),
-        });
-        return;
-      }
-    }
-    // Sports folk also do a set in the park.
-    if (home && this.districtFor(home) === 'sports' && roll >= 0.4 && roll < 0.6) {
-      const st = this.stations.find((x) => !x.taken && !x.gym);
-      if (st) {
-        this.reserve(c.pk, st);
-        const kind = st.kinds[Math.floor(this.wanderRng() * st.kinds.length)];
-        this.walkTo(c, this.stationApproach(st), {
-          then: () => {
-            this.releasePending(c.pk);
-            if (this.train(c.pk, st, kind)) this.trainUntil.set(c.pk, this.elapsed + 10 + this.wanderRng() * 14);
-          },
-        });
-        return;
-      }
-    }
+    // Sports folk run laps, each in a lane of their own…
+    const sporty = !!home && this.districtFor(home) === 'sports';
+    if (sporty && roll < 0.35 && this.goLane(c)) return;
+    // …or lift at the gym: in through the door, then straight to a free machine…
+    if (sporty && roll >= 0.35 && roll < 0.45 && this.goGym(c)) return;
+    // …and do a set in the park.
+    if (sporty && roll >= 0.4 && roll < 0.6 && this.goPark(c)) return;
     // Some sit down with a mate for a while.
     if (roll > 0.88) {
       const seat = this.nearestFreeSeat(c.pos, 9, true);
-      if (seat) {
-        this.reserve(c.pk, seat);
-        this.walkTo(c, seat.pos, {
-          then: () => {
-            this.releasePending(c.pk);
-            this.sit(c.pk, seat);
-            this.seatedUntil.set(c.pk, this.elapsed + 25 + this.wanderRng() * 40);
-          },
-        });
-        return;
-      }
+      if (seat) { this.goSit(c, seat, 25, 40); return; }
     }
     let target: Vec2;
     if (roll < 0.5 && home) target = this.yardSpot(home, 2.2);
@@ -1967,6 +1904,137 @@ export class World {
       target = slots.length ? this.yardSpot(this.groupAtSlot(slots[Math.floor(this.wanderRng() * slots.length)].index) ?? '', 1.5) : this.plan.plaza.c;
     }
     this.walkTo(c, target, { run: false });
+  }
+
+  /** Walk over and sit for `base` + up to `span` seconds. */
+  private goSit(c: Character, seat: Seat, base: number, span: number): void {
+    this.reserve(c.pk, seat);
+    this.walkTo(c, seat.pos, {
+      then: () => {
+        this.releasePending(c.pk);
+        this.sit(c.pk, seat);
+        this.seatedUntil.set(c.pk, this.elapsed + base + this.wanderRng() * span);
+      },
+    });
+  }
+
+  /** Laps in a free lane of the track; false when every lane is taken. */
+  private goLane(c: Character): boolean {
+    const lane = this.lanes.find((x) => !x.taken);
+    if (!lane) return false;
+    this.reserve(c.pk, lane);
+    this.walkTo(c, this.lanePath(lane.lane!, c.pos)[0], {
+      then: () => {
+        this.releasePending(c.pk);
+        if (this.train(c.pk, lane, 'run')) this.trainUntil.set(c.pk, this.elapsed + 20 + this.wanderRng() * 30);
+      },
+    });
+    return true;
+  }
+
+  /** A free machine in the gym, in through its door; false with no gym or none free. */
+  private goGym(c: Character): boolean {
+    const machine = this.stations.find((x) => x.gym && !x.taken);
+    const slot = this.gymId ? this.slotFor(this.gymId) : null;
+    if (!machine || !this.gym || !this.gymId || !slot) return false;
+    this.reserve(c.pk, machine);
+    const inside = this.buildingToWorld(slot, { x: 0, z: slot.d / 2 - 0.35 });
+    this.walkTo(c, this.doorOf(this.gymId), {
+      then: () => c.walk([inside, this.stationApproach(machine)], false, () => {
+        this.releasePending(c.pk);
+        const kind = machine.kinds[0];
+        if (this.train(c.pk, machine, kind)) this.trainUntil.set(c.pk, this.elapsed + 12 + this.wanderRng() * 16);
+      }),
+    });
+    return true;
+  }
+
+  /** A set at a free station in the park. */
+  private goPark(c: Character): boolean {
+    const st = this.stations.find((x) => !x.taken && !x.gym);
+    if (!st) return false;
+    this.reserve(c.pk, st);
+    const kind = st.kinds[Math.floor(this.wanderRng() * st.kinds.length)];
+    this.walkTo(c, this.stationApproach(st), {
+      then: () => {
+        this.releasePending(c.pk);
+        if (this.train(c.pk, st, kind)) this.trainUntil.set(c.pk, this.elapsed + 10 + this.wanderRng() * 14);
+      },
+    });
+    return true;
+  }
+
+  // ── favourite places (world/places.ts) ────────────────────────────────
+
+  /** Haunts set by other sources (a guest island's scripted people). */
+  private scriptedHaunts = new Map<string, PlaceId[]>();
+
+  /** Give `pk` favourite places from outside their avatar (an empty list clears them). */
+  setHaunts(pk: string, list: readonly string[]): void {
+    const h = parseHaunts(list);
+    if (h.length) this.scriptedHaunts.set(pk, h);
+    else this.scriptedHaunts.delete(pk);
+  }
+
+  /** Where `pk` likes to hang around: their saved avatar's, else any set from outside. */
+  hauntsOf(pk: string): PlaceId[] {
+    const own = this.avatars.get(pk)?.haunts;
+    return own?.length ? own : this.scriptedHaunts.get(pk) ?? [];
+  }
+
+  /** Free seats near `at` (outdoor only: indoor seats are for players). */
+  private freeSeatNear(at: Vec2, within: number, test: (s: Seat) => boolean = () => true): Seat | null {
+    let best: Seat | null = null, bd = Infinity;
+    for (const s of this.seats) {
+      if (s.taken || s.indoor || !test(s)) continue;
+      const d = dist(s.pos, at);
+      if (d <= within && d < bd) { best = s; bd = d; }
+    }
+    return best;
+  }
+
+  /** Open ground in front of a landmark (its yard), for those that have no seat to offer. */
+  private landmarkYard(id: LandmarkId): Vec2 | null {
+    const s = this.landmarkSlots.get(id);
+    if (!s) return null;
+    return this.spotNear(s.yard, 0.5, 0.8);
+  }
+
+  /**
+   * Send `c` to one of their favourite places: a free seat or station there
+   * when there is one, else a spot to stand about. False when the place
+   * isn't on this island (no gym, no market) or has no room just now.
+   */
+  private goHaunt(c: Character, id: PlaceId, home: string | null): boolean {
+    const walk = (to: Vec2 | null) => { if (to) this.walkTo(c, to, { run: false }); return !!to; };
+    const sitOr = (seat: Seat | null, base: number, span: number, to: Vec2 | null) => {
+      if (seat && this.wanderRng() < 0.6) { this.goSit(c, seat, base, span); return true; }
+      return walk(to);
+    };
+    switch (id) {
+      case 'coffee': return sitOr(this.seats.find((x) => x.landmark === 'coffee' && !x.taken) ?? null, 25, 35, this.landmarkYard('coffee'));
+      case 'parrilla': return sitOr(this.seats.find((x) => x.landmark === 'parrilla' && !x.taken) ?? null, 40, 60, this.landmarkYard('parrilla'));
+      case 'nostrwot': case 'lacrypta': return walk(this.landmarkYard(id));
+      case 'campfire': {
+        // The logs by the plaza's fire, or a voice tree's chairs.
+        const at = this.plan.campfire;
+        const seat = this.freeSeatNear(at, 1.5) ?? this.freeSeatNear(c.pos, 30, (s) => !!s.tree);
+        return sitOr(seat, 30, 40, this.spotNear(at, 1.1, 0.2));
+      }
+      case 'pond': {
+        const { c: at, r } = this.plan.pond;
+        return sitOr(this.freeSeatNear(at, r + 1.2), 25, 35, this.spotNear(at, r + 0.6, 0.4));
+      }
+      case 'plaza': {
+        const seat = this.freeSeatNear(this.plan.plaza.c, this.plan.plaza.r + 0.5, (s) => !!s.bench?.startsWith('plaza:'));
+        return sitOr(seat, 25, 40, this.spotNear(this.plan.plaza.c, this.plan.plaza.r - 0.4, 1.2));
+      }
+      case 'park': return this.goPark(c);
+      case 'track': return this.goLane(c);
+      case 'gym': return this.goGym(c);
+      case 'market': return walk(this.marketAt ? this.spotNear(this.marketAt, 0.6, 0.8) : null);
+      case 'home': return walk(home ? this.yardSpot(home, 2.2) : null);
+    }
   }
 
   private spotNear(c: Vec2, r: number, jitter: number): Vec2 {
