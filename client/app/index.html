@@ -51,7 +51,7 @@
         <svg class="relay-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <button id="status" class="status" data-mode="connecting" title="Switch between Live and History" aria-label="Live or History: tap to switch">
-        <span class="dot"></span><span class="status-text">Connecting…</span>
+        <span class="dot"></span><span class="status-text" data-i18n="status.connecting">Connecting…</span>
         <svg class="status-swap" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>
       </button>
       <div class="hud-tabs">
@@ -77,13 +77,13 @@
       <button id="menu-btn" class="menu-btn" title="Menu" aria-label="Menu" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
       </button>
-      <button id="login" class="account-btn primary">Log in</button>
+      <button id="login" class="account-btn primary" data-i18n="login">Log in</button>
       <div id="account" class="account" hidden>
         <button id="account-look" class="account-look" title="Your look">
           <span id="account-avatar" class="account-avatar"></span>
           <span class="account-who"><span id="account-name" class="account-name"></span><span id="account-nip" class="account-nip"></span></span>
         </button>
-        <button id="logout" class="account-btn danger" title="Log out">Log out</button>
+        <button id="logout" class="account-btn danger" title="Log out" data-i18n="logout">Log out</button>
       </div>
     </header>
 
@@ -166,7 +166,7 @@
         <img src="/brand/sky-mark.svg" class="gate-mark" alt="" />
         <div class="gate-title">Obelisk Sky</div>
         <div class="gate-text"></div>
-        <button id="gate-login" class="account-btn primary big">Log in with Nostr</button>
+        <button id="gate-login" class="account-btn primary big" data-i18n="gate.login">Log in with Nostr</button>
       </div>
     </div>
 
@@ -174,7 +174,7 @@
       <div class="loading-clouds" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div class="loading-inner" role="status">
         <img src="/brand/sky-mark.svg" class="loading-mark" alt="" />
-        <div class="loading-title">Raising the island…</div>
+        <div class="loading-title" data-i18n="loading.island">Raising the island…</div>
         <div class="loading-bar"><div id="loading-fill"></div></div>
       </div>
     </div>
@@ -205,9 +205,9 @@
     <div id="toasts" class="toasts" aria-live="polite"></div>
     <div id="rotate" class="rotate" role="dialog" aria-modal="true" aria-labelledby="rotate-title">
       <div class="rotate-phone" aria-hidden="true"><img src="/brand/sky-mark.svg" alt="" /></div>
-      <div id="rotate-title" class="rotate-title">Turn your phone sideways</div>
-      <div class="rotate-text">The village is played in landscape.</div>
-      <button type="button" class="account-btn primary big">Go full screen</button>
+      <div id="rotate-title" class="rotate-title" data-i18n="rotate.title">Turn your phone sideways</div>
+      <div class="rotate-text" data-i18n="rotate.text">The village is played in landscape.</div>
+      <button type="button" class="account-btn primary big" data-i18n="rotate.button">Go full screen</button>
     </div>
     <div id="wipe" class="wipe"></div>
   </div>

@@ -3,6 +3,7 @@
 // rendered behind it by the same top-down camera, with trees, houses and
 // villagers popping in as their models arrive.
 
+import { t } from '../i18n/app';
 import { TOP_DOWN_MARGIN } from '../world/cameraman';
 import {
   dist, distToPolyline, inFootprint, islandOutline, millBlocked, onTrack, parkSite, rng, trackSite, waterworks, TRACK,
@@ -15,10 +16,10 @@ import { LANDMARKS, reserveLandmarkSlots, type LandmarkId } from '../world/landm
 const NS = 'http://www.w3.org/2000/svg';
 
 export const STAGES = [
-  { from: 0, label: 'Raising the island…' },
-  { from: 0.08, label: 'Planting trees…' },
-  { from: 0.4, label: 'Building houses…' },
-  { from: 0.7, label: 'Waking up the villagers…' },
+  { from: 0, label: t('loading.island') },
+  { from: 0.08, label: t('loading.trees') },
+  { from: 0.4, label: t('loading.houses') },
+  { from: 0.7, label: t('loading.people') },
 ] as const;
 
 /** Which stage a 0–1 progress is in. */

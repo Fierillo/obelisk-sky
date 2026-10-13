@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
@@ -38,9 +38,35 @@ function turnDefines(): Record<string, string> {
   return out;
 }
 
+/**
+ * The village page's words in the visitor's language before its big bundle
+ * arrives: src/i18n/boot.ts goes in as its own small script, ahead of the
+ * app's (two module scripts in one page would be bundled as one, and the
+ * server's CSP allows no inline script).
+ */
+function earlyLang(): Plugin {
+  const src = here('src/i18n/boot.ts');
+  let ref = '';
+  let building = false;
+  return {
+    name: 'sky-early-lang',
+    configResolved(c) { building = c.command === 'build'; },
+    buildStart() { if (building) ref = this.emitFile({ type: 'chunk', id: src, name: 'lang' }); },
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        if (!/app\/index\.html$/.test(ctx.filename)) return html;
+        const url = building ? `/${ctx.bundle && ref ? (Object.values(ctx.bundle).find((c) => c.type === 'chunk' && c.facadeModuleId === src)?.fileName ?? '') : ''}` : '/src/i18n/boot.ts';
+        if (url === '/') return html;
+        return html.replace('<head>', `<head>\n  <script type="module" crossorigin src="${url}"></script>`);
+      },
+    },
+  };
+}
+
 export default defineConfig({
   root: __dirname,
-  plugins: [tailwindcss()],
+  plugins: [tailwindcss(), earlyLang()],
   resolve: { alias: SHIMS },
   esbuild: { jsx: 'automatic' },
   define: {

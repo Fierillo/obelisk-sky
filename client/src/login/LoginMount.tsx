@@ -10,8 +10,12 @@ import { loginSignerStorage } from '@/services/session/signer-storage';
 import { SIGNER_STORAGE_KEY_NIP46 } from '@nostr-wot/ui';
 import '@nostr-wot/ui/styles.css';
 import '../obelisk.generated.css';
+import { lang } from '../i18n/lang';
+import { watchSdk } from './sdkSpanish';
 
 let root: Root | null = null;
+/** Stops translating the SDK's words (Spanish only). */
+let unwatch: (() => void) | null = null;
 
 export function openLogin(onDone?: () => void): void {
   // The SDK modal portals to <body>, which carries the theme like the app's.
@@ -23,7 +27,9 @@ export function openLogin(onDone?: () => void): void {
     document.body.appendChild(host);
     root = createRoot(host);
   }
-  const close = () => root?.render(null);
+  // The SDK's own words are English only: swap them while the modal is open.
+  if (lang === 'es') { unwatch?.(); unwatch = watchSdk(document.body); }
+  const close = () => { root?.render(null); unwatch?.(); unwatch = null; };
   root.render(<LoginModal onClose={close} onSuccess={() => { close(); onDone?.(); }} />);
 }
 
@@ -35,5 +41,7 @@ export function openLogin(onDone?: () => void): void {
  */
 export function resetLogin(): void {
   root?.render(null);
+  unwatch?.();
+  unwatch = null;
   loginSignerStorage.removeItem(SIGNER_STORAGE_KEY_NIP46);
 }

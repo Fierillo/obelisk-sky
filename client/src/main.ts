@@ -28,6 +28,7 @@ import { obeliskNoteUrl, obeliskProfileUrl } from './ui/obeliskLinks';
 import { onPlaceChange, SETTLE_WALKING } from './ui/chatAuto';
 import { SidePanel } from './ui/sidePanel';
 import { initOrientation, lockLandscape } from './ui/orientation';
+import { t as tr } from './i18n/app';
 import { wireCard } from './ui/cardSheet';
 import { DmPanel } from './ui/dmPanel';
 import { EmoteMenu } from './ui/emoteMenu';
@@ -523,14 +524,14 @@ function renderAccess(a: FeedAccess | 'logged-out', reason?: string): void {
   gate.hidden = a === 'open' || a === 'connecting';
   const text = gate.querySelector('.gate-text') as HTMLElement;
   if (a === 'logged-out') {
-    text.textContent = 'Log in with your Nostr key to see who lives here and join the conversations.';
-    setStatus('connecting', 'Logged out');
+    text.textContent = tr('gate.loggedOut');
+    setStatus('connecting', tr('status.loggedOut'));
   } else if (a === 'refused') {
-    text.textContent = 'public.obelisk.ar is invite-only and has not admitted this key yet. Ask in Obelisk to be let in.';
-    setStatus('connecting', 'Not admitted');
+    text.textContent = tr('gate.refused', { relay: activeRelay().replace(/^wss?:\/\//, '') });
+    setStatus('connecting', tr('status.refused'));
     if (reason) console.info('[sky] relay refused:', reason);
   } else if (a === 'offline') {
-    setStatus('connecting', 'Reconnecting…');
+    setStatus('connecting', tr('status.reconnecting'));
     gate.hidden = true;
   }
   ($('gate-login') as HTMLElement).hidden = a !== 'logged-out';
@@ -887,7 +888,7 @@ const emoteMenu = new EmoteMenu($('app'), {
 });
 function doEmote(kind: EmoteKind): void {
   const pk = world.playerPk;
-  if (!pk || !controller) { toast('Log in to walk around as yourself.'); return; }
+  if (!pk || !controller) { toast(tr('toast.loginToWalk')); return; }
   if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
   // No coast: still moving next frame, the body would drop the emote at once.
   controller.stopNow();
@@ -2265,11 +2266,11 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
         break;
       case 'emote':
         if (world.playerPk) emoteMenu.toggle();
-        else toast('Log in to walk around as yourself.');
+        else toast(tr('toast.loginToWalk'));
         break;
       case 'firstperson':
         if (world.playerPk) toggleFirstPerson();
-        else toast('Log in to walk around as yourself.');
+        else toast(tr('toast.loginToWalk'));
         break;
       case 'help': {
         const open = $('app').querySelector('.guide');

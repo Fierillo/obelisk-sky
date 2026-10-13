@@ -21,8 +21,9 @@ describe('the bridge arch', () => {
 
 describe('bridges on the island', () => {
   const plan = planIsland();
-  const mid = (i: number) => plan.river[i];
-  const specs = bridgeSpecs(plan, [mid(Math.floor(plan.river.length / 3))]);
+  // Halfway between two river points below the pond: open river, no pond.
+  const mid = { x: (plan.river[3].x + plan.river[4].x) / 2, z: (plan.river[3].z + plan.river[4].z) / 2 };
+  const specs = bridgeSpecs(plan, [mid]);
   const b = specs[0];
   const n = { x: -b.t.z, z: b.t.x };
   const at = (across: number, along = 0) => ({ x: b.c.x + n.x * across + b.t.x * along, z: b.c.z + n.z * across + b.t.z * along });

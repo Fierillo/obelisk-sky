@@ -81,14 +81,18 @@ export function buildObelisk(height = 8): Obelisk {
     body.add(t);
   }
 
-  // Pale edge strips up the four corners.
+  // Pale edge strips up the four corners and on to the point.
   const edgeMat = new THREE.MeshBasicMaterial({ color: 0xf2ffd9, transparent: true, opacity: 0.5 });
+  const strip = (a: THREE.Vector3, b: THREE.Vector3) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.035, a.distanceTo(b), 0.035), edgeMat);
+    m.position.copy(a).lerp(b, 0.5);
+    m.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize());
+    m.name = 'edge';
+    body.add(m);
+  };
   for (let i = 0; i < 4; i++) {
-    const a = lo[i], b = hi[i];
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.035, a.distanceTo(b), 0.035), edgeMat);
-    strip.position.copy(a).lerp(b, 0.5);
-    strip.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize());
-    body.add(strip);
+    strip(lo[i], hi[i]);
+    strip(hi[i], tip);
   }
 
   // Stepped plinth; the body sits on top of it.

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { obeliskShape, LOGO_PROPORTIONS } from './obelisk';
+import * as THREE from 'three';
+import { buildObelisk, obeliskShape, LOGO_PROPORTIONS } from './obelisk';
 
 describe('obelisk landmark', () => {
   it('has the logo proportions from obelisk-media (OB-01, alto = 3.73 × base)', () => {
@@ -26,5 +27,15 @@ describe('the plinth', () => {
     expect(st.map((s) => s.top)).toEqual([0.16, 0.32, 0.5].map((v) => expect.closeTo(v, 5)));
     expect(st[0].half).toBeCloseTo(PLINTH_HALF, 2);
     expect(st[1].half).toBeLessThan(st[0].half);
+  });
+  it('draws the pale edge strips up the shaft and on to the point', () => {
+    const o = buildObelisk(8);
+    const edges: THREE.Mesh[] = [];
+    o.group.traverse((m) => { if (m.name === 'edge') edges.push(m as THREE.Mesh); });
+    expect(edges).toHaveLength(8);
+    const { shaftH, apex } = obeliskShape(8);
+    // Four reach the tip: centred between the shaft's top and the apex.
+    const toTip = edges.filter((e) => Math.abs(e.position.y - (shaftH + apex) / 2) < 1e-6);
+    expect(toTip).toHaveLength(4);
   });
 });

@@ -1,23 +1,35 @@
-// next-intl, as far as the re-hosted obelisk-dex components use it: English
-// messages from the vendored src/i18n/messages/en, ICU `{name}` arguments,
-// and `t.rich` with tag callbacks.
+// next-intl, as far as the re-hosted obelisk-dex components use it: the
+// vendored src/i18n/messages in the village's language (i18n/lang.ts: the
+// landing page's choice), English where a key is missing, ICU `{name}`
+// arguments, and `t.rich` with tag callbacks.
 
 import { createElement, Fragment, type ReactNode } from 'react';
+import { lang } from '../i18n/lang';
 
-const modules = import.meta.glob('@/i18n/messages/en/*.json', { eager: true, import: 'default' }) as Record<string, Record<string, unknown>>;
-const messages: Record<string, unknown> = {};
-for (const [path, mod] of Object.entries(modules)) {
-  const name = path.split('/').pop()!.replace(/\.json$/, '');
-  messages[name] = mod;
-}
+const load = (mods: Record<string, Record<string, unknown>>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const [path, mod] of Object.entries(mods)) out[path.split('/').pop()!.replace(/\.json$/, '')] = mod;
+  return out;
+};
+const en = load(import.meta.glob('@/i18n/messages/en/*.json', { eager: true, import: 'default' }) as Record<string, Record<string, unknown>>);
+const es = load(import.meta.glob('@/i18n/messages/es/*.json', { eager: true, import: 'default' }) as Record<string, Record<string, unknown>>);
+const tables = lang === 'es' ? [es, en] : [en];
 
-function lookup(key: string): string | null {
+function find(messages: Record<string, unknown>, key: string): string | null {
   let cur: unknown = messages;
   for (const part of key.split('.')) {
     if (!cur || typeof cur !== 'object') return null;
     cur = (cur as Record<string, unknown>)[part];
   }
   return typeof cur === 'string' ? cur : null;
+}
+
+function lookup(key: string): string | null {
+  for (const m of tables) {
+    const v = find(m, key);
+    if (v !== null) return v;
+  }
+  return null;
 }
 
 type Values = Record<string, unknown>;
@@ -72,15 +84,15 @@ export function useTranslations(namespace?: string): Translator {
   return translator(namespace);
 }
 
-export function useLocale(): 'en' {
-  return 'en';
+export function useLocale(): 'en' | 'es' {
+  return lang;
 }
 
 export function useFormatter() {
   return {
-    dateTime: (d: Date | number, o?: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en', o).format(d),
-    number: (n: number, o?: Intl.NumberFormatOptions) => new Intl.NumberFormat('en', o).format(n),
-    relativeTime: (d: Date | number) => new Intl.DateTimeFormat('en').format(d),
+    dateTime: (d: Date | number, o?: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(lang, o).format(d),
+    number: (n: number, o?: Intl.NumberFormatOptions) => new Intl.NumberFormat(lang, o).format(n),
+    relativeTime: (d: Date | number) => new Intl.DateTimeFormat(lang).format(d),
   };
 }
 

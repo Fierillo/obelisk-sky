@@ -1,11 +1,13 @@
 // "How to play": the controls, from the help button in the bottom bar, and
 // once on first login. Touch screens get the touch version.
 
+import { pick } from '../i18n/lang';
+
 const SEEN_KEY = 'obelisk-sky/controls-seen';
 
 interface Row { keys: string[]; text: string }
 
-const DESKTOP: { title: string; rows: Row[] }[] = [
+const DESKTOP_EN: { title: string; rows: Row[] }[] = [
   {
     title: 'Move',
     rows: [
@@ -40,7 +42,7 @@ const DESKTOP: { title: string; rows: Row[] }[] = [
   },
 ];
 
-const TOUCH: { title: string; rows: Row[] }[] = [
+const TOUCH_EN: { title: string; rows: Row[] }[] = [
   {
     title: 'Move',
     rows: [
@@ -68,26 +70,104 @@ const TOUCH: { title: string; rows: Row[] }[] = [
   },
 ];
 
+
+const DESKTOP_ES: { title: string; rows: Row[] }[] = [
+  {
+    title: 'Moverse',
+    rows: [
+      { keys: ['W', 'A', 'S', 'D'], text: 'Caminar (las flechas también sirven)' },
+      { keys: ['Shift'], text: 'Mantenelo apretado para correr' },
+      { keys: ['W', 'W'], text: 'Tocá dos veces una tecla de dirección para correr; soltala para volver a caminar' },
+      { keys: ['Espacio'], text: 'Saltar (también caminando y corriendo); mantenelo para seguir saltando' },
+      { keys: ['Clic'], text: 'Hacé clic en el suelo para caminar hasta ahí' },
+      { keys: ['Arrastrar'], text: 'Girar la cámara; la rueda hace zoom' },
+      { keys: ['V'], text: 'Primera persona: hacé clic para mirar con el mouse; V o Esc para salir' },
+    ],
+  },
+  {
+    title: 'Hablar',
+    rows: [
+      { keys: ['Acercate'], text: 'Parate frente a una casa para abrir su canal' },
+      { keys: ['Enter'], text: 'Escribí un mensaje en el canal donde estás' },
+      { keys: ['Clic'], text: 'Hacé clic en un globo para responder; caminás hasta esa persona' },
+      { keys: ['Clic'], text: 'Hacé clic en un cartel o una casa para ir a ese canal' },
+    ],
+  },
+  {
+    title: 'Pasarla bien',
+    rows: [
+      { keys: ['E'], text: 'Sentate en un banco o banquito cercano a tomar mate, en el café por un café y una laptop, o en la parrilla por un asado; E otra vez para pararte' },
+      { keys: ['E', '2'], text: 'En el parque: E entrena en la barra más cercana (dominadas, fondos, flexiones), 2 hace muscle-ups en la barra; caminá para parar' },
+      { keys: ['G'], text: 'Gestos: bailar, la postura del loto, asentir, cruzarte de brazos… después 1–9 o 0 para elegir; caminá para parar' },
+      { keys: ['Join call'], text: 'En la fogata de un canal de voz, sumate a la llamada' },
+      { keys: ['Juego'], text: 'En un canal, empezá un juego; hacé clic en una mesa para jugar' },
+      { keys: ['Tu nombre'], text: 'Arriba a la derecha: cambiá tu look y tu mascota' },
+    ],
+  },
+];
+
+const TOUCH_ES: { title: string; rows: Row[] }[] = [
+  {
+    title: 'Moverse',
+    rows: [
+      { keys: ['Palanca'], text: 'La palanca abajo a la izquierda; empujala hasta el borde para correr' },
+      { keys: ['Tocar'], text: 'Tocá el suelo para caminar hasta ahí' },
+      { keys: ['Arrastrar'], text: 'Girar la cámara; pellizcá para hacer zoom' },
+      { keys: ['Ojo'], text: 'Primera persona: arrastrá para mirar alrededor' },
+    ],
+  },
+  {
+    title: 'Hablar',
+    rows: [
+      { keys: ['Acercate'], text: 'Parate frente a una casa para abrir su canal' },
+      { keys: ['Tocar'], text: 'Tocá un globo para responder; caminás hasta esa persona' },
+    ],
+  },
+  {
+    title: 'Pasarla bien',
+    rows: [
+      { keys: ['Sit'], text: 'Cerca de un banco o banquito, tocá Sit para tomar mate' },
+      { keys: ['Menu', 'Emotes'], text: 'Bailar, la postura del loto, asentir…; caminá para parar' },
+      { keys: ['Join call'], text: 'En la fogata de un canal de voz, sumate a la llamada' },
+      { keys: ['Tu nombre'], text: 'Arriba a la derecha: cambiá tu look y tu mascota' },
+    ],
+  },
+];
+
+const WORDS = {
+  en: {
+    desktop: DESKTOP_EN, touch: TOUCH_EN, label: 'Controls', title: 'How to play',
+    sub: 'You are the character with your name above it. Walk to a channel’s building to join the conversation there.',
+    hint: 'Open this again with the ? button.', ok: 'Got it',
+  },
+  es: {
+    desktop: DESKTOP_ES, touch: TOUCH_ES, label: 'Controles', title: 'Cómo se juega',
+    sub: 'Sos el personaje con tu nombre encima. Caminá hasta la casa de un canal para sumarte a la conversación.',
+    hint: 'Volvé a abrir esto con el botón ?.', ok: 'Entendido',
+  },
+};
+
 export const isTouch = () => matchMedia('(pointer: coarse)').matches;
 
 export function openControlsGuide(parent: HTMLElement): void {
+  const w = pick(WORDS);
   parent.querySelector('.guide')?.remove();
   const el = document.createElement('div');
   el.className = 'themes guide';
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Controls');
+  el.setAttribute('aria-label', w.label);
   const head = document.createElement('div');
   head.className = 'themes-head';
   const title = document.createElement('div');
   title.className = 'themes-title';
-  title.textContent = 'How to play';
+  title.textContent = w.title;
   const sub = document.createElement('div');
   sub.className = 'themes-sub';
-  sub.textContent = 'You are the character with your name above it. Walk to a channel’s building to join the conversation there.';
+  sub.textContent = w.sub;
   head.append(title, sub);
   const body = document.createElement('div');
   body.className = 'themes-body';
-  for (const sec of isTouch() ? TOUCH : DESKTOP) {
+  for (const sec of isTouch() ? w.touch : w.desktop) {
     const h = document.createElement('div');
     h.className = 'themes-section';
     h.textContent = sec.title;
@@ -113,11 +193,11 @@ export function openControlsGuide(parent: HTMLElement): void {
   foot.className = 'themes-foot';
   const hint = document.createElement('span');
   hint.className = 'themes-status';
-  hint.textContent = 'Open this again with the ? button.';
+  hint.textContent = w.hint;
   const ok = document.createElement('button');
   ok.type = 'button';
   ok.className = 'account-btn primary';
-  ok.textContent = 'Got it';
+  ok.textContent = w.ok;
   const close = () => { el.remove(); document.removeEventListener('keydown', onKey); };
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   ok.addEventListener('click', close);

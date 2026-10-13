@@ -16,7 +16,8 @@ describe('island plan', () => {
     }
   });
   it('every yard is reachable from the plaza', () => {
-    const grid = buildNavGrid(plan, plan.slots, [plan.river[2], plan.river[5]]);
+    const river = smoothRiver(plan);
+    const grid = buildNavGrid(plan, plan.slots, waterworks(plan, river, null, millBlocked(plan, trackSite(plan))).bridges);
     for (const s of plan.slots) {
       const path = grid.findPath({ x: 0, z: 3 }, s.yard);
       expect(path, `slot ${s.index}`).not.toBeNull();
@@ -125,6 +126,15 @@ describe('the footbridges and the watermill', () => {
     const near = Math.min(...bridges.map((b) => dist(b, mill!.at)));
     expect(near).toBeGreaterThan(1.5);
     expect(near).toBeLessThan(2.2);
+  });
+
+  it('keeps the pond clear of every building slot', () => {
+    for (const sl of plan.slots) expect(dist(sl.pos, plan.pond.c) - plan.pond.r - sl.w * Math.SQRT1_2).toBeGreaterThan(0.5);
+  });
+
+  it('keeps the bridge by the mill on its upstream side, toward the village', () => {
+    const byMill = bridges.reduce((a, b) => (dist(a, mill!.at) < dist(b, mill!.at) ? a : b));
+    expect(river.indexOf(byMill)).toBeLessThan(river.indexOf(mill!.at));
   });
 
   it('keeps three bridges apart, off the pond', () => {

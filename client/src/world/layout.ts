@@ -79,9 +79,12 @@ export function planIsland(seed = 7): IslandPlan {
   const radiusAt = (theta: number) => R * (1 + harmonics.reduce((s, h) => s + h.a * Math.sin(h.k * theta + h.p), 0));
 
   const plaza = { c: { x: 0, z: 0.5 }, r: 3.2 };
-  // Downstream of the straight line from the obelisk to the Liberture house,
-  // so the footbridge on that line crosses only the river.
-  const pond = { c: { x: 8.85, z: 4.1 }, r: 1.9 };
+  // A little upstream of the straight line from the obelisk to the Liberture
+  // house, so the footbridge on that line crosses only the river.
+  const pond = { c: { x: 6.7, z: -3.7 }, r: 1.9 };
+  // Where the pond stood when the building slots were first laid out (a step
+  // downstream): slots still keep clear of it, so moving the pond moved no house.
+  const slotPond = { c: { x: 7.2, z: -2.2 }, r: 2.1 };
 
   // Mountains along the back (−z) edge.
   const mountains: Mountain[] = [];
@@ -103,11 +106,10 @@ export function planIsland(seed = 7): IslandPlan {
   const river: Vec2[] = [
     { x: 4.6, z: -10.8 },
     { x: 5.8, z: -7.6 },
-    { x: 6.6, z: -4.4 },
-    { x: 7.3, z: -2.0 },
-    { x: 8.25, z: 1.0 },
     pond.c,
-    { x: 9.0, z: 7.0 },
+    { x: 7.2, z: -2.2 },
+    { x: 8.4, z: 1.2 },
+    { x: 8.6, z: 4.4 },
     { x: Math.cos(fallAngle) * (fallR - 2.2), z: Math.sin(fallAngle) * (fallR - 2.2) },
     { x: Math.cos(fallAngle) * (fallR + 0.4), z: Math.sin(fallAngle) * (fallR + 0.4) },
   ];
@@ -128,7 +130,7 @@ export function planIsland(seed = 7): IslandPlan {
     const clearance = size * 0.72 + 0.6;
     if (r + clearance > radiusAt(th) - 1.0) continue;
     if (distToPolyline(pos, river) < clearance + riverWidth) continue;
-    if (dist(pos, pond.c) < pond.r + clearance + 0.4) continue;
+    if (dist(pos, slotPond.c) < slotPond.r + clearance + 0.4 || dist(pos, pond.c) < pond.r + clearance) continue;
     if (mountains.some((m) => dist(pos, m.pos) < m.r + clearance + 0.2)) continue;
     if (slots.some((o) => dist(o.pos, pos) < (o.w + size) / 2 + 2.2)) continue;
     // Face the plaza: door on local +z.
@@ -458,7 +460,7 @@ export const MILL_BRIDGE_GAP = 1.75;
  * The footbridges and the watermill (world.ts and the loading map share it):
  * one bridge upstream, one where the straight line from the obelisk to
  * `line` (the Liberture house) crosses the river, and one right beside the
- * mill's wheel, on its upstream side if there's room. `blocked` is where the
+ * mill's wheel, on its upstream side (toward the village) if there's room. `blocked` is where the
  * mill's house can't stand.
  */
 export function waterworks(
@@ -466,7 +468,7 @@ export function waterworks(
 ): { bridges: Vec2[]; mill: MillSite | null } {
   const pond = plan.pond;
   const nearPond = (p: Vec2, pad: number) => dist(p, pond.c) < pond.r + pad;
-  const bridges = [riverPts[Math.floor(riverPts.length * 0.15)]];
+  const bridges = [riverPts[Math.floor(riverPts.length * 0.11)]];
   if (line) {
     // The river point nearest the segment obelisk → `line`, if it really crosses there.
     const o = plan.plaza.c, dx = line.x - o.x, dz = line.z - o.z, len2 = dx * dx + dz * dz || 1;
@@ -477,7 +479,8 @@ export function waterworks(
     const at = riverPts.reduce((b, p) => (off(p) < off(b) ? p : b));
     if (off(at) < 0.5 && !nearPond(at, 1.7)) bridges.push(at);
   }
-  const mill = millSite(riverPts, plan.riverWidth * 0.62, { avoid: [...bridges, { ...pond.c, r: pond.r + 0.6 }], clear: 2.4, blocked });
+  // The mill keeps its stretch near the waterfall (from 72% of the river on).
+  const mill = millSite(riverPts, plan.riverWidth * 0.62, { avoid: [...bridges, { ...pond.c, r: pond.r + 0.6 }], clear: 2.4, lo: 0.72, blocked });
   if (!mill) return { bridges: [...bridges, bridgePoints(riverPts, pond.c)[1]], mill };
   const i = riverPts.indexOf(mill.at);
   const along = (dir: 1 | -1): Vec2 | null => {
