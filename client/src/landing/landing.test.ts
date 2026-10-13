@@ -30,6 +30,17 @@ describe('landing copy', () => {
     applyLang(document, 'en');
     expect(document.querySelector('h1')!.textContent).toBe(COPY.en['hero.title']);
   });
+  it('keeps "Nostr" in the headline its own shimmering word, in both languages', () => {
+    document.documentElement.innerHTML = html.replace(/^<!doctype html>/i, '');
+    expect(document.querySelector('h1 .glow-word')!.textContent).toBe('Nostr');
+    for (const l of LANGS) {
+      applyLang(document, l);
+      const glow = document.querySelectorAll('h1 .glow-word');
+      expect(glow).toHaveLength(1);
+      expect(glow[0].textContent).toBe('Nostr');
+    }
+    expect(COPY.es['hero.title']).toBe('Entrá al mundo de Nostr, caminando.');
+  });
   it('sends every call to action to the village', () => {
     document.documentElement.innerHTML = html.replace(/^<!doctype html>/i, '');
     for (const k of ['nav.enter', 'hero.enter', 'cta.enter']) expect(document.querySelector(`[data-i18n="${k}"]`)!.getAttribute('href')).toBe('/app');

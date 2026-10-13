@@ -58,7 +58,7 @@ const es: Record<CopyKey, string> = {
   'nav.how': 'Cómo funciona',
   'nav.enter': 'Entrar',
   'hero.kicker': 'Un pueblo 3D para Obelisk',
-  'hero.title': 'Entrá caminando a las charlas de Nostr.',
+  'hero.title': 'Entrá al mundo de Nostr, caminando.',
   'hero.lead': 'Cada canal es una casa en una isla flotante. Entrá, tomate un mate, sumate a llamadas, jugá.',
   'hero.enter': 'Entrar a la isla',
   'hero.obelisk': '¿Qué es Obelisk?',

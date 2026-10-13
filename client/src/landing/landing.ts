@@ -11,8 +11,26 @@ export function applyLang(doc: Document, lang: Lang): void {
   for (const el of doc.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const w = words[el.dataset.i18n as CopyKey];
     if (w) el.textContent = w;
+    if (w && el.dataset.glow) glowWord(el, el.dataset.glow);
   }
   for (const b of doc.querySelectorAll<HTMLButtonElement>('[data-lang]')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+}
+
+/** Wrap each `word` in `el`'s text in a `.glow-word` span (the hero's shimmering "Nostr"). */
+export function glowWord(el: HTMLElement, word: string): void {
+  const text = el.textContent ?? '';
+  const parts = text.split(word);
+  if (parts.length < 2) return;
+  el.textContent = '';
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const span = el.ownerDocument.createElement('span');
+      span.className = 'glow-word';
+      span.textContent = word;
+      el.append(span);
+    }
+    if (part) el.append(part);
+  });
 }
 
 export function mountLanding(doc: Document): void {
