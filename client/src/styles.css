@@ -483,6 +483,10 @@ a.account-btn { text-decoration: none; display: inline-flex; align-items: center
 /* ── your look (creator) ───────────────────────────────────── */
 .creator { position: absolute; right: 16px; top: 64px; width: min(420px, calc(100vw - 32px)); max-height: calc(100% - 190px); display: flex; flex-direction: column; background: rgba(23, 23, 23, 0.97); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); z-index: 12; }
 .creator { overflow: hidden; }
+.creator > .themes-head { position: relative; padding-right: 48px; }
+.creator-close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.06); color: var(--muted); cursor: pointer; }
+.creator-close:hover { background: rgba(255, 255, 255, 0.12); color: var(--white); }
+.creator-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 /* The options scroll inside the panel: on a short screen nothing is cut off. */
 .creator-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 /* Wide but short (tablets sideways, small laptops): the preview on the left, the options beside it. */
@@ -920,7 +924,8 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
 
   /* Your look: the preview on the left, the choices on the right. */
   .creator { top: 8px; bottom: 8px; right: var(--land-edge); width: min(640px, calc(100vw - 16px)); max-height: none; background: #171717; display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
-  .creator > .themes-head { grid-column: 1 / -1; padding: 10px 14px 8px; }
+  .creator > .themes-head { grid-column: 1 / -1; padding: 10px 48px 8px 14px; }
+  .creator-close { top: 6px; right: 8px; }
   .creator .themes-title { font-size: 15px; }
   .creator .themes-sub { font-size: 12px; margin-top: 2px; }
   .creator > .look-preview { grid-column: 1; grid-row: 2; height: 100%; min-height: 0; border-bottom: 0; border-right: 1px solid var(--border); }

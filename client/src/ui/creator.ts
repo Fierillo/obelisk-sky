@@ -52,6 +52,15 @@ export interface CreatorDeps {
 
 /** The open panel's close (one at a time: opening again replaces it). */
 let closeOpen: (() => void) | null = null;
+/** Leave the open panel as Cancel does (the preview goes back); false when none was open. */
+let dismissOpen: (() => void) | null = null;
+
+/** Close the look panel as its Cancel / × / Esc do. True if one was open. */
+export function closeCreator(): boolean {
+  if (!dismissOpen) return false;
+  dismissOpen();
+  return true;
+}
 
 export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = false): void {
   closeOpen?.();
@@ -60,12 +69,17 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   const el = document.createElement('div');
   el.className = 'creator';
   const stage = new LookPreview();
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
   const close = () => {
     stage.dispose();
     el.remove();
-    if (closeOpen === close) closeOpen = null;
+    window.removeEventListener('keydown', onKey);
+    if (closeOpen === close) { closeOpen = null; dismissOpen = null; }
   };
+  const dismiss = () => { deps.cancel(); close(); };
   closeOpen = close;
+  dismissOpen = dismiss;
+  window.addEventListener('keydown', onKey);
 
   const head = document.createElement('div');
   head.className = 'themes-head';
@@ -75,7 +89,15 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   const sub = document.createElement('div');
   sub.className = 'themes-sub';
   sub.textContent = first ? W.welcomeSub : W.yoursSub;
-  head.append(title, sub);
+  // A × as well as Cancel: on a short screen the foot can be out of reach.
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'creator-close';
+  x.setAttribute('aria-label', W.cancel);
+  x.title = W.cancel;
+  x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  x.addEventListener('click', dismiss);
+  head.append(title, sub, x);
   const body = document.createElement('div');
   body.className = 'themes-body creator-body';
 
@@ -222,7 +244,7 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   cancel.type = 'button';
   cancel.className = 'account-btn';
   cancel.textContent = first ? W.later : W.cancel;
-  cancel.addEventListener('click', () => { deps.cancel(); close(); });
+  cancel.addEventListener('click', dismiss);
   const save = document.createElement('button');
   save.type = 'button';
   save.className = 'account-btn primary';

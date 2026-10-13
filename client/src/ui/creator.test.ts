@@ -44,3 +44,20 @@ describe('look editor preview', () => {
     await vi.waitFor(() => expect(stages[2].dispose).toHaveBeenCalled());
   });
 });
+
+describe('closing the look editor', () => {
+  beforeEach(() => { document.body.innerHTML = ''; stages.length = 0; });
+  it('closes from its ×, from Esc and from closeCreator, putting the preview back each time', async () => {
+    const { closeCreator } = await import('./creator');
+    for (const how of ['x', 'esc', 'api'] as const) {
+      const d = deps();
+      openCreator(document.body, d);
+      if (how === 'x') (document.querySelector('.creator .creator-close') as HTMLButtonElement).click();
+      else if (how === 'esc') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      else expect(closeCreator()).toBe(true);
+      expect(document.querySelector('.creator')).toBeNull();
+      expect(d.cancel).toHaveBeenCalledTimes(1);
+    }
+    expect(closeCreator()).toBe(false);
+  });
+});

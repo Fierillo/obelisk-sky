@@ -21,7 +21,7 @@ import { GamePanel } from './ui/gamePanel';
 import { AvatarStore, DEFAULT_AVATAR, avatarTemplate, type Avatar } from './nostr/avatars';
 import { ActivityBeacon, ActivityStore, activityTemplate, emoteActivity, emoteOfActivity, hereSpotId, parseSpot, type Activity, type Claim } from './nostr/activity';
 import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
-import { openCreator } from './ui/creator';
+import { closeCreator, openCreator } from './ui/creator';
 import { CallRoom, RECONNECT_DELAYS, awayCountdown } from './voice/callRoom';
 import { HAND_EVERY_S, ScreeningBeacon, TheaterStore, canShare, canSpeak, handTemplate, screeningTemplate, type HandWant, type Screening, type ScreeningSpec } from './nostr/theater';
 import { TheaterPanel, WatchView, isVoiceKind, openFullscreenVideo, theaterView } from './ui/theaterPanel';
@@ -1450,6 +1450,8 @@ function closeAccountMenu(): void {
 
 $('account-look').addEventListener('click', () => {
   const menu = $('account-menu');
+  // The look panel open: close it (as Cancel), and the menu shows over the village, not behind it.
+  if (closeCreator()) { menu.hidden = false; $('account-look').setAttribute('aria-expanded', 'true'); return; }
   menu.hidden = !menu.hidden;
   $('account-look').setAttribute('aria-expanded', String(!menu.hidden));
 });
