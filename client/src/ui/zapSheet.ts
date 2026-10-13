@@ -18,21 +18,36 @@ export interface ZapSheetDeps {
   toast(text: string): void;
 }
 
+const UNCONFIRMED = 'Your wallet stopped answering after the payment was sent. Check it, then reload the page before zapping again.';
+
 const PROBLEM: Record<ZapProblem, string> = {
   noAddress: 'They have no Lightning address on their profile, so they can’t be zapped yet.',
   noWallet: 'Connect a wallet first.',
   invalidAmount: 'Pick an amount in sats.',
 };
 
+/** A payment under way anywhere in the page (one sheet at a time may pay). */
+let paying = false;
+/** A wallet went quiet after a payment was sent: it may have paid, so no zap until a reload. */
+let mayHavePaid = false;
+
+/** Tests only: forget the page-wide payment state. */
+export function resetZapSheetState(): void { paying = false; mayHavePaid = false; }
+
 export function openZapSheet(parent: HTMLElement, recipient: string, preset: number | null, deps: ZapSheetDeps): void {
+  // A sheet that's paying stays: replacing it would hide the payment and offer a second one.
+  if (paying) { deps.toast('A zap is still being paid. Wait for it to finish.'); return; }
+  (parent.querySelector('.zap-sheet') as HTMLElement & { closeSheet?: () => void } | null)?.closeSheet?.();
   parent.querySelector('.zap-sheet')?.remove();
   const el = div('themes zap-sheet');
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Send a zap');
   const name = deps.name(recipient);
-  const lud16 = deps.lud16(recipient);
+  // Read again on every paint: their profile may arrive after the sheet opened.
+  const lud16 = () => deps.lud16(recipient);
   const head = div('themes-head');
-  head.append(div('themes-title', `⚡ Zap ${name}`), div('themes-sub', lud16 ?? 'No Lightning address on their profile'));
+  const sub = div('themes-sub');
+  head.append(div('themes-title', `⚡ Zap ${name}`), sub);
   const body = div('themes-body');
 
   // Amount: a field and one-tap amounts.
@@ -70,11 +85,13 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
   parent.append(el);
 
   let busy = false;
-  let unconfirmed = false;
-  const close = () => { el.remove(); document.removeEventListener('keydown', onKey); };
+  // Their Lightning address may land after the sheet opened: look again until it does.
+  const recheck = setInterval(() => { if (!lud16()) return; clearInterval(recheck); if (!busy) paint(); }, 1000);
+  const close = () => { clearInterval(recheck); el.remove(); document.removeEventListener('keydown', onKey); };
+  (el as HTMLElement & { closeSheet?: () => void }).closeSheet = close;
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) close(); };
   document.addEventListener('keydown', onKey);
-  cancel.addEventListener('click', close);
+  cancel.addEventListener('click', () => { if (!busy) close(); });
 
   function paintWallet(): void {
     wallet.replaceChildren();
@@ -116,18 +133,25 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
 
   function paint(): void {
     paintWallet();
-    const problem = checkZap({ lud16, sats: Number(amount.value) }, deps.walletKind());
-    zap.disabled = busy || unconfirmed || !!problem;
+    const address = lud16();
+    sub.textContent = address ?? 'No Lightning address on their profile';
+    const problem = checkZap({ lud16: address, sats: Number(amount.value) }, deps.walletKind());
+    zap.disabled = busy || mayHavePaid || !!problem;
+    cancel.disabled = busy;
     zap.textContent = busy ? 'Zapping…' : `⚡ Zap ${Number(amount.value) > 0 ? Number(amount.value).toLocaleString() : ''} sats`;
-    if (problem === 'noAddress') error.textContent = PROBLEM.noAddress;
+    if (mayHavePaid) error.textContent = UNCONFIRMED;
+    else if (problem === 'noAddress') error.textContent = PROBLEM.noAddress;
+    else if (error.textContent === PROBLEM.noAddress) error.textContent = '';
   }
   amount.addEventListener('input', paint);
 
   zap.addEventListener('click', async () => {
     const sats = Number(amount.value);
-    const problem = checkZap({ lud16, sats }, deps.walletKind());
+    const problem = checkZap({ lud16: lud16(), sats }, deps.walletKind());
     if (problem) { error.textContent = PROBLEM[problem]; return; }
+    if (busy || paying || mayHavePaid) return;
     busy = true;
+    paying = true;
     error.textContent = '';
     status.textContent = 'Paying…';
     paint();
@@ -135,15 +159,15 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
       const { markerError } = await deps.send(sats, comment.value);
       deps.toast(markerError ? `⚡ Sent ${sats.toLocaleString()} sats to ${name} (the channel didn’t take the note: ${markerError})` : `⚡ Sent ${sats.toLocaleString()} sats to ${name}`);
       busy = false;
+      paying = false;
       close();
     } catch (e) {
       busy = false;
+      paying = false;
       status.textContent = '';
-      if (deps.isUnconfirmed(e)) {
-        // It may have paid: no second try from here (a retry would pay twice).
-        unconfirmed = true;
-        error.textContent = 'Your wallet stopped answering after the payment was sent. Check it before trying again.';
-      } else error.textContent = `The zap didn’t go through: ${e instanceof Error ? e.message : String(e)}`;
+      // It may have paid: no second try from here or any other sheet (a retry would pay twice).
+      if (deps.isUnconfirmed(e)) mayHavePaid = true;
+      else error.textContent = `The zap didn’t go through: ${e instanceof Error ? e.message : String(e)}`;
       paint();
     }
   });

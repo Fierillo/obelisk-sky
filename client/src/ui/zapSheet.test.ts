@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { openZapSheet, type ZapSheetDeps } from './zapSheet';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { openZapSheet, resetZapSheetState, type ZapSheetDeps } from './zapSheet';
 
 const PK = 'b'.repeat(64);
 function open(over: Partial<ZapSheetDeps> = {}, preset: number | null = 21) {
@@ -19,6 +19,7 @@ function open(over: Partial<ZapSheetDeps> = {}, preset: number | null = 21) {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('the zap sheet', () => {
+  beforeEach(() => resetZapSheetState());
   it('pays the amount with the connected wallet and closes', async () => {
     const { deps, zap, sheet } = open();
     expect(sheet.textContent).toContain('Alby');
@@ -45,5 +46,39 @@ describe('the zap sheet', () => {
     await flush();
     expect(sheet.textContent).toContain('stopped answering');
     expect(zap.disabled).toBe(true);
+  });
+  it('can\'t be cancelled or replaced while it pays', async () => {
+    let finish!: () => void;
+    const { deps, zap } = open({ send: vi.fn(() => new Promise<{ markerError: null }>((r) => { finish = () => r({ markerError: null }); })) });
+    zap.click();
+    await flush();
+    const cancel = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!;
+    expect(cancel.disabled).toBe(true);
+    cancel.click();
+    expect(document.querySelector('.zap-sheet')).not.toBeNull();
+    openZapSheet(document.body, PK, 100, deps);
+    expect(document.querySelectorAll('.zap-sheet')).toHaveLength(1);
+    expect(deps.toast).toHaveBeenCalledWith(expect.stringContaining('still being paid'));
+    finish();
+    await flush();
+    expect(deps.send).toHaveBeenCalledTimes(1);
+  });
+  it('after a payment that may have gone through, no other sheet offers to zap', async () => {
+    const first = open({ send: vi.fn(async () => { throw new Error('quiet'); }) });
+    first.zap.click();
+    await flush();
+    const again = open();
+    expect(again.zap.disabled).toBe(true);
+    expect(again.sheet.textContent).toContain('reload');
+  });
+  it('enables Zap when their Lightning address arrives after opening', async () => {
+    vi.useFakeTimers();
+    let address: string | null = null;
+    const { zap } = open({ lud16: () => address });
+    expect(zap.disabled).toBe(true);
+    address = 'ana@getalby.com';
+    vi.advanceTimersByTime(1100);
+    expect(zap.disabled).toBe(false);
+    vi.useRealTimers();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Director } from './director';
-import { Player, findEpisodes, paceDelay, type Ev, LIVE_IDLE_BEFORE_STORY } from './player';
+import { Player, findEpisodes, paceDelay, type Ev, LIVE_IDLE_BEFORE_STORY, ZAP_LIVE_S } from './player';
 
 let n = 0;
 const m = (pubkey: string, at: number, groupId = 'g'): Ev =>
@@ -92,5 +92,44 @@ describe('history mode', () => {
     p.history = false;
     p.goLive(base);
     expect(p.missed).toBe(0);
+  });
+});
+
+describe('a zap reaching the village', () => {
+  const NOW = 100_000;
+  const zap = (id: string, at: number): Ev => ({ k: 'zap', at, z: { id, from: 'A', target: 'B', targetId: null, groupId: 'g', sats: 21, createdAt: at } });
+  const flights = (d: Director) => d.take().filter((c) => c.c === 'zap' && !c.instant);
+
+  it('flies once when it just happened', () => {
+    const d = new Director();
+    const p = new Player(d);
+    p.load([], NOW);
+    d.take();
+    p.push(zap('z1', NOW - 5), NOW);
+    p.push(zap('z1', NOW - 5), NOW);
+    expect(flights(d)).toHaveLength(1);
+  });
+
+  it('an old one (a late receipt, a channel loaded later) is kept but doesn’t fly or cut a replay', () => {
+    const d = new Director();
+    const p = new Player(d);
+    p.load([m('A', NOW - 7200), m('B', NOW - 7150), m('A', NOW - 7100), m('C', NOW - 7050)], NOW);
+    expect(p.mode).toBe('replay');
+    d.take();
+    p.push(zap('z2', NOW - ZAP_LIVE_S - 1), NOW);
+    expect(flights(d)).toHaveLength(0);
+    expect(p.mode).toBe('replay');
+    expect(p.events.some((e) => e.k === 'zap')).toBe(true);
+  });
+
+  it('while you look at history it is counted, not flown', () => {
+    const d = new Director();
+    const p = new Player(d);
+    p.load([], NOW);
+    p.history = true;
+    d.take();
+    p.push(zap('z3', NOW), NOW);
+    expect(flights(d)).toHaveLength(0);
+    expect(p.missed).toBe(1);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAccessRefusal, nextProfileRetry, profilesDue, PROFILE_REFRESH_MS, type ProfileAsks } from './feed';
+import { isAccessRefusal, nextProfileRetry, profilesDue, PROFILE_REFRESH_MS, zapAsks, type ProfileAsks } from './feed';
 
 describe('isAccessRefusal', () => {
   it('recognises the relay refusing this key', () => {
@@ -38,5 +38,16 @@ describe('profilesDue', () => {
   it('asks for at most a batch at a time', () => {
     const people = Array.from({ length: 200 }, (_, i) => String(i));
     expect(profilesDue(people, () => false, new Map(), 0, 150)).toHaveLength(150);
+  });
+});
+
+describe('zapAsks', () => {
+  it('asks the group relay for every message and the defaults for recent ones, 250 ids a query', () => {
+    const ids = Array.from({ length: 600 }, (_, i) => `id${i}`);
+    const asks = zapAsks(ids, ids.slice(-300), 'wss://group/', ['wss://group', 'wss://a', 'wss://a']);
+    expect(asks.filter((a) => a.relays[0] === 'wss://group/').map((a) => a.ids.length)).toEqual([250, 250, 100]);
+    const others = asks.filter((a) => a.relays[0] !== 'wss://group/');
+    expect(others.map((a) => a.relays)).toEqual([['wss://a'], ['wss://a']]);
+    expect(others.map((a) => a.ids.length)).toEqual([250, 50]);
   });
 });

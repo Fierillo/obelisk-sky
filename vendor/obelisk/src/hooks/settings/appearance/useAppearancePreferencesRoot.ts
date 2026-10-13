@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePreferences } from '@/hooks/preferences/usePreferences';
-import { applyAppearance } from '@/services/settings/apply-appearance';
+import { getAppearancePreferences, subscribeAppearance } from '@/services/preferences/appearance';
+import { applyAppearance } from '@/services/preferences/appearance-dom';
 
-/** Keep the page root painted with the saved appearance, repainting on every change. */
+/** Subscribe once; theme updates do not rerender the application tree. */
 export function useAppearancePreferencesRoot(): void {
-  const prefs = usePreferences();
   useEffect(() => {
-    applyAppearance(document.documentElement, prefs);
-  }, [prefs]);
+    const paint = () => applyAppearance(document.documentElement, getAppearancePreferences());
+    const unsubscribe = subscribeAppearance(paint);
+    paint();
+    return unsubscribe;
+  }, []);
 }

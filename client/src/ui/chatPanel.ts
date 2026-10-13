@@ -7,6 +7,7 @@
 // as <img>, never relay HTML).
 
 import type { WireGroup, WireMessage, WireReaction } from '../nostr/wire';
+import type { ZapTotal } from '../nostr/state';
 import { pubkeyColor } from '../world/character';
 import { renderContent } from './content';
 import type { MentionPerson, ReplyTarget } from '../chat/composer/useSkyComposer';
@@ -20,6 +21,8 @@ export interface ChatPanelDeps {
   avatarOf: (pk: string) => string | null;
   messages: (groupId: string) => WireMessage[];
   reactions: (msgId: string) => WireReaction[];
+  /** The zaps a message got, if any: shown as "⚡ sats" by its reactions. */
+  zaps?: (msgId: string) => ZapTotal | null;
   /** Publish a kind 9; `tags` are the bar's custom emoji / sticker / voice-note tags. */
   send: (groupId: string, text: string, replyTo: WireMessage | null, tags?: string[][]) => Promise<string | null>;
   react: (msg: WireMessage, emoji: string) => void;
@@ -306,6 +309,14 @@ export class ChatPanel {
       const list = groups.get(r.emoji) ?? [];
       list.push(r);
       groups.set(r.emoji, list);
+    }
+    const zapped = this.deps.zaps?.(m.id);
+    if (zapped) {
+      const names = zapped.zappers.map((pk) => this.deps.nameOf(pk)).join(', ');
+      const chip = div(`chat-chip zap${me && zapped.zappers.includes(me) ? ' mine' : ''}`);
+      chip.textContent = `⚡ ${zapped.sats.toLocaleString()}`;
+      chip.title = `${zapped.sats.toLocaleString()} sats in ${zapped.count} zap${zapped.count === 1 ? '' : 's'}${names ? ` from ${names}` : ''}`;
+      wrap.append(chip);
     }
     for (const [emoji, list] of groups) {
       const mine = me ? list.find((r) => r.pubkey === me) : undefined;

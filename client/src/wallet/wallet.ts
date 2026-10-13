@@ -59,7 +59,9 @@ export function walletView(account: string | null): WalletView | null {
 export function loadWallet(account: string): Promise<void> {
   if (active?.account === account) return Promise.resolve();
   if (loading?.account === account) return loading.promise;
-  drop();
+  // Only when there's another account's wallet to put down: dropping bumps
+  // `generation`, which would fail a connect already under way.
+  if (active || loading) drop();
   forgetNwcRecords(account);
   if (!hasNwcRecord(account)) return Promise.resolve();
   const mine = generation;
@@ -88,6 +90,11 @@ export async function connectWallet(account: string, uri: string): Promise<Walle
     candidate.alias = await client.walletAlias().catch(() => null);
     if (generation !== mine) throw new NwcError('wallet-failed', 'not-paid');
     await sealNwcWallet(account, { uri: uri.trim(), alias: candidate.alias });
+    if (generation !== mine) {
+      // Logged out (or switched) while it was being sealed: it isn't theirs to keep.
+      await deleteNwcWallet(account).catch(() => {});
+      throw new NwcError('wallet-failed', 'not-paid');
+    }
     drop();
     active = candidate;
     changed();
@@ -141,5 +148,12 @@ export async function payerFor(account: string, loginMethod: string): Promise<Pa
   const webln = (window as unknown as { webln?: WebLN }).webln;
   if (!webln) return null;
   await webln.enable();
-  return { kind: 'webln', pay: async (invoice) => ({ preimage: (await webln.sendPayment(invoice))?.preimage || null }) };
+  return {
+    kind: 'webln',
+    pay: async (invoice) => {
+      // The extension was swapped out under us: don't pay through a provider nobody chose.
+      if ((window as unknown as { webln?: WebLN }).webln !== webln) throw new Error('wallet-failed');
+      return { preimage: (await webln.sendPayment(invoice))?.preimage || null };
+    },
+  };
 }

@@ -44,7 +44,7 @@ import { Post } from './post';
 import { PropBatch } from './props';
 import { Sky, type TimeOverride } from './sky';
 import type { Prefs } from '../prefs';
-import { arcPoint, coinCount, flightTime, zapAssets } from './zapFlight';
+import { ZAP_STALE_MS, ZapFlights } from './zapFlight';
 import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } from './emotes';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
@@ -86,7 +86,8 @@ export interface WorldHooks {
   /** Any tap on the world, before it's dispatched; true: don't walk for it. */
   onTap?: () => boolean;
   onGroupClick?: (groupId: string) => void;
-  onZap?: () => void;
+  /** A zap landed on `to` (the coin sound). */
+  onZap?: (to: string, sats: number) => void;
   /** The WebGL context was lost (false) or came back (true). */
   onContext?: (ok: boolean) => void;
   onArrive?: () => void;
@@ -148,6 +149,13 @@ export class World {
   private convos = new Map<number, ConvoSpot>();
   private pendingSit = new Set<string>();
   private effects: Effect[] = [];
+  /** Zaps in the air and their coins (`zapFlight.ts`). */
+  readonly zaps = new ZapFlights(this.scene, {
+    groundAt: (x, z) => this.groundAt({ x, z }),
+    landed: (to, at, sats) => this.zapLands(to, at, sats),
+  });
+  /** When the camera last turned to a landing: a burst of zaps turns it once. */
+  private zapCamAt = -Infinity;
   private swaying: THREE.InstancedMesh[] = [];
   private lampGlow: THREE.MeshStandardMaterial;
   private lampLights: THREE.PointLight[] = [];
@@ -1639,7 +1647,7 @@ export class World {
           break;
         }
         case 'zap': {
-          if (cmd.instant) break;
+          if (cmd.instant || Date.now() - cmd.queued > ZAP_STALE_MS) break;
           this.zapEffect(cmd.from, cmd.to, cmd.sats);
           break;
         }
@@ -1775,67 +1783,25 @@ export class World {
     const t = this.people.get(to);
     if (!t) return;
     const head = (c: Character, y: number) => c.root.position.clone().setY(c.root.position.y + y);
-    const end = head(t, CHAR_HEIGHT + 0.2);
     const f = from ? this.people.get(from) : null;
+    const end = head(t, CHAR_HEIGHT + 0.2);
     const start = f ? head(f, CHAR_HEIGHT + 0.4) : end.clone().add(new THREE.Vector3(1.5, 8, 0.5));
     f?.cheer();
     if (f) f.faceToward(t.pos);
-    const { bolt: boltMat, spark: sparkMat } = zapAssets();
-    const bolt = new THREE.Sprite(boltMat);
-    bolt.scale.setScalar(0.5);
-    const sparks = [0, 1, 2].map((i) => {
-      const s = new THREE.Sprite(sparkMat);
-      s.scale.setScalar(0.32 - i * 0.07);
-      return s;
-    });
-    const group = new THREE.Group();
-    group.add(bolt, ...sparks);
-    this.scene.add(group);
-    const life = flightTime(start.distanceTo(end));
-    const p = new THREE.Vector3();
-    this.effects.push({
-      obj: group, age: 0, life,
-      tick: (e) => {
-        // Aim at where the recipient is now, not where they stood.
-        if (this.people.get(to) === t) end.copy(head(t, CHAR_HEIGHT + 0.2));
-        const k = Math.min(1, e.age / e.life);
-        const ease = k * k * (3 - 2 * k);
-        bolt.position.copy(arcPoint(start, end, ease, p));
-        bolt.material.rotation = Math.sin(e.age * 18) * 0.3;
-        sparks.forEach((s, i) => s.position.copy(arcPoint(start, end, Math.max(0, ease - (i + 1) * 0.045), p)));
-        if (e.age >= e.life) {
-          group.removeFromParent();
-          this.zapLands(t, to, end, sats);
-        }
-      },
-    });
+    // Aim at where the recipient is now, not where they stood (while they're still here).
+    this.zaps.launch(to, start, () => (this.people.get(to) === t ? head(t, CHAR_HEIGHT + 0.2) : null), sats);
   }
 
-  private zapLands(t: Character, to: string, end: THREE.Vector3, sats: number): void {
+  private zapLands(to: string, end: THREE.Vector3, sats: number): void {
     this.pulseLandmarks();
-    const { coinGeo, coinMat } = zapAssets();
-    const floor = this.groundAt({ x: end.x, z: end.z }) + 0.02;
-    for (let i = 0; i < coinCount(sats); i++) {
-      const coin = new THREE.Mesh(coinGeo, coinMat);
-      coin.position.copy(end);
-      const v = new THREE.Vector3((Math.random() - 0.5) * 2.2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2.2);
-      this.scene.add(coin);
-      this.effects.push({
-        obj: coin, age: 0, life: 1.6,
-        tick: (e, dt) => {
-          v.y -= 7 * dt;
-          coin.position.addScaledVector(v, dt);
-          if (coin.position.y < floor) { coin.position.y = floor; v.multiplyScalar(0.4); v.y = Math.abs(v.y) * 0.5; }
-          coin.rotation.x += dt * 9;
-          if (e.age >= e.life) coin.removeFromParent();
-        },
-      });
-    }
-    t.cheer(2);
+    const t = this.people.get(to);
+    t?.cheer(2);
     this.pets.get(to)?.dance(3.5);
-    this.overlay.pop(this.headAnchor(to, 0.35), `⚡ ${sats.toLocaleString()} sats`, 'pop zap');
-    this.cam.interest([end], true);
-    this.hooks.onZap?.();
+    if (t) this.overlay.pop(this.headAnchor(to, 0.35), `⚡ ${sats.toLocaleString()} sats`, 'pop zap');
+    const now = performance.now();
+    if (now - this.zapCamAt > 1500) this.cam.interest([end], true);
+    this.zapCamAt = now;
+    this.hooks.onZap?.(to, sats);
   }
 
   // ── idle life ─────────────────────────────────────────────────────────
@@ -3094,6 +3060,7 @@ export class World {
     for (const c of [...this.leaving]) {
       if (!c.update(dt)) { c.dispose(); this.leaving.delete(c); }
     }
+    this.zaps.tick(dt);
     for (const e of [...this.effects]) {
       e.age += dt;
       e.tick(e, dt);

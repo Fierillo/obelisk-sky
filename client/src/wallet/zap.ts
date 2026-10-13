@@ -4,11 +4,14 @@
 // channel's marker: a kind 7 "⚡" carrying the invoice, so everyone there (in
 // Obelisk and in the village, nostr/state.ts parseZapMarker) sees the zap.
 // Once the money has moved nothing reports a failure: a retry would pay twice.
+// If the account changed while the wallet paid, the marker is not posted
+// (the new account would sign it and be credited), as dex does.
 
 import { requestZapInvoice } from '@nostr-wot/wallet';
 import { getDefaultRelays } from '@nostr-wot/data';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools';
 import { mayHavePaid } from '@nostr-wot/wallet/nwc';
+import { isImportableRelayUrl } from '@/services/nostr-bridge/relay/relay-list';
 import { payerFor } from './wallet';
 
 export interface ZapDraft {
@@ -22,6 +25,8 @@ export interface ZapDraft {
   sats: number;
   comment: string;
   relay: string;
+  /** Still the account (and relay) the zap started with. */
+  isCurrent: () => boolean;
 }
 
 export type ZapProblem = 'noAddress' | 'noWallet' | 'invalidAmount';
@@ -63,13 +68,17 @@ export class ZapPaymentUnconfirmed extends Error {}
  * error, if only that failed.
  */
 export async function sendZap(d: ZapDraft, publish: (t: EventTemplate) => Promise<{ ok: boolean; reason?: string }>): Promise<{ markerError: string | null }> {
-  const payer = await payerFor(d.account, d.loginMethod);
+  const step = zapTrace();
+  const payer = await step('wallet-connect', () => payerFor(d.account, d.loginMethod));
   if (!payer) throw new Error('noWallet');
   const amountMsats = d.sats * 1000;
-  const relays = [...new Set([d.relay, ...getDefaultRelays()])].filter((r) => /^wss:\/\//.test(r));
-  const { invoice, zapRequest } = await requestZapInvoice({
+  const relays = [...new Set([d.relay, ...getDefaultRelays()])].filter(isImportableRelayUrl);
+  const { invoice, zapRequest } = await step('invoice', () => requestZapInvoice({
     getPublicKey: async () => d.account,
-    signEvent: (t: EventTemplate) => d.sign(t),
+    signEvent: (t: EventTemplate) => step('sign-zap', async () => {
+      if (!d.isCurrent()) throw new Error('not-logged-in');
+      return d.sign(t);
+    }),
   } as never, {
     recipientPubkey: d.recipient,
     lud16: d.lud16!,
@@ -77,17 +86,38 @@ export async function sendZap(d: ZapDraft, publish: (t: EventTemplate) => Promis
     amountMsats,
     relays,
     comment: d.comment.trim() || undefined,
-  });
+  }));
   try {
-    await payer.pay(invoice);
+    await step(`payment-${payer.kind}`, () => payer.pay(invoice));
   } catch (e) {
     if (mayHavePaid(e)) throw new ZapPaymentUnconfirmed(e instanceof Error ? e.message : String(e));
     throw e;
   }
+  if (!d.isCurrent()) return { markerError: 'not-logged-in' };
   try {
-    const out = await publish(zapMarkerTemplate(d, { invoice, zapRequest, amountMsats }));
+    const out = await step('channel-marker', () => publish(zapMarkerTemplate(d, { invoice, zapRequest, amountMsats })));
     return { markerError: out.ok ? null : out.reason ?? 'refused' };
   } catch (e) {
     return { markerError: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** dex's per-attempt stage log (send-zap.ts), in development only: stage and
+ *  status, never the invoice, events, keys, comment or a provider's error text. */
+function zapTrace(): <T>(stage: string, action: () => Promise<T>) => Promise<T> {
+  const attempt = crypto.randomUUID();
+  const trace = (stage: string, status: string, code: string | null = null) => {
+    if (import.meta.env?.DEV) console.info('[zap]', { attempt, stage, status, code });
+  };
+  return async (stage, action) => {
+    trace(stage, 'start');
+    try {
+      const out = await action();
+      trace(stage, 'complete');
+      return out;
+    } catch (e) {
+      trace(stage, 'failed', e instanceof Error && 'code' in e && typeof e.code === 'string' ? e.code : null);
+      throw e;
+    }
+  };
 }

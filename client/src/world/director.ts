@@ -25,7 +25,8 @@ export type Command =
   | { c: 'sit'; convoId: number; members: string[]; instant: boolean }
   | { c: 'convo-end'; convoId: number; members: string[] }
   | { c: 'react'; from: string; to: string; emoji: string; instant: boolean }
-  | { c: 'zap'; from: string | null; to: string; sats: number; instant: boolean };
+  /** `queued`: wall-clock ms when it was directed (a frame loop that paused — a hidden tab, Watch mode — drops stale flights). */
+  | { c: 'zap'; from: string | null; to: string; sats: number; instant: boolean; queued: number };
 
 interface Person {
   pk: string;
@@ -123,10 +124,10 @@ export class Director {
     this.out.push({ c: 'react', from: r.pubkey, to: r.target, emoji: r.emoji, instant });
   }
 
-  zap(z: WireZap, now: number, instant = false): void {
+  zap(z: WireZap, now: number, instant = false, wall = Date.now()): void {
     if (!this.people.has(z.target)) this.ensure(z.target, z.groupId, now, 'instant');
     if (z.from && !this.people.has(z.from)) this.ensure(z.from, z.groupId, now, instant ? 'instant' : 'door');
-    this.out.push({ c: 'zap', from: z.from, to: z.target, sats: z.sats, instant });
+    this.out.push({ c: 'zap', from: z.from, to: z.target, sats: z.sats, instant, queued: wall });
   }
 
   /** Expire quiet conversations. */

@@ -38,7 +38,7 @@ export interface WireMessage {
   replyTo: string | null;
   replyToId: string | null;
   createdAt: number;
-  /** A zap bot's announcement: shown in the chat, flown as a zap in the world (its zap comes separately). */
+  /** A zap bot's announcement: shown in the chat; its zap is the marker's or receipt's, or its own if neither comes. */
   zapNote?: boolean;
   /** Everyone it names: `nostr:` mentions in the content and `p` tags (a ping, like obelisk-dex). */
   mentions?: string[];
@@ -58,7 +58,8 @@ export interface WireZap {
   id: string;
   from: string | null;
   target: string;
-  targetId: string;
+  /** The zapped message, or null for a zap to a person. */
+  targetId: string | null;
   groupId: string;
   sats: number;
   createdAt: number;
@@ -82,4 +83,5 @@ export type ServerMsg =
   | { t: 'msg-removed'; id: string; groupId: string }
   | { t: 'reaction-removed'; id: string; targetId: string }
   | { t: 'reaction'; reaction: WireReaction }
-  | { t: 'zap'; zap: WireZap };
+  | { t: 'zap'; zap: WireZap }
+  | { t: 'zap-removed'; id: string; targetId: string | null };

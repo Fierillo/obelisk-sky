@@ -16,6 +16,9 @@ export type Ev =
 export const EPISODE_GAP = 10 * 60; // s between messages that splits episodes
 export const CONTEXT_WINDOW = 20 * 60; // s of history re-applied silently on a seek
 export const LIVE_IDLE_BEFORE_STORY = 75; // real s of quiet before a replay starts
+/** A zap older than this when it reaches us (a receipt polled late, a channel
+ *  subscribed after load) is counted but not flown: only live zaps fly. */
+export const ZAP_LIVE_S = 120;
 
 export interface Episode { start: number; end: number; count: number; groupId: string }
 
@@ -103,6 +106,8 @@ export class Player {
     if (this.ids.has(evId(ev))) return;
     this.ids.add(evId(ev));
     this.events.push(ev);
+    // Kept for history and the chat's totals, but news it isn't: no flight, no cut to live.
+    if (ev.k === 'zap' && now - ev.at > ZAP_LIVE_S) return;
     this.quietFor = 0;
     if (this.history) {
       // Kept for later; counted so you know the present moved on.

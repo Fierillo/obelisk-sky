@@ -9,6 +9,8 @@ import type { Event as NostrEvent } from 'nostr-tools';
 import type { RelayHub, SubscriptionHandle } from '@nostr-wot/relay/hub';
 import { HISTORY_SECONDS, SkyState } from './state';
 import type { ServerMsg } from './wire';
+import { getDefaultRelays } from '@nostr-wot/data';
+import { isImportableRelayUrl } from '@/services/nostr-bridge/relay/relay-list';
 import { activeRelay, profileRelays } from './hub';
 
 export type FeedAccess = 'connecting' | 'open' | 'refused' | 'offline';
@@ -95,7 +97,8 @@ export class Feed {
       onRelayClosed: (_r, reason) => { if (isAccessRefusal(reason)) this.hooks.onAccess('refused', reason); },
     });
     this.timers.push(setInterval(() => this.fetchProfiles(), 2500));
-    this.timers.push(setInterval(() => this.fetchZaps(), 60_000));
+    this.timers.push(setInterval(() => this.fetchZaps(), 30_000));
+    this.timers.push(setInterval(() => this.state.flushAnnouncements(), 2000));
     this.timers.push(setInterval(() => this.state.prune(), 10 * 60_000));
     // Never leave the user on a blank island if an EOSE goes missing.
     setTimeout(() => this.finishSnapshot(), 12_000);
@@ -151,21 +154,24 @@ export class Feed {
     this.hooks.onMsg(this.state.snapshot(activeRelay()));
   }
 
-  /** Zap receipts point at messages, not groups: poll by `#e`. */
+  /** Zap receipts point at messages, not groups: poll by `#e`. The group
+   *  relay for every message we hold; the default relays (where zap requests
+   *  ask providers to publish, as dex's useMessageZaps reads) for the last two
+   *  days' messages. The window only moves on once a poll came back. */
   private fetchZaps(full = false): void {
-    const ids = this.state.messageIds();
-    if (!ids.length) return;
     const now = Math.floor(Date.now() / 1000);
     const since = full || !this.zapSince ? now - HISTORY_SECONDS : this.zapSince - 120;
-    this.zapSince = now;
-    for (let i = 0; i < ids.length; i += 250) {
-      void this.hub.query({
-        relays: [activeRelay()],
-        filters: [{ kinds: [9735], '#e': ids.slice(i, i + 250), since }],
-        cache: { mode: 'bypass' },
-        label: 'sky-zaps',
-      }).then((r) => { for (const ev of r.events) this.state.ingestZap(ev); }).catch(() => {});
-    }
+    const asks = zapAsks(this.state.messageIds(), this.state.messageIds(now - 2 * 86400), activeRelay(), getDefaultRelays().filter(isImportableRelayUrl));
+    if (!asks.length) return;
+    void Promise.allSettled(asks.map((a) => this.hub.query({
+      relays: a.relays,
+      filters: [{ kinds: [9735], '#e': a.ids, since }],
+      maxWaitMs: 6000,
+      cache: { mode: 'bypass' },
+      label: 'sky-zaps',
+    }).then((r) => { for (const ev of r.events) this.state.ingestZap(ev); }))).then((out) => {
+      if (out.every((x) => x.status === 'fulfilled')) this.zapSince = Math.max(this.zapSince, now);
+    });
   }
 
   private fetchProfiles(): void {
@@ -179,4 +185,14 @@ export class Feed {
       label: 'sky-profiles',
     }).then((r) => { for (const ev of r.events) this.state.ingestProfile(ev); }).catch(() => {});
   }
+}
+
+/** The receipt queries for a poll: every held id on the group relay, recent ones on the defaults too (250 ids a query). */
+export function zapAsks(ids: string[], recent: string[], group: string, defaults: string[]): { relays: string[]; ids: string[] }[] {
+  const out: { relays: string[]; ids: string[] }[] = [];
+  for (let i = 0; i < ids.length; i += 250) out.push({ relays: [group], ids: ids.slice(i, i + 250) });
+  const others = [...new Set(defaults)].filter((r) => r.replace(/\/$/, '') !== group.replace(/\/$/, ''));
+  const few = recent.slice(-500);
+  if (others.length) for (let i = 0; i < few.length; i += 250) out.push({ relays: others, ids: few.slice(i, i + 250) });
+  return out;
 }

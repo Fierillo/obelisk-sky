@@ -58,6 +58,7 @@ import { Soundscape } from './sound';
 import { openZapSheet } from './ui/zapSheet';
 import { connectWallet, forgetWallet, loadWallet, walletKindFor, walletView } from './wallet/wallet';
 import { sendZap, ZapPaymentUnconfirmed } from './wallet/zap';
+import { zapTotal } from './nostr/state';
 import { parseZapCommand, zapCommandMessage } from './wallet/zapCommand';
 import { EmoteMusic } from './audio/emoteMusic';
 import { PlaceMusic } from './audio/placeMusic';
@@ -612,7 +613,14 @@ function handle(m: ServerMsg): void {
       player.events = player.events.filter((e) => !(e.k === 'react' && e.r.id === m.id));
       chat.refresh();
       break;
-    case 'zap': player.push({ k: 'zap', at: m.zap.createdAt, z: m.zap }, nowSec()); break;
+    case 'zap':
+      player.push({ k: 'zap', at: m.zap.createdAt, z: m.zap }, nowSec());
+      chat.refresh(m.zap.groupId);
+      break;
+    case 'zap-removed':
+      player.events = player.events.filter((e) => !(e.k === 'zap' && e.z.id === m.id));
+      chat.refresh();
+      break;
   }
 }
 
@@ -1196,6 +1204,9 @@ const msgsOf = (groupId: string) =>
 const reactionsOf = (msgId: string) =>
   player.events.filter((e): e is Extract<Ev, { k: 'react' }> => e.k === 'react' && e.r.targetId === msgId).map((e) => e.r);
 
+const zapsOf = (msgId: string) =>
+  zapTotal(player.events.filter((e): e is Extract<Ev, { k: 'zap' }> => e.k === 'zap' && e.z.targetId === msgId).map((e) => e.z));
+
 async function publish(template: Parameters<typeof publishToGroup>[2]): Promise<string | null> {
   const out = await publishToGroup(hub, (t) => session.sign(t), template);
   if (!out.ok) return out.reason;
@@ -1216,6 +1227,7 @@ const chat = new ChatPanel($('app'), {
   avatarOf: (pk) => world.profiles.get(pk)?.avatar ?? null,
   messages: msgsOf,
   reactions: reactionsOf,
+  zaps: zapsOf,
   send: (g, text, reply, tags) => publish(messageTemplate(g, text, reply ? { id: reply.id, pubkey: reply.pubkey } : null, tags)),
   // The @-picker: like obelisk-dex, anyone on the relay (every channel's
   // members and posters), plus whoever is walking around the village.
@@ -1264,6 +1276,9 @@ function openZap(groupId: string, recipient: string, messageId: string | null, s
   const s = session.current;
   if (!s) { toast('Log in to zap.'); return; }
   void loadWallet(s.pubkey);
+  // The account and relay the zap starts with: a switch mid-payment posts no marker.
+  const relay = activeRelay();
+  const isCurrent = () => session.current?.pubkey === s.pubkey && activeRelay() === relay;
   openZapSheet($('app'), recipient, sats, {
     name: (pk) => world.nameOf(pk),
     lud16: (pk) => world.profiles.get(pk)?.lud16 ?? null,
@@ -1273,11 +1288,12 @@ function openZap(groupId: string, recipient: string, messageId: string | null, s
     send: (amount, comment) => sendZap({
       account: s.pubkey, loginMethod: s.method, sign: (t) => session.sign(t),
       recipient, lud16: world.profiles.get(recipient)?.lud16 ?? null, groupId, messageId,
-      sats: amount, comment, relay: activeRelay(),
+      sats: amount, comment, relay, isCurrent,
     }, async (t) => {
       const out = await publishToGroup(hub, (x) => session.sign(x), t);
-      // Your own zap flies at once, without waiting for the relay to echo the ⚡.
-      if (out.ok) feed?.state.ingestReaction(out.event);
+      // Your own zap flies at once, without waiting for the relay to echo the ⚡;
+      // the money moved, so it flies here even if the relay refused the marker.
+      if (out.event) feed?.state.ingestReaction(out.event);
       return out;
     }),
     isUnconfirmed: (e) => e instanceof ZapPaymentUnconfirmed,

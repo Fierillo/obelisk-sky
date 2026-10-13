@@ -46,6 +46,6 @@ describe('a zap', () => {
     expect(t.kind).toBe(7);
     expect(t.content).toBe('⚡');
     expect(t.tags).toContainEqual(['h', 'g']);
-    expect(parseZapMarker(t.tags, t.content)).toEqual({ target: ANA, targetId: 'm1', sats: 21 });
+    expect(parseZapMarker(t.tags, t.content)).toEqual({ target: ANA, targetId: 'm1', sats: 21, bolt11: 'lnbc210n1x' });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event as NostrEvent } from 'nostr-tools';
-import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement, parseZapMarker } from './state';
+import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement, parseZapMarker, ANNOUNCE_GRACE_S, zapTotal } from './state';
 import type { ServerMsg } from './wire';
 
 const NOW = 1_800_000_000;
@@ -196,18 +196,76 @@ describe('the zap bot', () => {
     expect(parseZapAnnouncement('⚡ @alice sent 5 satoshis to @bob', [['p', B]])).toBeNull();
   });
 
-  it('turns an announcement into a zap from the sender to the recipient, once', () => {
-    const { s, out } = setup();
+  it('reads a zap to yourself (one p tag)', () => {
+    expect(parseZapAnnouncement('⚡ @bob sent 5 satoshis to @bob', [['p', B]])).toEqual({ from: B, target: B, sats: 5, targetId: null });
+  });
+
+  it('with no proof, counts the announcement once after the grace', () => {
+    const clock = { t: NOW };
+    const out: ServerMsg[] = [];
+    const s = new SkyState((m) => out.push(m), () => clock.t);
     s.ingestGroupMeta(meta('g'));
     const tags = [['e', target], ['p', A], ['p', B]];
     s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 21 satoshis to @bob', tags));
     s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 21 satoshis to @bob', tags, NOW + 1));
     const m = out.find((x) => x.t === 'msg') as Extract<ServerMsg, { t: 'msg' }>;
     expect(m.msg.zapNote).toBe(true);
+    s.flushAnnouncements();
+    expect(out.some((x) => x.t === 'zap')).toBe(false);
+    clock.t += ANNOUNCE_GRACE_S;
+    s.flushAnnouncements();
+    const zaps = out.filter((x) => x.t === 'zap') as Extract<ServerMsg, { t: 'zap' }>[];
+    // Two announcements are two zaps (two posts by the bot), each counted once.
+    expect(zaps).toHaveLength(2);
+    expect(zaps[0].zap).toMatchObject({ from: A, target: B, sats: 21, targetId: target, groupId: 'g' });
+    s.flushAnnouncements();
+    expect((s.snapshot('r') as Extract<ServerMsg, { t: 'snapshot' }>).zaps).toHaveLength(2);
+  });
+
+  it('adds nothing to a zap whose marker came first, or comes within the grace', () => {
+    const clock = { t: NOW };
+    const out: ServerMsg[] = [];
+    const s = new SkyState((m) => out.push(m), () => clock.t);
+    s.ingestGroupMeta(meta('g'));
+    const zapped = msg(bob, 'g', 'gm');
+    s.ingestMessage(zapped);
+    const marker = (n: string) => ev(alice, 7, [['e', zapped.id], ['p', B], ['h', 'g'], ['amount', '21000', 'msat'], ['bolt11', `lnbc-${n}`]], '⚡');
+    // Marker first, then the bot's word (the bot read the amount a sat lower).
+    s.ingestReaction(marker('one'));
+    s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 20 satoshis to @bob', [['e', zapped.id], ['p', A], ['p', B]]));
+    // The bot first, then the marker.
+    s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 21 satoshis to @bob', [['e', zapped.id], ['p', A], ['p', B]], NOW + 2));
+    s.ingestReaction(marker('two'));
+    clock.t += 60;
+    s.flushAnnouncements();
+    expect(out.filter((x) => x.t === 'zap')).toHaveLength(2);
+  });
+
+  it('a zap to a person (no message) counts once from marker and announcement', () => {
+    const clock = { t: NOW };
+    const out: ServerMsg[] = [];
+    const s = new SkyState((m) => out.push(m), () => clock.t);
+    s.ingestGroupMeta(meta('g'));
+    s.ingestReaction(ev(alice, 7, [['p', B], ['h', 'g'], ['amount', '5000', 'msat'], ['bolt11', 'lnbc-x']], '⚡'));
+    s.ingestMessage(msg(zapBot, 'g', '⚡ @alice sent 5 satoshis to @bob', [['p', A], ['p', B]]));
+    clock.t += 60;
+    s.flushAnnouncements();
     const zaps = out.filter((x) => x.t === 'zap') as Extract<ServerMsg, { t: 'zap' }>[];
     expect(zaps).toHaveLength(1);
-    expect(zaps[0].zap).toMatchObject({ from: A, target: B, sats: 21, targetId: target, groupId: 'g' });
-    expect((s.snapshot('r') as Extract<ServerMsg, { t: 'snapshot' }>).zaps).toHaveLength(1);
+    expect(zaps[0].zap.targetId).toBeNull();
+  });
+
+  it('nobody can announce a zap they are part of', () => {
+    const clock = { t: NOW };
+    const out: ServerMsg[] = [];
+    const s = new SkyState((m) => out.push(m), () => clock.t);
+    s.ingestGroupMeta(meta('g'));
+    s.ingestMessage(msg(alice, 'g', '⚡ @alice sent 99999 satoshis to @bob', [['p', A], ['p', B]]));
+    s.ingestMessage(msg(bob, 'g', '⚡ @alice sent 99999 satoshis to @bob', [['p', A], ['p', B]], NOW + 1));
+    clock.t += 60;
+    s.flushAnnouncements();
+    expect(out.some((x) => x.t === 'zap')).toBe(false);
+    expect(out.filter((x) => x.t === 'msg').every((x) => !(x as Extract<ServerMsg, { t: 'msg' }>).msg.zapNote)).toBe(true);
   });
 
   it('leaves ordinary messages alone', () => {
@@ -221,10 +279,13 @@ describe('the zap bot', () => {
 
 describe('zaps sent from Obelisk (the ⚡ marker)', () => {
   const A = getPublicKey(alice), B = getPublicKey(bob);
+  const receipt = (msgId: string, to: string, bolt11: string, from = A, msat = '21000') =>
+    ev(relayKey, 9735, [['e', msgId], ['p', to], ['bolt11', bolt11], ['description', JSON.stringify({ kind: 9734, pubkey: from, tags: [['p', to], ['amount', msat]] })]]);
+
   it('reads the recipient, the message and the amount (msat, or from the invoice)', () => {
     const m = 'd'.repeat(64);
-    expect(parseZapMarker([['e', m], ['p', B], ['h', 'g'], ['amount', '21000', 'msat']], '⚡')).toEqual({ target: B, targetId: m, sats: 21 });
-    expect(parseZapMarker([['p', B], ['amount', '5', 'sat']], '⚡')).toEqual({ target: B, targetId: null, sats: 5 });
+    expect(parseZapMarker([['e', m], ['p', B], ['h', 'g'], ['amount', '21000', 'msat']], '⚡')).toEqual({ target: B, targetId: m, sats: 21, bolt11: null });
+    expect(parseZapMarker([['p', B], ['amount', '5', 'sat']], '⚡')).toEqual({ target: B, targetId: null, sats: 5, bolt11: null });
     expect(parseZapMarker([['p', B], ['amount', '21000']], '+')).toBeNull();
     expect(parseZapMarker([['p', B]], '⚡')).toBeNull();
   });
@@ -239,8 +300,44 @@ describe('zaps sent from Obelisk (the ⚡ marker)', () => {
     expect(zaps).toHaveLength(1);
     expect(zaps[0].zap).toMatchObject({ from: A, target: B, targetId: target.id, groupId: 'g', sats: 21 });
     expect(out.some((x) => x.t === 'reaction')).toBe(false);
-    // The NIP-57 receipt for the same payment adds nothing.
-    s.ingestZap(ev(relayKey, 9735, [['e', target.id], ['p', B], ['bolt11', 'lnbc210n1x'], ['description', JSON.stringify({ kind: 9734, pubkey: A })]]));
+    // The NIP-57 receipt for the same invoice adds nothing, even reading another amount.
+    s.ingestZap(receipt(target.id, B, 'lnbc210n1x', A, '20000'));
     expect(out.filter((x) => x.t === 'zap')).toHaveLength(1);
+  });
+
+  it('counts two real zaps of the same amount (two invoices)', () => {
+    const { s, out } = setup();
+    s.ingestGroupMeta(meta('g'));
+    const target = msg(bob, 'g', 'gm');
+    s.ingestMessage(target);
+    for (const b of ['lnbc-1', 'lnbc-2']) s.ingestReaction(ev(alice, 7, [['e', target.id], ['p', B], ['h', 'g'], ['amount', '21000', 'msat'], ['bolt11', b]], '⚡'));
+    const zaps = (out.filter((x) => x.t === 'zap') as Extract<ServerMsg, { t: 'zap' }>[]).map((x) => x.zap);
+    expect(zaps).toHaveLength(2);
+    expect(zapTotal(zaps)).toEqual({ sats: 42, count: 2, zappers: [A] });
+  });
+
+  it('takes a receipt only when it pays the message’s author', () => {
+    const { s, out } = setup();
+    s.ingestGroupMeta(meta('g'));
+    const target = msg(bob, 'g', 'gm');
+    s.ingestMessage(target);
+    s.ingestZap(receipt(target.id, A, 'lnbc-a'));
+    s.ingestZap(ev(relayKey, 9735, [['e', target.id], ['p', B], ['bolt11', 'lnbc-b'], ['description', '{}']]));
+    expect(out.some((x) => x.t === 'zap')).toBe(false);
+    s.ingestZap(receipt(target.id, B, 'lnbc-c'));
+    const z = (out.find((x) => x.t === 'zap') as Extract<ServerMsg, { t: 'zap' }>).zap;
+    expect(z).toMatchObject({ from: A, target: B, targetId: target.id, sats: 21 });
+  });
+
+  it('deleting the marker takes its zap away', () => {
+    const { s, out } = setup();
+    s.ingestGroupMeta(meta('g'));
+    const marker = ev(alice, 7, [['p', B], ['h', 'g'], ['amount', '21000', 'msat'], ['bolt11', 'lnbc-x']], '⚡');
+    s.ingestReaction(marker);
+    s.ingestDeletion(ev(bob, 5, [['e', marker.id]]));
+    expect(out.some((x) => x.t === 'zap-removed')).toBe(false);
+    s.ingestDeletion(ev(alice, 5, [['e', marker.id]]));
+    expect(out.find((x) => x.t === 'zap-removed')).toMatchObject({ id: `marker:${marker.id}` });
+    expect((s.snapshot('r') as Extract<ServerMsg, { t: 'snapshot' }>).zaps).toHaveLength(0);
   });
 });

@@ -1,9 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { setPreference } from '@/services/preferences/preferences';
-import type { Preferences } from '@/types/preferences/preferences';
-import { completeHexColor } from '@/utils/settings/appearance-color';
+import { setAppearancePreference } from '@/services/preferences/appearance';
 
 export type AppearanceColorKey = 'accentColor' | 'backgroundColor' | 'buttonColor' | 'bubbleColor';
 
@@ -22,8 +20,7 @@ export function useColorPreferenceRow(key: AppearanceColorKey, value: string) {
 
   const commit = (next: string) => {
     setDraft(next);
-    const color = completeHexColor(next);
-    if (color) setPreference(key, color as Preferences[AppearanceColorKey]);
+    if (/^#[0-9a-f]{6}$/i.test(next)) setAppearancePreference(key, next.toLowerCase());
   };
 
   return { draft, commit };

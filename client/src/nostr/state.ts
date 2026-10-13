@@ -11,6 +11,7 @@
 
 import type { Event as NostrEvent } from 'nostr-tools';
 import { getSatoshisAmountFromBolt11 } from 'nostr-tools/nip57';
+import { validateZapReceipt } from '@nostr-wot/wallet';
 import { isVisible, parseGroupMeta, type GroupMeta } from './groups';
 import { cleanName, mentionedPubkeys, sanitizeText, shortNpub } from './sanitize';
 import type { ServerMsg, WireGroup, WireMessage, WireProfile, WireReaction, WireZap } from './wire';
@@ -70,54 +71,82 @@ export function cleanLud16(raw: unknown): string | null {
   return /^[a-z0-9._+-]{1,64}@[a-z0-9.-]{1,253}\.[a-z]{2,}$/.test(v) ? v : null;
 }
 
+/** Sats an invoice is for, or 0 (no amount, or not an invoice). */
+export function bolt11Sats(bolt11: string | undefined): number {
+  if (!bolt11) return 0;
+  try { return Math.max(0, Math.floor(getSatoshisAmountFromBolt11(bolt11))); } catch { return 0; }
+}
+
 /**
  * obelisk-dex's zap marker (services/wallet/send-zap.ts): after the wallet
  * pays, the zapper posts a kind 7 "⚡" reaction to the channel with the
  * recipient (`p`), the message (`e`, when a message was zapped), `amount` in
  * msat and the `bolt11`. That is how a zap from Obelisk reaches the channel,
  * so it flies as a zap here, not as a ⚡ emoji. Null for an ordinary reaction.
+ * The amount is the invoice's (what was paid), as dex reads it, else the tags'.
  */
-export function parseZapMarker(tags: string[][], content: string): { target: string; targetId: string | null; sats: number } | null {
+export function parseZapMarker(tags: string[][], content: string): { target: string; targetId: string | null; sats: number; bolt11: string | null } | null {
   if (!content.includes('⚡')) return null;
   const target = tags.find((t) => t[0] === 'p' && /^[0-9a-f]{64}$/.test(t[1] ?? ''))?.[1];
   if (!target) return null;
-  let msat = 0;
+  const bolt11 = tags.find((t) => t[0] === 'bolt11')?.[1] || null;
+  let sats = bolt11Sats(bolt11 ?? undefined);
   for (const name of ['amount', 'msat', 'msats', 'sat', 'sats']) {
+    if (sats) break;
     const t = tags.find((x) => x[0] === name);
     const n = Number(t?.[1]);
     if (!t || !Number.isFinite(n) || n <= 0) continue;
     const unit = (t[2] || (name.startsWith('sat') ? 'sat' : 'msat')).toLowerCase();
-    msat = unit.startsWith('sat') ? n * 1000 : n;
-    break;
+    sats = Math.floor(unit.startsWith('sat') ? n : n / 1000);
   }
-  if (!msat) {
-    const bolt11 = tags.find((t) => t[0] === 'bolt11')?.[1];
-    if (bolt11) { try { msat = getSatoshisAmountFromBolt11(bolt11) * 1000; } catch { msat = 0; } }
-  }
-  const sats = Math.floor(msat / 1000);
   if (sats <= 0) return null;
-  return { target, targetId: tags.find((t) => t[0] === 'e')?.[1] ?? null, sats };
+  return { target, targetId: tags.find((t) => t[0] === 'e')?.[1] ?? null, sats, bolt11 };
 }
 
 /**
  * The zap bot's kind 9 announcement ("⚡ @alice sent 420 satoshis to @bob",
  * obelisk-agents' zap-bot): `p` tags sender then recipient (only the
- * recipient for an anonymous zap), `e` the zapped message.
+ * recipient for an anonymous zap, or for a zap to yourself), `e` the zapped
+ * message.
  */
 export function parseZapAnnouncement(content: string, tags: string[][]): { from: string | null; target: string; sats: number; targetId: string | null } | null {
-  const m = /^\s*⚡\s*(.+?)\s+sent\s+(\d[\d,.]*)\s+(?:satoshis?|sats?)\s+to\s+\S/is.exec(content);
+  const m = /^\s*⚡\s*(.+?)\s+sent\s+(\d[\d,.]*)\s+(?:satoshis?|sats?)\s+to\s+(\S+)/is.exec(content);
   if (!m) return null;
   const ps = tags.filter((t) => t[0] === 'p' && /^[0-9a-f]{64}$/.test(t[1] ?? '')).map((t) => t[1]);
   const sats = Number(m[2].replace(/[,.]/g, ''));
   if (!ps.length || !Number.isFinite(sats) || sats <= 0) return null;
   const anonymous = /^@?anonymous$/i.test(m[1].trim());
-  if (!anonymous && ps.length < 2) return null;
+  // One `p` and a named sender: a zap to yourself ("@a sent 21 sats to @a").
+  const self = !anonymous && ps.length === 1 && m[1].trim().toLowerCase() === m[3].trim().toLowerCase();
+  if (!anonymous && !self && ps.length < 2) return null;
   return {
     from: anonymous ? null : ps[0],
     target: ps[ps.length - 1],
     sats,
     targetId: tags.find((t) => t[0] === 'e')?.[1] ?? null,
   };
+}
+
+/** How long a bot announcement waits for its marker or receipt before it counts on its own. */
+export const ANNOUNCE_GRACE_S = 10;
+
+/** Per message: the sats zapped to it, how many zaps and who. */
+export interface ZapTotal { sats: number; count: number; zappers: string[] }
+
+/** What one message got from these zaps (dex's useMessageZaps totals). */
+export function zapTotal(zaps: readonly WireZap[]): ZapTotal | null {
+  if (!zaps.length) return null;
+  const zappers: string[] = [];
+  for (const z of zaps) if (z.from && !zappers.includes(z.from)) zappers.push(z.from);
+  return { sats: zaps.reduce((n, z) => n + z.sats, 0), count: zaps.length, zappers };
+}
+
+/** A zap we hold proof of (marker or receipt), for matching the bot's announcement to it. */
+interface ProvenZap { target: string; targetId: string | null; sats: number; createdAt: number; announced: boolean }
+
+/** Sats from different sources of one zap (invoice vs requested amount) may differ by rounding. */
+function sameSats(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(1, Math.min(a, b) * 0.01);
 }
 
 export type Emit = (msg: ServerMsg) => void;
@@ -128,8 +157,14 @@ export class SkyState {
   private messages = new Map<string, StoredMessage>();
   private reactions = new Map<string, WireReaction>();
   private zaps = new Map<string, WireZap>();
-  /** One zap can arrive twice (its receipt and the zap bot's announcement): message|from|sats. */
+  /** One zap arrives up to three ways (dex's marker, the NIP-57 receipt, the
+   *  bot's announcement): marker and receipt share the invoice (`b:<bolt11>`,
+   *  dex's dedupe key); an announcement is matched to them (`proven`). */
   private zapKeys = new Set<string>();
+  /** Zaps with proof, newest last, for matching announcements. */
+  private proven: ProvenZap[] = [];
+  /** Announcements still waiting for their proof (`ANNOUNCE_GRACE_S`), by message id. */
+  private pendingAnn = new Map<string, { z: WireZap; seenAt: number }>();
   private profiles = new Map<string, Profile>();
   /** Pubkeys that showed up in visible content — the only profiles we expose. */
   private people = new Set<string>();
@@ -144,8 +179,9 @@ export class SkyState {
     return [...this.visible];
   }
 
-  messageIds(): string[] {
-    return [...this.messages.keys()];
+  /** Ids of the messages we hold, oldest first (only those since `since`, if given). */
+  messageIds(since = 0): string[] {
+    return [...this.messages.values()].filter((m) => m.createdAt >= since).sort((a, b) => a.createdAt - b.createdAt).map((m) => m.id);
   }
 
   /** People we've seen but hold no kind 0 for yet. */
@@ -200,6 +236,7 @@ export class SkyState {
     for (const [k, m] of this.messages) if (m.groupId === id) this.messages.delete(k);
     for (const [k, r] of this.reactions) if (r.groupId === id) this.reactions.delete(k);
     for (const [k, z] of this.zaps) if (z.groupId === id) this.zaps.delete(k);
+    for (const [k, a] of this.pendingAnn) if (a.z.groupId === id) this.pendingAnn.delete(k);
   }
 
   private wireGroup(id: string): WireGroup | null {
@@ -216,7 +253,9 @@ export class SkyState {
     if (!groupId || !this.visible.has(groupId)) return;
     if (ev.created_at < this.now() - HISTORY_SECONDS || ev.created_at > this.now() + 300) return;
     const replyToId = ev.tags.find((t) => t[0] === 'e' && t[3] === 'reply')?.[1] ?? null;
-    const ann = parseZapAnnouncement(ev.content, ev.tags);
+    // The author can't announce a zap they're part of: only a third party (the bot) vouches.
+    const parsed = parseZapAnnouncement(ev.content, ev.tags);
+    const ann = parsed && ev.pubkey !== parsed.target && ev.pubkey !== parsed.from ? parsed : null;
     const m: StoredMessage = {
       id: ev.id,
       pubkey: ev.pubkey,
@@ -238,7 +277,7 @@ export class SkyState {
     this.emit({ t: 'msg', msg: wire });
     if (ann) {
       this.notePerson(ann.target);
-      this.addZap({ id: `zap:${ev.id}`, from: ann.from, target: ann.target, targetId: ann.targetId ?? ev.id, groupId, sats: ann.sats, createdAt: ev.created_at });
+      this.announce({ id: `zap:${ev.id}`, from: ann.from, target: ann.target, targetId: ann.targetId, groupId, sats: ann.sats, createdAt: ev.created_at });
     }
   }
 
@@ -281,6 +320,13 @@ export class SkyState {
       if (r && r.pubkey === ev.pubkey) {
         this.reactions.delete(t[1]);
         this.emit({ t: 'reaction-removed', id: t[1], targetId: r.targetId });
+        continue;
+      }
+      // A deleted ⚡ marker takes its zap with it (the receipt, if any, still counts).
+      const z = this.zaps.get(`marker:${t[1]}`);
+      if (z && z.from === ev.pubkey) {
+        this.zaps.delete(z.id);
+        this.emit({ t: 'zap-removed', id: z.id, targetId: z.targetId });
       }
     }
   }
@@ -294,7 +340,8 @@ export class SkyState {
     // A zap from Obelisk (its ⚡ marker): a zap, flown, counted once with its receipt.
     const marker = parseZapMarker(ev.tags, ev.content);
     if (marker) {
-      this.addZap({ id: `marker:${ev.id}`, from: ev.pubkey, target: marker.target, targetId: marker.targetId ?? ev.id, groupId, sats: marker.sats, createdAt: ev.created_at });
+      if (this.zaps.has(`marker:${ev.id}`)) return;
+      this.addZap({ id: `marker:${ev.id}`, from: ev.pubkey, target: marker.target, targetId: marker.targetId, groupId, sats: marker.sats, createdAt: ev.created_at }, marker.bolt11 ? `b:${marker.bolt11}` : `m:${ev.id}`);
       return;
     }
     const targetId = [...ev.tags].reverse().find((t) => t[0] === 'e')?.[1];
@@ -318,34 +365,62 @@ export class SkyState {
     this.emit({ t: 'reaction', reaction: r });
   }
 
-  /** NIP-57 receipt whose `e` points at a message we hold. Only the zapped
-   *  message's group decides visibility — never the receipt's own tags. */
+  /** NIP-57 receipt whose `e` points at a message we hold, checked as dex
+   *  checks it (`validateZapReceipt`: paid to the message's author). Only the
+   *  zapped message's group decides visibility — never the receipt's own tags. */
   ingestZap(ev: NostrEvent): void {
     if (ev.kind !== 9735 || this.zaps.has(ev.id)) return;
     const targetId = ev.tags.find((t) => t[0] === 'e')?.[1];
     const msg = targetId ? this.messages.get(targetId) : undefined;
     if (!msg) return;
-    let from: string | null = null;
-    let sats = 0;
-    try {
-      const desc = JSON.parse(ev.tags.find((t) => t[0] === 'description')?.[1] ?? '');
-      if (desc?.kind === 9734 && typeof desc.pubkey === 'string' && /^[0-9a-f]{64}$/.test(desc.pubkey)) {
-        from = desc.pubkey;
-      }
-    } catch { /* anonymous / malformed request */ }
-    const bolt11 = ev.tags.find((t) => t[0] === 'bolt11')?.[1];
-    if (bolt11) {
-      try { sats = getSatoshisAmountFromBolt11(bolt11); } catch { sats = 0; }
-    }
-    if (!sats) return;
-    this.addZap({ id: ev.id, from, target: msg.pubkey, targetId: msg.id, groupId: msg.groupId, sats, createdAt: ev.created_at });
+    const ok = validateZapReceipt(ev, msg.pubkey);
+    if (!ok || !/^[0-9a-f]{64}$/.test(ok.senderPubkey)) return;
+    const sats = bolt11Sats(ok.bolt11) || Math.floor(ok.amountMsat / 1000);
+    if (sats <= 0) return;
+    this.addZap({ id: ev.id, from: ok.senderPubkey, target: msg.pubkey, targetId: msg.id, groupId: msg.groupId, sats, createdAt: ev.created_at }, `b:${ok.bolt11}`);
   }
 
-  private addZap(z: WireZap): void {
-    const key = `${z.targetId}|${z.from ?? ''}|${z.sats}`;
+  /** A zap with proof, once per invoice (`key`); it answers a waiting announcement. */
+  private addZap(z: WireZap, key: string): void {
     if (this.zapKeys.has(key)) return;
     this.zapKeys.add(key);
     if (this.zapKeys.size > MAX_ZAPS * 2) this.zapKeys.delete(this.zapKeys.values().next().value!);
+    const p: ProvenZap = { target: z.target, targetId: z.targetId, sats: z.sats, createdAt: z.createdAt, announced: false };
+    for (const [id, a] of this.pendingAnn) {
+      if (this.matches(p, a.z)) { this.pendingAnn.delete(id); p.announced = true; break; }
+    }
+    this.proven.push(p);
+    if (this.proven.length > MAX_ZAPS) this.proven.shift();
+    this.keep(z);
+  }
+
+  /** The bot's announcement: the zap it vouches for, unless we hold (or soon get) its proof. */
+  private announce(z: WireZap): void {
+    if (this.zaps.has(z.id) || this.pendingAnn.has(z.id)) return;
+    const p = this.proven.find((x) => !x.announced && this.matches(x, z));
+    if (p) { p.announced = true; return; }
+    this.pendingAnn.set(z.id, { z, seenAt: this.now() });
+  }
+
+  private matches(p: ProvenZap, ann: WireZap): boolean {
+    return p.target === ann.target
+      && sameSats(p.sats, ann.sats)
+      && (p.targetId === ann.targetId || !p.targetId || !ann.targetId)
+      && Math.abs(p.createdAt - ann.createdAt) < 30 * 60;
+  }
+
+  /** Announcements whose proof never came (a wallet that posts no marker, a
+   *  receipt on a relay we don't read) count on their own. Call every few seconds. */
+  flushAnnouncements(): void {
+    const now = this.now();
+    for (const [id, a] of this.pendingAnn) {
+      if (now - a.seenAt < ANNOUNCE_GRACE_S) continue;
+      this.pendingAnn.delete(id);
+      if (this.messages.has(id.slice(4))) this.keep(a.z);
+    }
+  }
+
+  private keep(z: WireZap): void {
     this.zaps.set(z.id, z);
     this.trim(this.zaps, MAX_ZAPS);
     if (z.from) this.notePerson(z.from);
