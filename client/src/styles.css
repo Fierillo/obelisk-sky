@@ -238,6 +238,65 @@ button { font: inherit; color: inherit; }
 .gate-text { font-size: 14px; line-height: 1.5; color: var(--ink-muted); }
 .gate-card .account-btn.primary { color: var(--ink); }
 .login-host { position: relative; z-index: 20; }
+
+/* The login modal (@nostr-wot/ui, re-hosted from obelisk-dex) in sky's
+ * colours: a white cloud card on a sky-tinted veil, ink text, the lime
+ * button. The SDK and dex style it dark (La Crypta) through --nui-* and
+ * --color-lc-*: retint those inside the modal, then fix the rules that
+ * hardcode a dark surface or put green text on what is now white.
+ * `body.sky-login` (LoginMount.tsx) outranks dex's stylesheet, which loads later. */
+body.sky-login[data-nui-root][data-nui-theme],
+body.sky-login .nui-modal-overlay {
+  --nui-overlay-bg: rgba(15, 42, 68, 0.42);
+  --nui-bg: #ffffff;
+  --nui-fg: var(--ink);
+  --nui-muted: var(--ink-muted);
+  --nui-border: #d3e6f6;
+  --nui-input-bg: #eef7ff;
+  --nui-primary: var(--green);
+  --nui-primary-fg: var(--ink);
+  --nui-primary-hover: #c6ff6b;
+  --nui-shadow: 0 24px 64px rgba(15, 42, 68, 0.3);
+  --color-lc-white: var(--ink);
+  --color-lc-muted: var(--ink-muted);
+  --color-lc-border: #d3e6f6;
+  --color-lc-dark: #eef7ff;
+  --color-lc-black: var(--ink);
+}
+body.sky-login .nui-modal-overlay { backdrop-filter: blur(6px); }
+body.sky-login .nui-modal {
+  background: linear-gradient(180deg, #ffffff 0%, #f3f9ff 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 22px;
+  box-shadow: 0 24px 64px rgba(15, 42, 68, 0.3), 0 0 0 1px rgba(143, 211, 255, 0.35);
+}
+/* The mark on a disc of sky, so its white cloud reads on the white card. */
+body.sky-login .nui-modal .sky-login-mark { width: 72px; height: 72px; padding: 6px; box-sizing: border-box; margin: 0 auto 10px; display: block; color: inherit; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #cfeaff 0%, #8fd3ff 100%); box-shadow: 0 6px 18px rgba(15, 42, 68, 0.18), inset 0 0 0 2px rgba(255, 255, 255, 0.7); filter: none; }
+body.sky-login .nui-modal .nui-widget-title,
+body.sky-login .nui-modal .nui-widget-subtitle { text-align: center; }
+body.sky-login .nui-modal .nui-widget-title { font-weight: 800; letter-spacing: -0.01em; }
+body.sky-login .nui-modal .nui-method-button { background: #ffffff; border-color: #d3e6f6; }
+body.sky-login .nui-modal .nui-method-button:hover,
+body.sky-login .nui-modal .nui-method-button:focus-visible { background: #eef7ff; border-color: #8fd3ff; }
+body.sky-login .nui-modal .nui-method-icon { background: #e3f2ff; border-color: #c4e2fa; color: #1e6fb8; }
+body.sky-login .nui-modal .nui-no-extension-cta { background: #f2fbe6; border-color: #d9efbf; }
+body.sky-login .nui-modal .nui-no-extension-cta:hover { background: #e9f8d6; border-color: #a9dd6c; }
+body.sky-login .nui-modal .nui-back { color: #1e6fb8; background: #e3f2ff; border-color: #c4e2fa; }
+body.sky-login .nui-modal .nui-back:hover { color: var(--ink); background: #d6ecff; border-color: #8fd3ff; }
+body.sky-login .nui-modal .nui-modal-close { color: var(--ink-muted); }
+body.sky-login .nui-modal .nui-modal-close:hover { color: var(--ink); background: #eef7ff; }
+body.sky-login .nui-modal input[type="checkbox"] { accent-color: #1e6fb8; }
+body.sky-login .nui-modal .nui-login-button:not(:disabled):hover { box-shadow: 0 6px 20px rgba(120, 190, 40, 0.35); }
+body.sky-login .obelisk-login-modal .nui-warning { background: #fff8e8; border-color: #f3dfb0; color: var(--ink); }
+body.sky-login .obelisk-login-modal .nui-warning:has(input:checked) { background: #f2fbe6; border-color: #a9dd6c; }
+body.sky-login .obelisk-npub-share .nui-key-display,
+body.sky-login .obelisk-media-picker { background: #eef7ff; }
+body.sky-login .obelisk-picture-picker { background: #eef7ff; color: #1e6fb8; }
+body.sky-login .obelisk-media-prompt { background: rgba(255, 255, 255, 0.86); color: var(--ink); }
+body.sky-login .obelisk-picture-picker:not(.has-image) .obelisk-media-prompt,
+body.sky-login .obelisk-random-name { color: #1e6fb8; }
+body.sky-login .obelisk-name-input::placeholder { color: var(--ink-muted); }
+body.sky-login .nui-modal .nui-qr { border-color: #d3e6f6; }
 @media (max-width: 720px) { .account-name { max-width: 90px; } }
 
 /* ── chat panel (the channel you stand in) ─────────────────── */
@@ -280,6 +339,7 @@ img.emoji { height: 1.3em; width: auto; vertical-align: -0.3em; }
 .chat-chip { border: 1px solid var(--border); background: rgba(38, 38, 38, 0.6); color: var(--white); border-radius: 999px; padding: 2px 8px; font: 600 12px var(--sans); cursor: pointer; }
 .chat-chip.mine { border-color: rgba(180, 249, 83, 0.6); background: rgba(180, 249, 83, 0.12); }
 .chat-chip:disabled { cursor: default; }
+.chat-chip.zap { cursor: default; color: #ffd166; border-color: rgba(255, 200, 61, 0.5); }
 .chat-actions { position: absolute; top: 2px; right: 6px; display: none; gap: 4px; }
 .chat-msg:hover .chat-actions, .chat-msg:focus-within .chat-actions { display: flex; }
 .chat-act { border: 1px solid var(--border); background: #1f1f1f; color: var(--white); border-radius: 8px; padding: 3px 8px; font: 600 11.5px var(--sans); cursor: pointer; }
@@ -867,6 +927,7 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
   .nui-widget { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
   .nui-widget > :not(.nui-method-button) { grid-column: 1 / -1; }
   .nui-widget-subtitle { margin-bottom: 2px; }
+  body.sky-login .nui-modal .sky-login-mark { width: 44px; height: 44px; padding: 4px; margin-bottom: 4px; }
   .nui-method-button { padding: 8px 10px; }
   .nui-qr svg { width: min(200px, 52vh); height: min(200px, 52vh); }
 }

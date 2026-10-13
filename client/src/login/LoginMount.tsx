@@ -13,6 +13,9 @@ import '../obelisk.generated.css';
 import { lang } from '../i18n/lang';
 import { watchSdk } from './sdkSpanish';
 
+/** Sky's mark, centred over the title (dex's `.login-mark` slot). */
+const SKY_MARK = <img src="/brand/sky-mark.svg" className="login-mark sky-login-mark" alt="Obelisk Sky" />;
+
 let root: Root | null = null;
 /** Stops translating the SDK's words (Spanish only). */
 let unwatch: (() => void) | null = null;
@@ -21,6 +24,8 @@ export function openLogin(onDone?: () => void): void {
   // The SDK modal portals to <body>, which carries the theme like the app's.
   document.body.setAttribute('data-nui-root', '');
   document.body.setAttribute('data-nui-theme', 'la-crypta');
+  // Sky's colours over the La Crypta theme (styles.css `body.sky-login`).
+  document.body.classList.add('sky-login');
   if (!root) {
     const host = document.createElement('div');
     host.className = 'login-host';
@@ -30,7 +35,7 @@ export function openLogin(onDone?: () => void): void {
   // The SDK's own words are English only: swap them while the modal is open.
   if (lang === 'es') { unwatch?.(); unwatch = watchSdk(document.body); }
   const close = () => { root?.render(null); unwatch?.(); unwatch = null; };
-  root.render(<LoginModal onClose={close} onSuccess={() => { close(); onDone?.(); }} />);
+  root.render(<LoginModal onClose={close} onSuccess={() => { close(); onDone?.(); }} headerSlot={SKY_MARK} />);
 }
 
 /**
