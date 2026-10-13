@@ -47,7 +47,8 @@ import { openSettings, SETTINGS_WORDS } from './ui/settings';
 import { lang } from './i18n/lang';
 import { vw, kindLabel } from './i18n/village';
 import { openRelayModal } from './ui/relayModal';
-import { LoadingScreen } from './ui/loading';
+import { LoadingScreen, loadAt } from './ui/loading';
+import { FirstState } from './ui/firstState';
 import { installVoiceBridge } from './shims/bridge';
 import { dist, hashStr, ISLAND_R } from './world/layout';
 import { readBoard } from '@/utils/games/chain-reaction/board-view';
@@ -295,6 +296,22 @@ if (import.meta.env.DEV) {
 
 // ── boot ─────────────────────────────────────────────────────────────────
 
+/** The loading screen waits this long at most for the village's first state. */
+const FIRST_STATE_WAIT_MS = 6000;
+/** Resolved by any snapshot through `handle` (the relay's feed, or any other). */
+const firstState = new FirstState();
+/** The stored session is still being restored (its feed may be about to start). */
+let restoringSession = true;
+/** Is a first state on its way? A feed is running (or a session is being
+ *  restored) and the relay hasn't refused us. A feed of another kind that
+ *  sends a snapshot through `handle` counts here too. A snapshot already
+ *  queued in `pending` counts as arrived. */
+function villageStateComing(): boolean {
+  if (pending.some((m) => m.t === 'snapshot')) firstState.arrived();
+  if ($('relay-btn').dataset.state === 'refused') return false;
+  return feed !== null || restoringSession;
+}
+
 void (async () => {
   // The island from straight above: a map from the plan at once, then the
   // real ground (no models needed) behind the same view while the town and
@@ -308,32 +325,46 @@ void (async () => {
   // The preview renders until the frame loop takes over (it keeps going
   // through the warm-up below, so the island never freezes behind the bar).
   let looping = false;
+  // Paused while the warm-up draws its own frames (the bar and clouds go on).
+  let warming = false;
   const preview = (): void => {
     if (looping) return;
-    world.frame();
+    if (!warming) world.frame();
     requestAnimationFrame(preview);
   };
   requestAnimationFrame(() => { preview(); loading.showWorld(); });
-  await preload(ALL_MODELS, (d, t) => loading.setProgress((d / t) * 0.7));
+  await preload(ALL_MODELS, (d, t) => loading.setProgress(loadAt('models', d / t)));
   world.setGroups([], new Map()); // the empty island, before any relay data
   applyPrefs(prefs.get()); // again: grass needs the island built
-  await preloadPeople((d, t) => loading.setProgress(0.7 + (d / t) * 0.3));
+  await preloadPeople((d, t) => loading.setProgress(loadAt('people', d / t)));
+  // The village's first state (houses, villagers, you): logged in, the
+  // feed's snapshot is waited for, a few seconds at most.
+  loading.setProgress(loadAt('village', 0));
+  await firstState.wait(villageStateComing, FIRST_STATE_WAIT_MS);
   ready = true;
-  // The chat's React islands (message bar, rich bodies) are big lazy chunks:
-  // fetch and parse them while nobody's typing yet, not on the first open.
-  const idle = (cb: () => void) => ((window as unknown as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500)))(cb, { timeout: 8000 });
-  setTimeout(() => idle(() => chat.preload()), 4000);
-  // Everything that arrived while loading (houses, people) is built and its
-  // shaders compiled while the loading screen still covers it: otherwise the
-  // first frames of the swing stall and it jumps.
+  // Everything that arrived while loading is built, and the people it
+  // brings are placed, while the loading screen still covers them.
   for (const m of pending) handle(m);
   pending = [];
-  await world.renderer.compileAsync(world.scene, world.camera).catch(() => {});
+  const cmds = director.take();
+  if (cmds.length) world.apply(cmds);
+  loading.setProgress(loadAt('village', 1));
+  // Then every shader those first frames need is compiled by drawing them
+  // behind the screen: once it says loaded, the swing doesn't stall.
+  warming = true;
+  await world.warmUp((f) => loading.setProgress(loadAt('warm', f)));
+  loading.setProgress(1);
   looping = true;
   requestAnimationFrame(loop);
   $('app').classList.remove('booting');
-  await loading.done();
+  // The swing starts as the screen fades: the village is moving as it shows.
   world.cam.playIntro();
+  void loading.done();
+  // The chat's React islands (message bar, rich bodies) are big lazy chunks:
+  // fetch and parse them once the intro has landed, while nobody's typing yet.
+  const idle = (cb: () => void) => ((window as unknown as { requestIdleCallback?: (f: () => void, o?: object) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500)))(cb, { timeout: 8000 });
+  const afterIntro = (): void => { if (world.cam.inIntro) setTimeout(afterIntro, 250); else idle(() => chat.preload()); };
+  afterIntro();
 })();
 
 // ── session + feed ───────────────────────────────────────────────────────
@@ -485,7 +516,7 @@ function playEntrance(): void {
   sound.whoosh();
 }
 
-void session.restore().then((ok) => { if (!ok) { renderAccount(null); renderAccess('logged-out'); } });
+void session.restore().then((ok) => { if (!ok) { renderAccount(null); renderAccess('logged-out'); } }).finally(() => { restoringSession = false; });
 
 // The re-hosted obelisk-dex login modal reaches sky through this host.
 registerHost({
@@ -570,6 +601,7 @@ function renderAccess(a: FeedAccess | 'logged-out', reason?: string): void {
 function handle(m: ServerMsg): void {
   switch (m.t) {
     case 'snapshot': {
+      firstState.arrived(); // the loading screen's wait (boot)
       relayHost = m.relay.replace(/^wss?:\/\//, '').replace(/\/$/, '');
       for (const p of m.profiles) { world.setProfile(p); putProfile(p); }
       renderAccount(session.current);

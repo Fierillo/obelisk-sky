@@ -15,11 +15,31 @@ import { LANDMARKS, reserveLandmarkSlots, type LandmarkId } from '../world/landm
 
 const NS = 'http://www.w3.org/2000/svg';
 
+/** Where each part of the boot sits on the bar: the models (island, trees,
+ *  houses), the people, the village's first state (houses and villagers
+ *  built), then the warm-up (real frames drawn behind the screen so every
+ *  shader is compiled). The bar reaches 1 only once the warm-up is over:
+ *  "loaded" means the intro plays with no stall. */
+export const LOAD = {
+  models: [0, 0.6],
+  people: [0.6, 0.8],
+  village: [0.8, 0.88],
+  warm: [0.88, 1],
+} as const;
+
+/** Progress at fraction `f` (0–1) of one part of the boot. */
+export function loadAt(part: keyof typeof LOAD, f: number): number {
+  const [a, b] = LOAD[part];
+  return f >= 1 ? b : a + (b - a) * Math.max(0, f);
+}
+
 export const STAGES = [
   { from: 0, label: t('loading.island') },
-  { from: 0.08, label: t('loading.trees') },
-  { from: 0.4, label: t('loading.houses') },
-  { from: 0.7, label: t('loading.people') },
+  { from: 0.07, label: t('loading.trees') },
+  { from: 0.35, label: t('loading.houses') },
+  { from: LOAD.people[0], label: t('loading.people') },
+  { from: LOAD.village[0], label: t('loading.village') },
+  { from: LOAD.warm[0], label: t('loading.warm') },
 ] as const;
 
 /** Which stage a 0–1 progress is in. */

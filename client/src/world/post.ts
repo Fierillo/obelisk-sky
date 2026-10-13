@@ -290,6 +290,13 @@ export class Post {
     this.onLevel?.(this.level);
   }
 
+  /** Where the scene is drawn (the chain's first target, linear, no tone
+   *  mapping): shaders compiled against it are the ones the frames use, while
+   *  compiling against the canvas makes variants nothing draws. */
+  get sceneTarget(): THREE.WebGLRenderTarget {
+    return this.composer.readBuffer;
+  }
+
   /** Hold the "auto" level (while models load, slow frames say nothing about the GPU). */
   holdLevel(on: boolean): void {
     this.held = on;

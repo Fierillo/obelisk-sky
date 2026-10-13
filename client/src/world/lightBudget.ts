@@ -4,6 +4,8 @@
 // The counts stay constant (when there are enough lights), so turning
 // lights over never makes three.js recompile its shaders.
 
+import type { Object3D } from 'three';
+
 export interface LightSpot {
   x: number;
   y: number;
@@ -41,4 +43,36 @@ export function chooseLights(lights: readonly LightSpot[], to: { x: number; y: n
 export function lampLevel(night01: number): number {
   const k = Math.min(1, Math.max(0, (night01 - 0.15) / 0.25));
   return k * k * (3 - 2 * k);
+}
+
+/** When the world looks for its lights again: at once after something was
+ *  added to or removed from the scene (`mark`: a lamp, a campfire, the gym),
+ *  else every `every` seconds as a backstop. A new light used to stay on for
+ *  up to 3 s, so the light count changed and every lit shader recompiled. */
+export class LightScan {
+  private dirty = true;
+  private at = -Infinity;
+
+  constructor(private every = 3) {}
+
+  mark(): void {
+    this.dirty = true;
+  }
+
+  /** True when a rescan is due at `now` (s); the caller then rescans. */
+  due(now: number): boolean {
+    if (!this.dirty && now - this.at <= this.every) return false;
+    this.dirty = false;
+    this.at = now;
+    return true;
+  }
+}
+
+/** Mark `scan` whenever a child is added to or removed from one of `roots`
+ *  (the scene and the World's roots, where every lamp, fire and house goes). */
+export function scanOnChange(scan: LightScan, roots: readonly Object3D[]): void {
+  for (const r of roots) {
+    r.addEventListener('childadded', () => scan.mark());
+    r.addEventListener('childremoved', () => scan.mark());
+  }
 }

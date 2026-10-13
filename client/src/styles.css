@@ -181,9 +181,9 @@ button { font: inherit; color: inherit; }
 .lm-landmark path { fill: var(--lm); stroke: #fff; }
 .lm-landmark text { font: 700 1px var(--sans); fill: #fff; stroke: none; }
 .lm-mill circle { fill: #f6efe2; stroke: #7a5a3a; stroke-width: 0.25; }
-.loading[data-stage="1"] .lm-trees > *, .loading[data-stage="2"] .lm-trees > *, .loading[data-stage="3"] .lm-trees > *,
-.loading[data-stage="2"] .lm-houses > *, .loading[data-stage="3"] .lm-houses > *,
-.loading[data-stage="3"] .lm-people > * { animation: lm-pop 0.45s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--i) * 45ms); }
+.loading:is([data-stage="1"], [data-stage="2"], [data-stage="3"], [data-stage="4"], [data-stage="5"]) .lm-trees > *,
+.loading:is([data-stage="2"], [data-stage="3"], [data-stage="4"], [data-stage="5"]) .lm-houses > *,
+.loading:is([data-stage="3"], [data-stage="4"], [data-stage="5"]) .lm-people > * { animation: lm-pop 0.45s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--i) * 45ms); }
 @keyframes lm-pop { from { opacity: 0; transform: scale(0.2); } to { opacity: 1; transform: none; } }
 .loading-clouds i { position: absolute; width: 180px; height: 60px; border-radius: 60px; background: rgba(255, 255, 255, 0.85); filter: blur(2px); animation: drift 28s linear infinite; }
 .loading-clouds i::before, .loading-clouds i::after { content: ''; position: absolute; background: inherit; border-radius: 50%; }

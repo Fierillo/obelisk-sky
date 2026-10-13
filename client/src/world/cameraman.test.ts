@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
-import { Cameraman, topDownHeight, TOP_DOWN_MARGIN } from './cameraman';
+import { Cameraman, introEase, topDownHeight, TOP_DOWN_MARGIN } from './cameraman';
 import { ISLAND_R } from './layout';
 
 const forward = (c: THREE.Camera) => new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
@@ -93,8 +93,48 @@ describe('the intro', () => {
     cam.holdTopDown(ISLAND_R);
     cam.playIntro(2);
     cam.update(1); // one long frame: shader compilation, a burst of events
-    expect(cam.introProgress).toBeLessThan(0.01);
+    expect(cam.introProgress).toBeCloseTo(introEase(1 / 30 / 2), 9);
+    expect(cam.introProgress).toBeLessThan(0.02);
     expect(cam.inIntro).toBe(true);
+  });
+
+  it('is under way at once and lands exactly, with no speed left', () => {
+    expect(introEase(0)).toBe(0);
+    expect(introEase(1)).toBe(1);
+    expect(introEase(0.1)).toBeGreaterThan(0.1);
+    expect(introEase(0.15)).toBeGreaterThan(0.2);
+    // Smooth: it starts from rest, never goes back, and settles at the end.
+    expect(introEase(0.001)).toBeLessThan(0.001);
+    let prev = 0;
+    for (let i = 1; i <= 1000; i++) {
+      const k = introEase(i / 1000);
+      expect(k).toBeGreaterThanOrEqual(prev);
+      prev = k;
+    }
+    expect(1 - introEase(0.999)).toBeLessThan(1e-4);
+    // The camera itself has moved over a tenth of the way by 15 % of the intro.
+    cam.holdTopDown(ISLAND_R);
+    const start = camera.position.clone();
+    cam.playIntro(2);
+    run(0.3 - 1e-9);
+    const end = new THREE.Vector3(22, 20.5, 44);
+    expect(camera.position.distanceTo(start)).toBeGreaterThan(0.1 * start.distanceTo(end));
+    run(2);
+    expect(camera.position.distanceTo(end)).toBeLessThan(1e-3);
+  });
+
+  it('knows where it will land, for the warm-up frame', () => {
+    cam.holdTopDown(ISLAND_R);
+    const home = cam.introLanding();
+    expect(home.target.distanceTo(new THREE.Vector3(0, -0.5, 1))).toBeLessThan(1e-6);
+    const me = new THREE.Vector3(4, 0.5, 2);
+    cam.followPlayer(() => me.clone());
+    const behind = cam.introLanding();
+    expect(behind.target.distanceTo(new THREE.Vector3(4, 0.6, 2))).toBeLessThan(1e-3);
+    cam.playIntro(1);
+    run(1.2);
+    expect(cam.controls.target.distanceTo(behind.target)).toBeLessThan(1e-3);
+    expect(camera.position.distanceTo(behind.pos)).toBeLessThan(1e-3);
   });
 
   it('finishes quickly on a movement key, and ignores director cuts meanwhile', () => {

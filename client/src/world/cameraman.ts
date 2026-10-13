@@ -24,8 +24,19 @@ export function topDownHeight(radius: number, fovDeg: number, aspect: number): n
 }
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
-/** The intro's curve: eases in like `easeInOut`, but spends longer landing. */
-export const introEase = (t: number) => easeInOut(1 - (1 - t) ** 1.4);
+/** How long (as a share of the intro) the swing takes to get going. */
+const INTRO_KICK = 0.04;
+/** The intro's curve: under way at once (a brief, smooth start, then most of
+ *  the move early, about a sixth by a tenth of the way through) and a long
+ *  settle into the landing, ending exactly at 1 with no speed left. The fade
+ *  of the loading screen runs over its first part, so the village is seen
+ *  moving the moment it shows. */
+export const introEase = (t: number): number => {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const s = (t * t * (1 + INTRO_KICK)) / (t + INTRO_KICK);
+  return 1 - (1 - s) ** 2.4;
+};
 /** The intro never advances more than one 30 fps frame at a time: a stalled
  *  frame (models, shaders) slows the swing instead of skipping part of it. */
 const INTRO_MAX_STEP = 1 / 30;
@@ -35,7 +46,7 @@ const INTRO_RETARGET_TAU = 0.35;
 const INTRO_SKIP_SECONDS = 0.9;
 const SKIP_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'shift']);
 
-interface Pose { target: THREE.Vector3; pos: THREE.Vector3 }
+export interface Pose { target: THREE.Vector3; pos: THREE.Vector3 }
 
 /** The opening shot: straight down on the round island while it loads,
  *  then a swing down into the 3D view. */
@@ -258,12 +269,20 @@ export class Cameraman {
    *  island) or the whole-island view, over `dur` seconds. */
   playIntro(dur = 3.4): void {
     if (!this.intro) return;
-    const p = this.player?.();
-    this.intro.to ??= p ? this.followPose(p) : { target: HOME_TARGET.clone(), pos: HOME_TARGET.clone().add(HOME_OFFSET) };
+    this.intro.toPlayer ||= !!this.player?.();
+    this.intro.to ??= this.introLanding();
     this.intro.cur ??= { target: this.intro.to.target.clone(), pos: this.intro.to.pos.clone() };
-    this.intro.toPlayer ||= !!p;
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.intro.rate = reduce ? 1e3 : 1 / dur;
+  }
+
+  /** Where the intro lands: behind your character if you're on the island,
+   *  else the whole-island view (the boot's warm-up draws a frame from there). */
+  introLanding(): Pose {
+    const to = this.intro?.to;
+    if (to) return { target: to.target.clone(), pos: to.pos.clone() };
+    const p = this.player?.();
+    return p ? this.followPose(p) : { target: HOME_TARGET.clone(), pos: HOME_TARGET.clone().add(HOME_OFFSET) };
   }
 
   /** 0 → 1 over the intro; 1 when there is none. */
