@@ -1,14 +1,12 @@
-// The "Edit profile" sheet: obelisk-dex's desktop editor
-// (src/app/[locale]/app/settings/EditProfileForm.tsx: clickable banner and
-// avatar, URL fields, the five kind 0 fields, Save/Cancel) in a centred dark
-// card with its own header, a close × and Esc. Saving goes through the
-// session shim's updateProfile (shims/session/useSession.ts).
+// The "Edit profile" sheet: sky's face on obelisk-dex's editor logic
+// (SkyProfileForm.tsx: banner and picture previews you tap, name and npub,
+// the five kind 0 fields, Save/Cancel) in a centred cloud card with a close ×
+// and Esc. Saving goes through the session shim's updateProfile
+// (shims/session/useSession.ts).
 
 import { useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { EditProfileForm } from '@/app/[locale]/app/settings/EditProfileForm';
-import Button from '@/components/ui/buttons/Button';
-import { CloseIcon } from '@/assets/icons';
+import { SkyProfileForm, PROFILE_WORDS } from './SkyProfileForm';
+import { lang } from '../i18n/lang';
 import type { ProfileEditorInitial } from '@/types/session/profile';
 
 export interface ProfilePanelProps {
@@ -21,7 +19,6 @@ export interface ProfilePanelProps {
 }
 
 export function ProfilePanel({ initial, load, onClose, onSaved }: ProfilePanelProps) {
-  const t = useTranslations();
   const [current, setCurrent] = useState(initial);
   const body = useRef<HTMLDivElement>(null);
 
@@ -47,18 +44,9 @@ export function ProfilePanel({ initial, load, onClose, onSaved }: ProfilePanelPr
 
   return (
     <div className="profile-overlay" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="profile-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title" data-testid="profile-sheet">
-        <div className="profile-sheet-head">
-          <div className="min-w-0">
-            <h2 id="profile-sheet-title" className="text-lc-white text-lg font-semibold">{t('settings.section.profile.label')}</h2>
-            <p className="text-lc-muted mt-0.5 text-xs">{t('settings.section.profile.desc')}</p>
-          </div>
-          <Button variant="bare" type="button" className="profile-sheet-close" onClick={onClose} aria-label={t('common.close')} data-testid="profile-sheet-close">
-            <CloseIcon size={18} />
-          </Button>
-        </div>
+      <div className="profile-sheet" role="dialog" aria-modal="true" aria-label={PROFILE_WORDS[lang].title} data-testid="profile-sheet">
         <div className="profile-sheet-body" ref={body}>
-          <EditProfileForm initial={current} onCancel={onClose} onSaved={onSaved} />
+          <SkyProfileForm initial={current} onCancel={onClose} onSaved={onSaved} />
         </div>
       </div>
     </div>

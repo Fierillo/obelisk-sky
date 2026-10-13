@@ -24,8 +24,8 @@ afterEach(cleanup);
 
 const initial = { displayName: 'Ana', name: 'ana', about: 'hola', picture: 'https://img.example/a.png', banner: '', nip05: 'ana@example.com', lud16: 'ana@wallet.com', website: '' };
 
-describe('ProfilePanel (obelisk-dex EditProfileForm)', { timeout: 20_000 }, () => {
-  it('shows the profile in dex\'s editor: banner and avatar to tap, URL fields, the five fields', () => {
+describe('ProfilePanel (sky\'s face on obelisk-dex\'s editor)', { timeout: 20_000 }, () => {
+  it('shows the profile as previews and fields: picture shown, npub to copy, no URL boxes', () => {
     render(<ProfilePanel initial={initial} onClose={() => {}} onSaved={() => {}} />);
     expect(screen.getByTestId('profile-sheet')).toBeTruthy();
     expect(screen.getByTestId('edit-banner-tap')).toBeTruthy();
@@ -34,7 +34,20 @@ describe('ProfilePanel (obelisk-dex EditProfileForm)', { timeout: 20_000 }, () =
     expect(screen.getByDisplayValue('hola')).toBeTruthy();
     expect(screen.getByDisplayValue('ana@example.com')).toBeTruthy();
     expect(screen.getByDisplayValue('ana@wallet.com')).toBeTruthy();
-    expect(screen.getByDisplayValue('https://img.example/a.png')).toBeTruthy();
+    // The picture is a preview, not a link to edit.
+    expect(screen.queryByDisplayValue('https://img.example/a.png')).toBeNull();
+    expect(screen.getByTestId('edit-avatar-tap').querySelector('img')!.getAttribute('src')).toBe('https://img.example/a.png');
+    expect(document.querySelector('.sp-npub code')!.textContent).toMatch(/^npub1.+…/);
+  });
+
+  it('removes the picture with Quitar/Remove, and saves it empty', async () => {
+    const onSaved = vi.fn();
+    render(<ProfilePanel initial={initial} onClose={() => {}} onSaved={onSaved} />);
+    fireEvent.click(document.querySelector('.sp-avatar-wrap .sp-remove')!);
+    expect(screen.getByTestId('edit-avatar-tap').querySelector('img')).toBeNull();
+    fireEvent.click(screen.getByTestId('save-profile-button'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(edits[0].picture).toBe('');
   });
 
   it('saves the edited values through updateProfile, then reports saved', async () => {
