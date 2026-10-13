@@ -12,10 +12,10 @@ describe('the village page in each language', () => {
     expect(t('gate.refused', { relay: 'public.obelisk.ar' }, 'es')).toMatch(/^public\.obelisk\.ar es solo por invitación/);
   });
   it('puts the words into the page', () => {
-    document.body.innerHTML = '<div class="loading-title" data-i18n="loading.island">Raising the island…</div><button data-i18n="rotate.button">Go full screen</button><b data-i18n="nope">x</b>';
+    document.body.innerHTML = '<div class="loading-title" data-i18n="loading.island">Raising the island…</div><button data-i18n="rotate.button">Play in full screen</button><b data-i18n="nope">x</b>';
     applyAppLang(document, 'es');
     expect(document.querySelector('.loading-title')!.textContent).toBe('Levantando la isla…');
-    expect(document.querySelector('button')!.textContent).toBe('Pantalla completa');
+    expect(document.querySelector('button')!.textContent).toBe('Jugar en pantalla completa');
     expect(document.querySelector('b')!.textContent).toBe('x');
   });
   it('picks the words for a language', () => {

@@ -865,10 +865,18 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
   .rotate-phone img { width: 46px; height: 46px; }
   .rotate-title { font: 800 21px var(--sans); }
   .rotate-text { font: 500 14px/1.4 var(--sans); color: var(--ink-muted); max-width: 260px; }
-  .rotate .account-btn { margin-top: 10px; }
+  /* The way out of this card: big, lime, impossible to miss (it breathes). */
+  .rotate-go { margin-top: 14px; width: min(320px, 100%); min-height: 60px; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    border: 0; border-radius: 999px; background: var(--green); color: var(--ink); font: 800 18px var(--sans); letter-spacing: -0.01em; cursor: pointer;
+    box-shadow: 0 10px 28px rgba(80, 140, 20, 0.35), 0 0 0 0 rgba(180, 249, 83, 0.7); animation: rotate-go 2s ease-out infinite; -webkit-tap-highlight-color: transparent; }
+  .rotate-go:active { transform: scale(0.97); }
+  .rotate-go svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .rotate-hint { font: 500 13px var(--sans); color: var(--ink-muted); margin-top: 4px; }
+  .rotate.no-fullscreen .rotate-go, .rotate.no-fullscreen .rotate-hint { display: none; }
 }
 @keyframes rotate-hint { 0%, 25% { transform: rotate(0deg); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
-@media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; transform: rotate(-90deg); } }
+@keyframes rotate-go { 0% { box-shadow: 0 10px 28px rgba(80, 140, 20, 0.35), 0 0 0 0 rgba(180, 249, 83, 0.7); } 70%, 100% { box-shadow: 0 10px 28px rgba(80, 140, 20, 0.35), 0 0 0 18px rgba(180, 249, 83, 0); } }
+@media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; transform: rotate(-90deg); } .rotate-go { animation: none; } }
 
 /* ── phones sideways: panels at the sides, the middle kept for the island ──
    Header on top; the person and place cards on the right; the chat on the
