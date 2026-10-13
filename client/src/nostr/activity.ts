@@ -34,7 +34,8 @@ export const DEBOUNCE_MS = 300;
  * so an emote rides on this slower event instead of motion's `e`.
  */
 export type EmoteActivity = `emote:${EmoteKind}`;
-export type ActivityKind = ExerciseKind | 'sit' | 'run' | EmoteActivity;
+/** `ride`: on a nostrich (remote signers only: everyone else says so in their motion). */
+export type ActivityKind = ExerciseKind | 'sit' | 'run' | 'ride' | EmoteActivity;
 const KINDS: readonly ActivityKind[] = ['pushup', 'pullup', 'muscleup', 'dip', 'benchpress', 'squat', 'curl', 'sit', 'run'];
 
 export interface Activity { spot: string; kind: ActivityKind }
@@ -51,7 +52,7 @@ export const seatSpotId = (p: Vec2): string => `seat:${Math.round(p.x * 10)}:${M
 /** A lane of the running track (0 inside … 2 outside). */
 export const laneSpotId = (index: number): string => `lane:${index}`;
 
-/** Wherever you stand (an emote). */
+/** Wherever you stand (an emote, or where you got on a nostrich). */
 export const hereSpotId = (p: Vec2): string => `here:${Math.round(p.x * 10)}:${Math.round(p.z * 10)}`;
 export const emoteActivity = (kind: EmoteKind): EmoteActivity => `emote:${kind}`;
 /** The emote an activity kind names, if it is one. */
@@ -74,7 +75,7 @@ export function parseSpot(id: string): ParsedSpot | null {
 export function validActivity(spot: string, kind: unknown): kind is ActivityKind {
   const s = parseSpot(spot);
   if (!s) return false;
-  if (s.type === 'here') return typeof kind === 'string' && emoteOfActivity(kind) !== null;
+  if (s.type === 'here') return kind === 'ride' || (typeof kind === 'string' && emoteOfActivity(kind) !== null);
   if (!KINDS.includes(kind as ActivityKind)) return false;
   if (s.type === 'seat') return kind === 'sit';
   if (s.type === 'lane') return kind === 'run';

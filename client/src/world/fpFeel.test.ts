@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FpFeel, RUN_FOV_KICK, type FeelInput } from './fpFeel';
+import { FpFeel, MAX_STRIDE_SPEED, RUN_FOV_KICK, type FeelInput } from './fpFeel';
 
 const still: FeelInput = { speed: 0, running: false, airborne: false, landed: false, strafe: 0, turn: 0 };
 const run = (f: FpFeel, seconds: number, i: Partial<FeelInput>) => {
@@ -46,5 +46,17 @@ describe('first-person feel', () => {
   it('does not rock the horizon with every step', () => {
     const rolls = run(new FpFeel(), 2, { speed: 2.6, running: true }).slice(60).map((x) => x.roll);
     expect(Math.max(...rolls.map(Math.abs))).toBeLessThan(1e-6);
+  });
+});
+
+describe('stride rate', () => {
+  it('steps faster running than walking, but no faster than a sprint on a galloping nostrich', () => {
+    const rate = (speed: number) => {
+      const f = new FpFeel();
+      for (let i = 0; i < 60; i++) f.step(1 / 60, { speed, running: speed > 1, airborne: false, landed: false, strafe: 0, turn: 0 });
+      return f.stride.phase;
+    };
+    expect(rate(2.6)).toBeGreaterThan(rate(0.78) * 3);
+    expect(rate(10)).toBeCloseTo(rate(MAX_STRIDE_SPEED), 5);
   });
 });

@@ -54,6 +54,8 @@ export interface Motion {
   yaw?: number;
   /** Looking up (+) or down (−) in first person (content `lp`, radians, at most ±LOOK_PITCH_MAX). */
   pitch?: number;
+  /** Riding a nostrich (content `rd: 1`): walked at the ride speeds, on a bird. */
+  ride?: boolean;
 }
 
 /** The furthest a head tilts up or down for a remote look (radians). */
@@ -69,6 +71,7 @@ export function motionTemplate(m: Motion, at = Math.floor(m.t / 1000)): EventTem
   if (m.moving) c.mv = 1;
   if (m.run) c.run = 1;
   if (m.jump) c.j = 1;
+  if (m.ride) c.rd = 1;
   if (!m.moving && m.emote) {
     c.e = m.emote;
     if (m.emoteSince) c.es = Math.round(m.emoteSince);
@@ -103,7 +106,7 @@ export function parseMotion(ev: NostrEvent): (Motion & { pk: string }) | null {
   const yaw = finite(j.y, 10) ? j.y : undefined;
   const pitch = finite(j.lp, LOOK_PITCH_MAX) ? j.lp : undefined;
   return {
-    pk: ev.pubkey, t: j.t, p, moving: isMoving, run: j.run === 1, dest, heading, jump: j.j === 1,
+    pk: ev.pubkey, t: j.t, p, moving: isMoving, run: j.run === 1, dest, heading, jump: j.j === 1, ...(j.rd === 1 ? { ride: true } : {}),
     ...(emote ? { emote } : {}), ...(emoteSince ? { emoteSince } : {}), ...(yaw !== undefined ? { yaw } : {}), ...(pitch !== undefined ? { pitch } : {}),
   };
 }
@@ -176,6 +179,8 @@ export interface PlayerMotionState {
   emoteSince?: number | null;
   /** Where the body faces (radians) and, in first person, how far the eyes look up or down. */
   yaw?: number; pitch?: number;
+  /** On a nostrich. */
+  ride?: boolean;
 }
 
 /** A jump goes out at once, but never closer than this to the last event (ms). */
@@ -190,6 +195,7 @@ export class MotionBeacon {
   private lastSent = -Infinity;
   private backoff = 1;
   private lastEmote: EmoteKind | null = null;
+  private lastRide = false;
 
   update(s: PlayerMotionState, nowMs: number): Motion | null {
     const sig = signature(s);
@@ -203,8 +209,10 @@ export class MotionBeacon {
     // Starting or ending an emote goes out at the normal pace even while
     // backing off: a nod lasts 2.4 s and would otherwise come and go unseen.
     const emote = s.moving ? null : s.emote ?? null;
-    if (emote !== this.lastEmote && since >= MIN_GAP_MS) {
+    const ride = !!s.ride;
+    if ((emote !== this.lastEmote || ride !== this.lastRide) && since >= MIN_GAP_MS) {
       this.lastEmote = emote;
+      this.lastRide = ride;
       this.lastSig = sig;
       this.lastSent = nowMs;
       return snapshot(s, nowMs);
@@ -215,6 +223,7 @@ export class MotionBeacon {
       || since >= IDLE_HEARTBEAT_MS;
     if (!due) return null;
     this.lastEmote = emote;
+    this.lastRide = ride;
     this.lastSig = sig;
     this.lastSent = nowMs;
     return snapshot(s, nowMs);
@@ -239,6 +248,7 @@ export class MotionBeacon {
     this.lastSent = -Infinity;
     this.backoff = 1;
     this.lastEmote = null;
+    this.lastRide = false;
   }
 }
 
@@ -250,6 +260,7 @@ function snapshot(s: PlayerMotionState, nowMs: number): Motion {
   }
   if (s.yaw !== undefined && Number.isFinite(s.yaw)) m.yaw = s.yaw;
   if (s.pitch !== undefined && Number.isFinite(s.pitch)) m.pitch = s.pitch;
+  if (s.ride) m.ride = true;
   return m;
 }
 
@@ -260,10 +271,13 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
  * What counts as a change worth sending: start/stop, a new click, running, a
- * turn of more than ~22°, an emote, and standing still: turning round (30°
+ * turn of more than ~22°, an emote, getting on or off a nostrich, and standing still: turning round (30°
  * steps) or looking up and down.
  */
 function signature(s: PlayerMotionState): string {
+  return (s.ride ? 'rd:' : '') + motionSig(s);
+}
+function motionSig(s: PlayerMotionState): string {
   if (!s.moving) {
     const look = s.yaw !== undefined ? `:${Math.round(wrap(s.yaw) / YAW_STEP) % 12}:${Math.round((s.pitch ?? 0) / PITCH_STEP)}` : '';
     return `${s.emote ? `idle:${s.emote}` : 'idle'}${look}`;

@@ -16,6 +16,7 @@ import { buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, type Per
 import { hashStr, type Vec2 } from './layout';
 import { SangreFx } from './sangre';
 import { clipPhase } from './emotes';
+import { SADDLE_HEIGHT } from './nostrich';
 
 export const CHAR_HEIGHT = 0.72;
 const SCALE = CHAR_HEIGHT / MODEL_HEIGHT;
@@ -220,6 +221,8 @@ export class Character {
   lift = 0;
   /** Height of the seat while sitting on a bench or stool. */
   seatY = 0;
+  /** On a nostrich's back (world.ts riders): seated at SADDLE_HEIGHT, carried along. */
+  riding = false;
   /** The mate (or cup) in hand while sitting, if any (kept in the left hand). */
   mate: THREE.Object3D | null = null;
   /** Passing the mate along a bench: the left hand reaches toward `reach`
@@ -267,7 +270,8 @@ export class Character {
   /** False while first person hides this body (world.ts setBodyDrawn): its props hide too. */
   bodyDrawn = true;
   /** Ground speed this frame, for picking and pacing the gait. */
-  private speed = 0;
+  /** Ground speed, measured (m/s, eased). */
+  speed = 0;
   private lastPos = new THREE.Vector3();
   sipClock: number;
 
@@ -619,9 +623,10 @@ export class Character {
     }
     // Lift (balloon arrivals) eases down.
     if (this.lift > 0) this.lift = Math.max(0, this.lift - dt * 1.6);
-    if (this.emote && (moving || this.exercise || this.activity === 'sit' || (this.emoteLeft -= dt) <= 0)) this.emote = null;
-    const standing = this.activity !== 'sit' && !this.exercise && !this.emote?.grounded;
-    this.root.position.y = this.lift + this.seatY + this.jumpY + this.groundY + (standing ? this.soleLift : 0);
+    if (this.emote && (moving || this.riding || this.exercise || this.activity === 'sit' || (this.emoteLeft -= dt) <= 0)) this.emote = null;
+    const standing = this.activity !== 'sit' && !this.exercise && !this.emote?.grounded && !this.riding;
+    const saddle = this.riding ? SADDLE_HEIGHT - SIT_SEAT_HEIGHT : 0;
+    this.root.position.y = this.lift + this.seatY + saddle + this.jumpY + this.groundY + (standing ? this.soleLift : 0);
 
     // Ground speed, measured (works for paths and for the viewer's controller).
     const flat = this.tmp.set(this.root.position.x - this.lastPos.x, 0, this.root.position.z - this.lastPos.z);
@@ -638,8 +643,11 @@ export class Character {
     if (this.airborne && !inAir) this.landFor = 0.28;
     this.airborne = inAir;
 
-    this.striding = !inAir && moving;
-    if (inAir) {
+    this.striding = !inAir && moving && !this.riding;
+    if (this.riding) {
+      // In the saddle, moving or not (the bird does the running).
+      this.pose('Sitting_Idle_Loop', this.talkingFor > 0 ? 'Sitting_Talking_Loop' : 'Sitting_Idle_Loop', 0.25);
+    } else if (inAir) {
       this.pose('Jump_Loop', 'Jump_Loop', 0.08);
     } else if (this.landFor > 0 && !moving) {
       this.pose('Jump_Land', 'Jump_Land', 0.06);
@@ -699,7 +707,7 @@ export class Character {
         this.heldBar.quaternion.setFromUnitVectors(BAR_AXIS, r.sub(l).normalize());
       }
     }
-    if (this.onStep && this.model) this.feelSteps();
+    if (this.onStep && this.model && !this.riding) this.feelSteps();
     if (this.sangre) {
       this.sangre.group.visible = this.bodyDrawn;
       // Blood pools on the ground under them, not on the bench they stand on.

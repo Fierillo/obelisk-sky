@@ -29,8 +29,10 @@ export interface FeelOffsets {
 /** Village people are 0.72 tall: a stride is about 0.33 of a step. */
 const STEP_LENGTH = 0.33;
 // Kept small: the eye already rides a body that walks (world.ts eyeOf).
-const BOB_WALK = 0.003;
+export const BOB_WALK = 0.003;
 const BOB_RUN = 0.007;
+/** The stride never beats faster than a sprint's (m/s of stepping): on a galloping nostrich your body bounces, it doesn't run. */
+export const MAX_STRIDE_SPEED = 3;
 const LAND_KICK = 0.35;
 const SPRING_K = 170;
 const SPRING_DAMP = 2 * Math.sqrt(SPRING_K) * 0.75;
@@ -49,7 +51,7 @@ export class FpFeel {
   step(dt: number, i: FeelInput): FeelOffsets {
     // Steps: the phase advances with distance, so the bob matches the feet.
     const onFoot = !i.airborne && i.speed > 0.05;
-    this.phase += (i.speed * dt * Math.PI) / STEP_LENGTH;
+    this.phase += (Math.min(i.speed, MAX_STRIDE_SPEED) * dt * Math.PI) / STEP_LENGTH;
     const target = onFoot ? (i.running ? BOB_RUN : BOB_WALK) * Math.min(1, i.speed / (i.running ? 2.6 : 0.78)) : 0;
     this.amp = damp(this.amp, target, 10, dt);
     // Landing: a spring pushed down, settling back.

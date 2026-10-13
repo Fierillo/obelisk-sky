@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nearestPlaces, trackOffset, PLACE_TRACKS, type Place } from './placeMusic';
+import { nearestPlaces, placeBusGain, trackOffset, PLACE_BUS, PLACE_TRACKS, type Place } from './placeMusic';
 
 describe('music at places', () => {
   const places: Place[] = [
@@ -38,5 +38,15 @@ describe('music at places', () => {
   it('every screen is at the same point in the track at the same wall time', () => {
     expect(trackOffset(1_700_000_010_500, 30)).toBeCloseTo((1_700_000_010.5) % 30);
     expect(trackOffset(45_000, 30)).toBeCloseTo(15);
+  });
+});
+
+describe('place music under an emote', () => {
+  it('sits low, and steps well back while a dance\'s music plays near you', () => {
+    expect(placeBusGain(false)).toBe(PLACE_BUS);
+    expect(PLACE_BUS).toBeLessThanOrEqual(0.4);
+    expect(placeBusGain(true)).toBeLessThan(placeBusGain(false) * 0.25);
+    // The loudest place track, ducked, is far under the emote music's bus (0.45).
+    expect(placeBusGain(true) * Math.max(...Object.values(PLACE_TRACKS).map((t) => t.gain))).toBeLessThan(0.45 / 5);
   });
 });

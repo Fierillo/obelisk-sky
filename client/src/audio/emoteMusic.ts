@@ -131,6 +131,11 @@ export class EmoteMusic {
 
   constructor(private audio: () => { ctx: AudioContext; out: AudioNode } | null) {}
 
+  /** Music or an emote's sound is playing within earshot (place music ducks under it). */
+  get playing(): boolean {
+    return this.voices.size > 0 || this.shots.size > 0;
+  }
+
   /** Called a few times a second: who is dancing, and where the listener stands and looks. */
   update(dancers: readonly Dancer[], listener: Vec2 & { yaw: number }, self: string | null = null): void {
     const a = this.audio();

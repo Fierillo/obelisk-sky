@@ -23,6 +23,16 @@ export const PLACE_TRACKS: Record<PlaceKind, { reach: number; gain: number }> = 
 
 type Vec2 = { x: number; z: number };
 
+/** The music bus: place music sits under the village, not over it. */
+export const PLACE_BUS = 0.4;
+/** While emote music plays near you (a dance, a workout) the place's music steps back to this share. */
+export const DUCKED = 0.2;
+
+/** The bus level for now: `ducked` while an emote's music or sound is heard. */
+export function placeBusGain(ducked: boolean): number {
+  return PLACE_BUS * (ducked ? DUCKED : 1);
+}
+
 /**
  * The place whose music `at` hears: the nearest in its own reach (as a share
  * of the reach, so a big one wins its ground), or none. The parrilla is not
@@ -57,12 +67,14 @@ export class PlaceMusic {
 
   constructor(private audio: () => { ctx: AudioContext; out: AudioNode } | null) {}
 
-  /** A few times a second: the places, and where the listener stands (the ear's pose is emoteMusic's). */
-  update(places: readonly Place[], listener: Vec2, quiet: readonly Vec2[] = []): void {
+  /** A few times a second: the places, and where the listener stands (the ear's pose is emoteMusic's).
+   *  `ducked`: an emote's music is playing near you, and the place's steps back under it. */
+  update(places: readonly Place[], listener: Vec2, quiet: readonly Vec2[] = [], ducked = false): void {
     const a = this.enabled ? this.audio() : null;
     if (!a) { this.silence(); return; }
     const { ctx } = a;
-    if (!this.bus) { this.bus = ctx.createGain(); this.bus.gain.value = 0.6; this.bus.connect(a.out); }
+    if (!this.bus) { this.bus = ctx.createGain(); this.bus.gain.value = placeBusGain(ducked); this.bus.connect(a.out); }
+    else this.bus.gain.setTargetAtTime(placeBusGain(ducked), ctx.currentTime, 0.5);
     const want = nearestPlaces(places, listener, quiet);
     const keep = new Set(want.map((p) => p.kind));
     for (const [k, v] of this.voices) if (!keep.has(k)) this.fade(k, v);

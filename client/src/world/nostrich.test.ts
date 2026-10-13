@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { Flock, Nostrich, NOSTRICH_HEIGHT, SCARE_RADIUS, WILD_HEIGHT, type FlockWorld } from './nostrich';
+import { Flock, Nostrich, NOSTRICH_HEIGHT, RIDE_HEIGHT, SADDLE_HEIGHT, SCARE_RADIUS, WILD_HEIGHT, type FlockWorld } from './nostrich';
 import type { Vec2 } from './layout';
 
 describe('a nostrich', () => {
@@ -56,5 +56,61 @@ describe('the wild flock', () => {
   it('is sized like a tall villager', () => {
     expect(WILD_HEIGHT).toBeGreaterThan(0.72);
     expect(WILD_HEIGHT).toBeLessThan(1);
+  });
+});
+
+describe('riding a nostrich', () => {
+  const field = (): FlockWorld => ({
+    spotNear: (p, r) => ({ x: p.x + r * 0.7, z: p.z - r * 0.3 }),
+    path: (_from, to) => [to],
+    groundAt: () => 0,
+  });
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+  it('a ridden bird goes where its rider goes and ignores runners', () => {
+    const f = new Flock(field(), [{ x: 0, z: 0 }], 2, rand);
+    const i = f.nearestFree(f.positions()[0], 1)!;
+    expect(f.mount(i, 'me')).toBe(true);
+    expect(f.mount(i, 'you')).toBe(false);
+    for (let k = 0; k < 30; k++) {
+      f.ride(i, { x: 5 + k * 0.3, z: 2 }, Math.PI / 2, 9, 0);
+      f.update(1 / 30, [{ x: 5 + k * 0.3 - 0.5, z: 2 }]);
+    }
+    expect(f.positionOf(i)).toEqual({ x: 5 + 29 * 0.3, z: 2 });
+    expect(f.riderOf(i)).toBe('me');
+  });
+
+  it('nearestFree skips a ridden bird; released, it rests and roams again', () => {
+    const f = new Flock(field(), [{ x: 0, z: 0 }], 1, rand);
+    const p = f.positions()[0];
+    f.mount(0, 'me');
+    expect(f.nearestFree(p, 50)).toBeNull();
+    f.release(0);
+    expect(f.nearestFree(p, 1)).toBe(0);
+    for (let k = 0; k < 600; k++) f.update(1 / 30, []);
+    expect(Math.hypot(f.positions()[0].x - p.x, f.positions()[0].z - p.z)).toBeGreaterThan(0.5);
+  });
+
+  it('a spare is made when every bird is taken, and goes when its rider gets off', () => {
+    const f = new Flock(field(), [{ x: 0, z: 0 }], 1, rand);
+    f.mount(0, 'a');
+    const s = f.spare({ x: 3, z: 3 });
+    f.mount(s, 'b');
+    expect(f.count).toBe(2);
+    f.release(s);
+    expect(f.count).toBe(1);
+    expect(f.nearestFree({ x: 3, z: 3 }, 50)).toBeNull();
+    expect(f.spare({ x: 1, z: 1 })).toBe(s);
+  });
+
+  it('grows to its riding height under a rider, so the saddle is SADDLE_HEIGHT up', () => {
+    const f = new Flock(field(), [{ x: 0, z: 0 }], 1, rand);
+    f.mount(0, 'me');
+    for (let k = 0; k < 90; k++) { f.ride(0, { x: 0, z: 0 }, 0, 0); f.update(1 / 30, []); }
+    const root = f.root.children[0];
+    expect(root.scale.y).toBeCloseTo(RIDE_HEIGHT / NOSTRICH_HEIGHT, 2);
+    expect(SADDLE_HEIGHT).toBeGreaterThan(0.55);
+    expect(SADDLE_HEIGHT).toBeLessThan(0.75);
   });
 });

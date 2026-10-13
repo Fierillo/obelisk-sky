@@ -7,7 +7,7 @@ import { hexToNpub } from '@nostr-wot/data';
 import { Feed, type FeedAccess } from './nostr/feed';
 import { deletionTemplate, joinTemplate, messageTemplate, publishToGroup, publishSigned, reactionTemplate } from './nostr/publish';
 import type { WireReaction } from './nostr/wire';
-import { PlayerController, placeAt } from './player/controller';
+import { FOOT_SPEEDS, PlayerController, RIDE_SPEEDS, placeAt } from './player/controller';
 import { InputState, isTyping, mountJoystick } from './player/input';
 import { ChatPanel } from './ui/chatPanel';
 import { ReadState, countUnread } from './nostr/readstate';
@@ -641,6 +641,8 @@ function activityOf(events: Ev[]): Map<string, number> {
 const input = new InputState();
 mountJoystick($('app'), input);
 let controller: PlayerController | null = null;
+/** Where you got on a nostrich, while riding (a remote signer's riding goes out as an activity there). */
+let rideSpot: string | null = null;
 let place: string | null = null;
 /** You're in the theater's hall (main.ts theater section). */
 let inTheaterHall = false;
@@ -664,6 +666,8 @@ function stepPlayer(dt: number): void {
   // In first person, step out to watch yourself train, sit or raise the knives (running laps stays in your eyes).
   // In a theater seat you keep your eyes on the screen.
   world.setSelfView((world.isTraining(pk!) && world.laneOf(pk!) === null) || (world.isSeated(pk!) && !world.inTheaterSeat(pk!)) || world.emoteOf(pk!) === 'sangre');
+  // Sitting down or training gets you off the bird (World.sit / train): back to foot speeds.
+  if (world.ridingOf(pk!) === null && rideSpot !== null) { rideSpot = null; controller.speeds = FOOT_SPEEDS; }
   const mv = input.read();
   // A jump ends an emote (walking does in Character.drive).
   if (mv.jump && world.emoteOf(pk!)) world.setEmote(pk!, null);
@@ -937,6 +941,48 @@ function seatHintCompute(hint: { hidden: boolean; textContent: string }): void {
 
 $('seat-hint').addEventListener('click', () => { toggleSeat(); renderSeatHint(); });
 
+// Riding a nostrich (world/nostrich.ts): F near a free one climbs on, F again gets off.
+function toggleRide(): void {
+  const pk = world.playerPk;
+  if (!controller || !pk) return;
+  if (world.ridingOf(pk) !== null) { getOff(); return; }
+  if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
+  const bird = world.rideableNear(controller.pos);
+  if (bird === null) { toast('No nostrich close enough. Walk up to one slowly: they run from runners.'); return; }
+  controller.stopNow();
+  world.clearWalkTarget();
+  if (!world.mount(pk, bird)) return;
+  controller.speeds = RIDE_SPEEDS;
+  rideSpot = hereSpotId(controller.pos);
+  world.cam.played();
+}
+function getOff(): void {
+  const pk = world.playerPk;
+  if (!controller || !pk) return;
+  const out = world.dismount(pk);
+  controller.speeds = FOOT_SPEEDS;
+  rideSpot = null;
+  if (!out) return;
+  controller.stopNow();
+  controller.pos = { ...out };
+  controller.height = world.groundAt(out);
+  controller.vy = 0;
+}
+/** "Press F to ride" near a free nostrich, "Press F to get off" on one. */
+function renderRideHint(): void {
+  const real = $('ride-hint') as HTMLButtonElement;
+  const pk = world.playerPk;
+  let text = '';
+  if (controller && pk) {
+    const touch = isTouch();
+    if (world.ridingOf(pk) !== null) text = touch ? 'Get off' : 'Press F to get off';
+    else if (!world.isSeated(pk) && !world.isTraining(pk) && world.rideableNear(controller.pos) !== null) text = touch ? '🐦 Ride' : 'Press F to ride the nostrich';
+  }
+  if (real.hidden !== !text) real.hidden = !text;
+  if (text && real.textContent !== text) real.textContent = text;
+}
+$('ride-hint').addEventListener('click', () => { toggleRide(); renderRideHint(); });
+
 // Emotes (world/emotes.ts): G or the bottom bar opens the menu; picking the
 // one you're doing stops it. Moving or jumping ends it too.
 const emoteMenu = new EmoteMenu($('app'), {
@@ -947,6 +993,7 @@ function doEmote(kind: EmoteKind): void {
   const pk = world.playerPk;
   if (!pk || !controller) { toast(tr('toast.loginToWalk')); return; }
   if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
+  if (world.ridingOf(pk) !== null) { toast(isTouch() ? 'Get off first.' : 'Get off first (F).'); return; }
   // No coast: still moving next frame, the body would drop the emote at once.
   controller.stopNow();
   world.clearWalkTarget();
@@ -964,6 +1011,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && chat.groupId) { e.preventDefault(); chat.focusComposer(); }
   // E: sit down for a mate on the nearest bench or stool (or stand up).
   if (e.key.toLowerCase() === 'e' && controller && world.playerPk) toggleSeat();
+  // F: climb on the nearest nostrich (or get off).
+  if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && controller && world.playerPk) toggleRide();
   // 2, 3: the station's other exercises (at the pull-up bar, 2 is muscle-ups).
   if ((e.key === '2' || e.key === '3') && controller && world.playerPk) toggleTraining(Number(e.key) - 1);
   if (e.key === '?' || (e.key === '/' && e.shiftKey)) openControlsGuide($('app'));
@@ -1401,6 +1450,7 @@ function tickMotion(): void {
     jumped: pendingJump > 0,
     emote: world.emoteOf(pk),
     emoteSince: world.emoteSinceOf(pk),
+    ride: world.ridingOf(pk) !== null,
     // Where you look: in first person the eyes (yaw and pitch), else the way your body faces.
     yaw: world.cam.firstPerson ? world.cam.fpYaw : controller.heading,
     pitch: world.cam.firstPerson ? world.cam.fpPitch : undefined,
@@ -1487,6 +1537,8 @@ function tickActivity(): void {
  */
 function remoteSignerEmote(pk: string): Activity | null {
   if (session.current?.method !== 'nip46' || !controller) return null;
+  // Riding: the spot where you got on (it would change every step otherwise).
+  if (rideSpot) return { spot: rideSpot, kind: 'ride' };
   const e = world.emoteOf(pk);
   return e ? { spot: hereSpotId(controller.pos), kind: emoteActivity(e) } : null;
 }
@@ -1496,11 +1548,11 @@ const emoteClaims = new Map<string, { key: string; at: number }>();
 function playEmoteClaims(claims: readonly Claim[]): void {
   const me = world.playerPk;
   const now = new Map<string, Claim>();
-  for (const c of claims) if (c.pk !== me && emoteOfActivity(c.kind) && !motion.get(c.pk)) now.set(c.pk, c);
+  for (const c of claims) if (c.pk !== me && (emoteOfActivity(c.kind) || c.kind === 'ride') && !motion.get(c.pk)) now.set(c.pk, c);
   for (const pk of emoteClaims.keys()) {
     if (now.has(pk)) continue;
     emoteClaims.delete(pk);
-    if (world.people.has(pk)) world.setEmote(pk, null);
+    if (world.people.has(pk)) { world.setEmote(pk, null); world.dismount(pk); }
   }
   const t = performance.now();
   for (const c of now.values()) {
@@ -1511,7 +1563,9 @@ function playEmoteClaims(claims: readonly Claim[]): void {
     emoteClaims.set(c.pk, { key, at: t });
     const spot = parseSpot(c.spot);
     if (spot?.type !== 'here') continue;
-    world.applyMotion(c.pk, { t: c.since * 1000, p: spot.pos, moving: false, run: false, dest: null, heading: null, emote: emoteOfActivity(c.kind)!, emoteSince: c.since * 1000 }, 0);
+    const still = { t: c.since * 1000, p: spot.pos, moving: false, run: false, dest: null, heading: null };
+    if (c.kind === 'ride') world.applyMotion(c.pk, { ...still, ride: true }, 0);
+    else world.applyMotion(c.pk, { ...still, emote: emoteOfActivity(c.kind)!, emoteSince: c.since * 1000 }, 0);
   }
 }
 
@@ -2305,6 +2359,7 @@ function frame(): void {
   if (qualityHeld && !world.cam.inIntro) { qualityHeld = false; world.post.holdLevel(false); }
   tickActivity();
   renderSeatHint();
+  renderRideHint();
   renderChatHint();
   renderNearHint();
   if (call.state.channelId && controller) {
@@ -2323,7 +2378,7 @@ function frame(): void {
     // In the theater the outside doesn't reach you: no music from the village, no crickets.
     sound.hush = inTheaterHall;
     emoteMusic.update(inTheaterHall ? [] : world.dancers(), { ...at, yaw: world.cameraYaw() }, world.playerPk);
-    placeMusic.update(inTheaterHall ? [] : world.musicPlaces(), at, world.quietPlaces());
+    placeMusic.update(inTheaterHall ? [] : world.musicPlaces(), at, world.quietPlaces(), emoteMusic.playing);
   }
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }

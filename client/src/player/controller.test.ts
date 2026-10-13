@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PlayerController, placeAt, RUN_SPEED, WALK_SPEED } from './controller';
+import { PlayerController, placeAt, RUN_SPEED, WALK_SPEED, RIDE_SPEEDS, FOOT_SPEEDS, RIDE_RUN, RIDE_WALK } from './controller';
 import { NavGrid } from '../world/layout';
 import { archHeight, BRIDGE_RISE } from '../world/bridge';
 
@@ -209,5 +209,35 @@ describe('raised ground (stairs, a raised floor)', () => {
     step(c, 120, fwd);
     expect(c.pos.x).toBeLessThan(1);
     expect(c.height).toBe(0);
+  });
+});
+
+describe('riding (RIDE_SPEEDS)', () => {
+  it('gallops at about RIDE_RUN and goes back to foot speed', () => {
+    const g = new NavGrid(30);
+    const c = new PlayerController(() => g, { x: 0, z: -12 });
+    c.speeds = RIDE_SPEEDS;
+    for (let i = 0; i < 60; i++) c.step(1 / 60, { x: 0, y: 1, run: true }, 0);
+    expect(c.pos.z + 12).toBeGreaterThan(RIDE_RUN * 0.85);
+    c.speeds = FOOT_SPEEDS;
+    for (let i = 0; i < 60; i++) c.step(1 / 60, { x: 0, y: 1, run: true }, 0); // eases down
+    const z = c.pos.z;
+    for (let i = 0; i < 60; i++) c.step(1 / 60, { x: 0, y: 1, run: true }, 0);
+    expect(c.pos.z - z).toBeCloseTo(RUN_SPEED, 1);
+  });
+  it('does not gallop through a wall on a slow frame', () => {
+    const g = grid();
+    const c = new PlayerController(() => g, { x: 0, z: 0 });
+    c.speeds = RIDE_SPEEDS;
+    for (let i = 0; i < 10; i++) c.step(0.1, { x: 0, y: 1, run: true }, Math.PI / 2);
+    expect(c.pos.x).toBeLessThan(2);
+  });
+  it('follows a clicked path past several waypoints in one long step', () => {
+    const g = new NavGrid(30);
+    const c = new PlayerController(() => g, { x: 0, z: 0 });
+    c.speeds = RIDE_SPEEDS;
+    c.path = [{ x: 0, z: 0.5 }, { x: 0, z: 1 }, { x: 0, z: 1.5 }, { x: 0, z: 5 }];
+    c.step(0.3, { x: 0, y: 0, run: false }, 0);
+    expect(c.pos.z).toBeCloseTo(RIDE_WALK * 0.3, 2);
   });
 });

@@ -39,7 +39,7 @@ import { buildMill, type Mill } from './mill';
 import type { Avatar } from '../nostr/avatars';
 import { laneSpotId, parseSpot, seatSpotId, stationSpotId, type Activity, type Claim } from '../nostr/activity';
 import { extrapolate, type Motion } from '../nostr/motion';
-import { RUN_SPEED as PLAYER_RUN, WALK_SPEED as PLAYER_WALK, type Solid } from '../player/controller';
+import { RUN_SPEED as PLAYER_RUN, FOOT_SPEEDS, RIDE_SPEEDS, type Solid } from '../player/controller';
 import { Post } from './post';
 import { PropBatch } from './props';
 import { Sky, type TimeOverride } from './sky';
@@ -1540,6 +1540,7 @@ export class World {
     if (!c) return;
     this.stopTraining(pk);
     this.stand(pk);
+    this.dismount(pk);
     this.people.delete(pk);
     this.pets.get(pk)?.dispose();
     this.pets.delete(pk);
@@ -2188,6 +2189,7 @@ export class World {
   sit(pk: string, seat: Seat): void {
     const c = this.people.get(pk);
     if (!c || seat.taken) return;
+    this.dismount(pk);
     this.stand(pk);
     seat.taken = pk;
     this.seatOf.set(pk, seat);
@@ -2293,6 +2295,7 @@ export class World {
   train(pk: string, st: Station, kind: StationKind): boolean {
     const c = this.people.get(pk);
     if (!c) return false;
+    this.dismount(pk);
     this.stand(pk);
     this.stopTraining(pk);
     if (kind === 'run') {
@@ -2334,7 +2337,7 @@ export class World {
     const c = this.people.get(pk);
     if (!c) return false;
     const e = emoteOf(kind);
-    if (!e || this.seatOf.has(pk) || this.trainingAt.has(pk) || c.exercise) { c.setEmote(null); return false; }
+    if (!e || this.seatOf.has(pk) || this.trainingAt.has(pk) || c.exercise || c.riding) { c.setEmote(null); return false; }
     let { lower, upper } = e;
     if (e.built) {
       // Built for this body's skeleton, once (push-ups on the floor: grip 0).
@@ -2690,6 +2693,62 @@ export class World {
     if (this.despawnLater.delete(pk) || spawned) this.despawn(pk);
   }
 
+  // ── riding nostriches (world/nostrich.ts) ────────────────────────────
+
+  /** Who rides which bird of the flock (its index). */
+  private riders = new Map<string, number>();
+
+  /** A free nostrich within `r` of `p` (its index), for the "Press F to ride" prompt. */
+  rideableNear(p: Vec2, r = 1.6): number | null {
+    return this.flock?.nearestFree(p, r) ?? null;
+  }
+
+  ridingOf(pk: string): number | null {
+    return this.riders.get(pk) ?? null;
+  }
+
+  /** `pk` climbs on bird `bird` (default: the nearest free one, else a spare made for them). */
+  mount(pk: string, bird?: number): boolean {
+    const c = this.people.get(pk);
+    if (!c || !this.flock || this.riders.has(pk)) return false;
+    const i = bird ?? this.flock.nearestFree(c.pos, Infinity) ?? this.flock.spare(c.pos);
+    if (!this.flock.mount(i, pk)) return false;
+    this.stopTraining(pk);
+    this.stand(pk);
+    this.setEmote(pk, null);
+    this.riders.set(pk, i);
+    c.resetDrive();
+    c.riding = true;
+    this.flock.ride(i, c.pos, c.body.rotation.y, 0);
+    return true;
+  }
+
+  /** Off the bird, a step to its side (null when they weren't riding). */
+  dismount(pk: string): Vec2 | null {
+    const i = this.riders.get(pk);
+    if (i === undefined) return null;
+    this.riders.delete(pk);
+    this.flock?.release(i);
+    const c = this.people.get(pk);
+    if (!c) return null;
+    c.riding = false;
+    const yaw = c.body.rotation.y;
+    const side = { x: c.pos.x - Math.cos(yaw) * 0.5, z: c.pos.z + Math.sin(yaw) * 0.5 };
+    const out = this.grid.isWalkable(side) || this.insideWalkable(side) ? side : c.pos;
+    c.place(out);
+    return out;
+  }
+
+  /** Ridden birds go where their riders are (before the flock steps). */
+  private carryRiders(): void {
+    if (!this.flock) return;
+    for (const [pk, i] of this.riders) {
+      const c = this.people.get(pk);
+      if (!c) { this.riders.delete(pk); this.flock.release(i); continue; }
+      this.flock.ride(i, c.pos, c.body.rotation.y, c.speed, c.jumpY);
+    }
+  }
+
   // ── live movement (nostr/motion.ts) ───────────────────────────────────
 
   /** People walking live in another browser → when their motion goes stale (elapsed s). */
@@ -2705,7 +2764,7 @@ export class World {
     this.movers.set(pk, this.elapsed + MOVER_STALE_S);
     if (this.claims.get(pk)?.place) return;
     const age = THREE.MathUtils.clamp(ageS, 0, 1.5);
-    const speeds = { walk: PLAYER_WALK, run: PLAYER_RUN };
+    const speeds = m.ride ? RIDE_SPEEDS : FOOT_SPEEDS;
     const now = this.walkable(extrapolate(m, age, speeds));
     // Keys: keep walking a little past the next correction; a click: its destination.
     const target = m.moving ? this.walkable(m.dest ?? this.straightAhead(m.p, extrapolate(m, age + MOVER_LEAD_S, speeds))) : now;
@@ -2718,6 +2777,9 @@ export class World {
     c.pace = speeds;
     if (this.seatOf.has(pk)) this.stand(pk);
     this.stopTraining(pk);
+    // On a nostrich over there: on one here too (a bird nearby, else one of their own).
+    if (m.ride && !this.riders.has(pk) && this.flock) this.mount(pk, this.flock.nearestFree(c.pos, 8) ?? this.flock.spare(c.pos));
+    else if (!m.ride) this.dismount(pk);
     this.releasePending(pk);
     this.leaveConvoSpot(pk);
     this.convoOf.delete(pk);
@@ -2752,6 +2814,7 @@ export class World {
     for (const [pk, until] of this.movers) {
       if (until > this.elapsed) continue;
       this.movers.delete(pk);
+      this.dismount(pk);
       const c = this.people.get(pk);
       if (c) { c.pace = null; c.idleFor = 0; c.lookPitch = 0; }
       if (this.claims.get(pk)?.place) continue;
@@ -2998,6 +3061,7 @@ export class World {
     this.frustum.setFromProjectionMatrix(this.projView);
     this.budgetLights();
     if (this.flock) {
+      this.carryRiders();
       // Runners startle them; off screen they keep moving but aren't posed.
       const runners: Vec2[] = [];
       for (const c of this.people.values()) if (c.external ? c.external.moving && c.external.running : c.path.length && c.running) runners.push(c.pos);

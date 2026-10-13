@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { FpHands, handsPose, type PoseState } from './fpHands';
+import { BOB_WALK } from './fpFeel';
 
 const S = (o: Partial<PoseState> = {}): PoseState => ({ phase: 0, walk: 0, run: 0, air: 0, turn: 0, t: 0, ...o });
 
@@ -62,5 +63,41 @@ describe('first-person hands', () => {
     const loose = curlOf();
     for (let i = 1; i <= 60; i++) h.update(cam, { phase: i * 0.3, amp: 0.008, airborne: false, t: i / 30, running: true });
     expect(curlOf()).toBeGreaterThan(loose);
+  });
+});
+
+describe('first-person hands, stepping', () => {
+  const range = (o: Partial<PoseState>, k: 'y' | 'z') => {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 64; i++) {
+      const v = handsPose(S({ ...o, phase: (i / 64) * Math.PI * 2 })).right[k];
+      lo = Math.min(lo, v); hi = Math.max(hi, v);
+    }
+    return hi - lo;
+  };
+  it('bob up and down clearly with every step when you walk, not a tremble', () => {
+    expect(range({ walk: 1 }, 'y')).toBeGreaterThan(0.025);
+    expect(range({}, 'y')).toBeLessThan(0.004);
+  });
+  it('running bobs and swings higher than walking', () => {
+    expect(range({ walk: 1, run: 1 }, 'y')).toBeGreaterThan(range({ walk: 1 }, 'y') * 1.6);
+    expect(range({ walk: 1, run: 1 }, 'z')).toBeGreaterThan(range({ walk: 1 }, 'z') * 1.4);
+  });
+  it('dip on each footfall: two dips a stride', () => {
+    const ys = Array.from({ length: 64 }, (_, i) => handsPose(S({ walk: 1, phase: (i / 64) * Math.PI * 2 })).left.y + handsPose(S({ walk: 1, phase: (i / 64) * Math.PI * 2 })).right.y);
+    let minima = 0;
+    for (let i = 0; i < 64; i++) if (ys[i] < ys[(i + 63) % 64] && ys[i] < ys[(i + 1) % 64]) minima++;
+    expect(minima).toBe(2);
+  });
+  it('a plain walk is a full walk (the hands don\'t hang still at walking pace)', () => {
+    const h = new FpHands();
+    h.group.visible = true;
+    const cam = new THREE.PerspectiveCamera();
+    const ys: number[] = [];
+    for (let i = 1; i <= 120; i++) {
+      h.update(cam, { phase: i * 0.25, amp: BOB_WALK, airborne: false, t: i / 60 });
+      if (i > 60) ys.push(h.group.children[1].position.y);
+    }
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.02);
   });
 });

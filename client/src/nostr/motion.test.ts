@@ -209,3 +209,27 @@ describe('facing and looking', () => {
     expect(b.update(at({ yaw: 1.2, pitch: 0.5 }), MIN_GAP_MS * 5)).toMatchObject({ pitch: 0.5 });
   });
 });
+
+describe('riding a nostrich', () => {
+  const at = (p: Partial<PlayerMotionState>): PlayerMotionState => ({ p: { x: 0, z: 0 }, moving: false, run: false, dest: null, heading: 0, ...p });
+  it('carries rd: 1 and parses it back; leaves it out on foot', () => {
+    const ev = sign({ ...keys, ride: true });
+    expect(JSON.parse(ev.content).rd).toBe(1);
+    expect(parseMotion(ev)?.ride).toBe(true);
+    expect(parseMotion(sign(keys))?.ride).toBeUndefined();
+  });
+  it('ignores anything but rd: 1', () => {
+    for (const rd of [true, 2, '1', null]) {
+      const ev = finalizeEvent({ ...motionTemplate(idle), content: JSON.stringify({ v: 1, t: 5, p: [0, 0], rd }) }, sk);
+      expect(parseMotion(ev)?.ride).toBeUndefined();
+    }
+  });
+  it('getting on or off goes out at once, even while backing off', () => {
+    const b = new MotionBeacon();
+    b.update(at({}), 0);
+    b.fail(); b.fail();
+    expect(b.update(at({ ride: true }), MIN_GAP_MS)).toMatchObject({ ride: true });
+    expect(b.update(at({ ride: true }), MIN_GAP_MS * 2.5)).toBeNull();
+    expect(b.update(at({}), MIN_GAP_MS * 2.5)).not.toHaveProperty('ride');
+  });
+});

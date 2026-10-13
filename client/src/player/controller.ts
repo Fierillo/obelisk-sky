@@ -8,6 +8,13 @@ import { dist, type NavGrid, type Vec2 } from '../world/layout';
 // Matched to the people's walk and jog cycles (feet don't slide).
 export const WALK_SPEED = 0.78;
 export const RUN_SPEED = 2.6;
+/** On a nostrich (world/nostrich.ts): a trot, and a gallop when you run. */
+export const RIDE_WALK = 4.5;
+export const RIDE_RUN = 10;
+export const FOOT_SPEEDS = { walk: WALK_SPEED, run: RUN_SPEED } as const;
+export const RIDE_SPEEDS = { walk: RIDE_WALK, run: RIDE_RUN } as const;
+/** The longest single move: longer ones (a gallop on a slow frame) go in steps, so walls stay walls. */
+const MAX_SUBSTEP = 0.2;
 /** Take-off speed and gravity: a jump about 0.43 high, 0.53 s in the air. */
 export const JUMP_SPEED = 3.2;
 export const GRAVITY = 12;
@@ -67,6 +74,8 @@ export class PlayerController {
   private prevPos: Vec2 | null = null;
   /** Current keyboard speed and direction (eases toward the input). */
   private spd = 0;
+  /** Walk and run speeds: on foot, or riding (RIDE_SPEEDS). */
+  speeds: { walk: number; run: number } = FOOT_SPEEDS;
 
   /** Stop dead, no coast (an emote starts where you stand). */
   stopNow(): void {
@@ -124,7 +133,7 @@ export class PlayerController {
       const fx = Math.sin(cameraYaw), fz = Math.cos(cameraYaw);
       const rx = -fz, rz = fx;
       const dx = fx * ny + rx * nx, dz = fz * ny + rz * nx;
-      const speed = (input.run ? RUN_SPEED : WALK_SPEED) * Math.min(1, mag);
+      const speed = (input.run ? this.speeds.run : this.speeds.walk) * Math.min(1, mag);
       this.spd = speed + (this.spd - speed) * Math.exp(-dt / ACCEL_TAU);
       const dl = Math.hypot(dx, dz) || 1;
       this.dir = { x: dx / dl, z: dz / dl };
@@ -134,15 +143,19 @@ export class PlayerController {
       return;
     }
     if (this.path.length) {
-      const t = this.path[0];
-      const d = dist(this.pos, t);
-      if (d < 0.05) { this.path.shift(); this.moving = this.path.length > 0; return; }
-      const speed = (input.run ? RUN_SPEED : WALK_SPEED) * dt;
-      const k = Math.min(1, speed / d);
-      const dx = (t.x - this.pos.x) * k, dz = (t.z - this.pos.z) * k;
-      this.pos = { x: this.pos.x + dx, z: this.pos.z + dz };
-      this.heading = Math.atan2(dx, dz);
-      this.moving = true;
+      // A long step (a gallop, a slow frame) carries on past a waypoint.
+      let left = (input.run ? this.speeds.run : this.speeds.walk) * dt;
+      while (this.path.length && left > 0) {
+        const t = this.path[0];
+        const d = dist(this.pos, t);
+        if (d < 0.05) { this.path.shift(); continue; }
+        const k = Math.min(1, left / d);
+        const dx = (t.x - this.pos.x) * k, dz = (t.z - this.pos.z) * k;
+        this.pos = { x: this.pos.x + dx, z: this.pos.z + dz };
+        this.heading = Math.atan2(dx, dz);
+        left -= d * k;
+      }
+      this.moving = this.path.length > 0 || left <= 0;
       this.spd = 0;
       return;
     }
@@ -186,8 +199,14 @@ export class PlayerController {
     }
   }
 
-  /** Move, sliding along walls: try the full step, then each axis alone. */
+  /** Move, sliding along walls, in steps no longer than MAX_SUBSTEP. */
   private tryMove(dx: number, dz: number): void {
+    const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / MAX_SUBSTEP));
+    for (let i = 0; i < n; i++) this.tryStep(dx / n, dz / n);
+  }
+
+  /** One move: try the full step, then each axis alone. */
+  private tryStep(dx: number, dz: number): void {
     const g = this.grid();
     const pad = 0.18;
     // Furniture is solid below your feet: walk around it, or jump onto it.

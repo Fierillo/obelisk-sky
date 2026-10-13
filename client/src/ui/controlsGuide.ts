@@ -34,6 +34,7 @@ const DESKTOP_EN: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['E'], text: 'Sit on a nearby bench or stool and drink mate, at the café for a coffee and a laptop, or at the parrilla for asado; E again to stand' },
       { keys: ['E', '2'], text: 'In the sports park: E trains at the nearest bar (pull-ups, dips, push-ups), 2 does muscle-ups at the pull-up bar; walk off to stop' },
+      { keys: ['F'], text: 'Ride a nostrich: walk up to one (they run from runners), F to climb on, run to gallop; F again to get off' },
       { keys: ['G'], text: 'Emotes: dance, sit in the lotus pose, nod, fold your arms… then 1–9 or 0 to pick; walk off to stop' },
       { keys: ['Join call'], text: 'In a voice channel’s pavilion, join the call' },
       { keys: ['Game'], text: 'In a channel, start a game; click a table to play' },
@@ -63,6 +64,7 @@ const TOUCH_EN: { title: string; rows: Row[] }[] = [
     title: 'Hang out',
     rows: [
       { keys: ['Sit'], text: 'Near a bench or stool, tap Sit to drink mate' },
+      { keys: ['Ride'], text: 'Near a nostrich, tap Ride to climb on and gallop' },
       { keys: ['Menu', 'Emotes'], text: 'Dance, sit in the lotus pose, nod…; walk off to stop' },
       { keys: ['Join call'], text: 'In a voice channel’s pavilion, join the call' },
       { keys: ['Your name'], text: 'Top right: change your look and your pet' },
@@ -98,6 +100,7 @@ const DESKTOP_ES: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['E'], text: 'Sentate en un banco o banquito cercano a tomar mate, en el café por un café y una laptop, o en la parrilla por un asado; E otra vez para pararte' },
       { keys: ['E', '2'], text: 'En el parque: E entrena en la barra más cercana (dominadas, fondos, flexiones), 2 hace muscle-ups en la barra; caminá para parar' },
+      { keys: ['F'], text: 'Montá un nostrich: acercate despacio (huyen de los que corren), F para subirte, corré para galopar; F otra vez para bajarte' },
       { keys: ['G'], text: 'Gestos: bailar, la postura del loto, asentir, cruzarte de brazos… después 1–9 o 0 para elegir; caminá para parar' },
       { keys: ['Join call'], text: 'En la fogata de un canal de voz, sumate a la llamada' },
       { keys: ['Juego'], text: 'En un canal, empezá un juego; hacé clic en una mesa para jugar' },
@@ -127,6 +130,7 @@ const TOUCH_ES: { title: string; rows: Row[] }[] = [
     title: 'Pasarla bien',
     rows: [
       { keys: ['Sit'], text: 'Cerca de un banco o banquito, tocá Sit para tomar mate' },
+      { keys: ['Ride'], text: 'Cerca de un nostrich, tocá Ride para subirte y galopar' },
       { keys: ['Menu', 'Emotes'], text: 'Bailar, la postura del loto, asentir…; caminá para parar' },
       { keys: ['Join call'], text: 'En la fogata de un canal de voz, sumate a la llamada' },
       { keys: ['Tu nombre'], text: 'Arriba a la derecha: cambiá tu look y tu mascota' },

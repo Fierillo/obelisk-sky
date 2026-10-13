@@ -1,7 +1,8 @@
 // Your own hands in first person: two forearms and hands at the bottom
 // corners of the view, in your skin tone with your top's sleeves. They move
 // the way arms do: standing they hang loose and breathe, fingers relaxed;
-// walking they swing opposite each other along an arc (up as they come
+// walking they swing opposite each other along an arc and dip with every
+// step (lowest as they pass each other, up as they come
 // forward); running the elbows bend, the fists close and pump higher and
 // harder; in a jump they lift and spread, and settle back as you land;
 // turning, they trail a little behind the look. They hang off the camera
@@ -9,6 +10,7 @@
 // hides them, the body is drawn then).
 
 import * as THREE from 'three';
+import { BOB_WALK } from './fpFeel';
 
 export interface HandsInput {
   /** Stride phase (radians) and bob amplitude, from FpFeel. */
@@ -44,21 +46,31 @@ const REST = { x: 0.086, y: -0.09, z: -0.165, pitch: 0.22, roll: 1.15 } as const
 /** Running: elbows bent, the fists come up and in. */
 const RUN = { x: 0.072, y: -0.075, z: -0.17, pitch: 0.42, roll: 1.3 } as const;
 
+/** How far the hands drop and rise with every step (m): the body lands, the arms follow a beat later. */
+const STEP_BOB = { walk: 0.011, run: 0.024 } as const;
+/** How far each arm swings forward and back (m); the forward one rises on its arc. */
+const SWING = { walk: 0.032, run: 0.05 } as const;
+
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** Each hand for this moment. Pure. */
 export function handsPose(s: PoseState): { left: HandPose; right: HandPose } {
   const breathe = Math.sin(s.t * 1.3) * 0.0016 * (1 - s.walk);
+  // Twice a stride both hands dip, lowest as the arms pass each other (a
+  // beat late), and rise to the ends of their swing, like a pendulum; they
+  // sway a little side to side too: the figure-8 of a walk.
+  const bobK = lerp(STEP_BOB.walk, STEP_BOB.run, s.run) * s.walk * (1 - s.air);
+  const drop = -bobK * (1 + Math.cos(2 * s.phase - 0.3)) * 0.5;
+  const sway = Math.sin(s.phase + 0.3) * bobK * 0.45;
   const hand = (side: 1 | -1): HandPose => {
     // The arm on the side of the leg going back comes forward: opposite hands, opposite phase.
     const sw = Math.sin(s.phase) * side;
-    const reach = lerp(0.016, 0.03, s.run) * s.walk;
-    // Forward (−z) when sw > 0; an arm swinging forward also rises on its arc.
+    const reach = lerp(SWING.walk, SWING.run, s.run) * s.walk * (1 - s.air * 0.7);
+    // Forward (−z) when sw > 0; an arm swinging forward also rises on its arc
+    // (running, the fist comes right up toward the chest).
     const fwd = sw * reach;
-    const arc = Math.max(0, sw) * reach * lerp(0.45, 0.9, s.run);
-    // Running pumps: a short up-down on every step.
-    const pump = Math.abs(Math.cos(s.phase)) * 0.004 * s.run * s.walk;
+    const arc = Math.max(0, sw) * reach * lerp(0.55, 1.1, s.run);
     const base = {
       x: lerp(REST.x, RUN.x, s.run), y: lerp(REST.y, RUN.y, s.run), z: lerp(REST.z, RUN.z, s.run),
       pitch: lerp(REST.pitch, RUN.pitch, s.run), roll: lerp(REST.roll, RUN.roll, s.run),
@@ -66,10 +78,10 @@ export function handsPose(s: PoseState): { left: HandPose; right: HandPose } {
     // Turning: both hands lag the look (slide the other way, tilt with it).
     const lag = clamp(-s.turn * 0.006, -0.018, 0.018);
     return {
-      x: side * base.x + side * s.air * 0.018 + lag,
-      y: base.y + breathe + arc + pump + s.air * 0.03,
+      x: side * base.x + side * s.air * 0.018 + lag + sway,
+      y: base.y + breathe + drop + arc + s.air * 0.03,
       z: base.z - fwd + s.air * 0.01,
-      pitch: base.pitch + sw * reach * 9 - s.air * 0.45,
+      pitch: base.pitch + sw * reach * 8 - s.air * 0.45,
       yaw: -side * s.air * 0.25 + lag * 6,
       roll: -side * (base.roll - s.air * 0.35),
       // Loose standing, half-closed walking, fists running; open a little in the air.
@@ -139,7 +151,8 @@ export class FpHands {
     const s = this.s;
     s.phase = i.phase;
     s.t = i.t;
-    s.walk = damp(s.walk, Math.min(1, i.amp / 0.007), 8, dt);
+    // A full walk at the walk's own bob (running's is bigger, still 1).
+    s.walk = damp(s.walk, Math.min(1, i.amp / BOB_WALK), 8, dt);
     s.run = damp(s.run, i.running && i.amp > 0.002 ? 1 : 0, 5, dt);
     // Up quickly at take-off, down a little slower on landing.
     s.air = damp(s.air, i.airborne ? 1 : 0, i.airborne ? 10 : 6, dt);

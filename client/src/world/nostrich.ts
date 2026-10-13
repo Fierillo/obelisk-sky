@@ -165,11 +165,29 @@ interface Bird {
   speed: number;
   /** Seconds left pecking about before the next dash. */
   rest: number;
+  /** Who rides it (a pubkey), if anyone: then it goes where they go. */
+  rider: string | null;
+  /** Its size now (eased: a ridden bird stands taller), and lift (a jump). */
+  scale: number;
+  lift: number;
+  /** Made for a rider when every wild bird was taken: gone when they get off. */
+  spare: boolean;
+  /** A spare whose rider got off: its slot waits for the next spare. */
+  dead?: boolean;
 }
 
 /** A wild nostrich stands a little taller than the people (0.72). */
 export const WILD_HEIGHT = 0.8;
 const WILD_SCALE = WILD_HEIGHT / NOSTRICH_HEIGHT;
+/** A ridden one stands taller, so a person looks right on its back. */
+export const RIDE_HEIGHT = 0.95;
+const RIDE_SCALE = RIDE_HEIGHT / NOSTRICH_HEIGHT;
+/** The top of its back, in its own units (buildRig: the body box's top). */
+const BACK_TOP = 0.78;
+/** Where a rider sits (m above the ground), on a ridden bird. */
+export const SADDLE_HEIGHT = BACK_TOP * RIDE_SCALE;
+/** The legs keep a readable stride at a gallop: the speed they're posed at is capped (its own units, m/s). */
+const MAX_POSED_SPEED = 4.5;
 const WALK = 0.55, RUN = 2.4, SPRINT = 3.4;
 /** They scatter when someone runs at them closer than this. */
 export const SCARE_RADIUS = 2.6;
@@ -188,22 +206,107 @@ export class Flock {
         n.root.scale.setScalar(WILD_SCALE);
         n.root.position.set(pos.x, world.groundAt(pos), pos.z);
         this.root.add(n.root);
-        this.birds.push({ n, pos: { ...pos }, heading: rand() * Math.PI * 2, path: [], speed: 0, rest: 1 + rand() * 4 });
+        this.birds.push(this.bird(n, pos, false));
       }
     }
   }
 
+  private bird(n: Nostrich, pos: Vec2, spare: boolean): Bird {
+    return { n, pos: { ...pos }, heading: this.rand() * Math.PI * 2, path: [], speed: 0, rest: 1 + this.rand() * 4, rider: null, scale: WILD_SCALE, lift: 0, spare };
+  }
+
+  /** The closest bird nobody rides within `r` of `p` (its index), or null. */
+  nearestFree(p: Vec2, r: number): number | null {
+    let best: number | null = null, bd = r;
+    this.birds.forEach((b, i) => {
+      if (b.rider || b.dead) return;
+      const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z);
+      if (d <= bd) { bd = d; best = i; }
+    });
+    return best;
+  }
+
+  /** A bird of its own for a rider when every wild one is taken (index). */
+  spare(at: Vec2): number {
+    const n = new Nostrich();
+    n.root.scale.setScalar(WILD_SCALE);
+    this.root.add(n.root);
+    const b = this.bird(n, at, true);
+    const free = this.birds.findIndex((o) => o.dead);
+    if (free >= 0) { this.birds[free] = b; return free; }
+    this.birds.push(b);
+    return this.birds.length - 1;
+  }
+
+  riderOf(i: number): string | null {
+    return this.birds[i]?.rider ?? null;
+  }
+
+  /** `who` climbs on bird `i`: it stops roaming and follows `ride`. */
+  mount(i: number, who: string): boolean {
+    const b = this.birds[i];
+    if (!b || b.rider) return false;
+    b.rider = who;
+    b.path = [];
+    b.rest = 0;
+    return true;
+  }
+
+  /** The rider gets off: it stays put a moment, then roams again (a spare goes). */
+  release(i: number): void {
+    const b = this.birds[i];
+    if (!b) return;
+    b.rider = null;
+    b.speed = 0;
+    b.lift = 0;
+    b.path = [];
+    b.rest = 1.5 + this.rand() * 3;
+    if (b.spare) {
+      // The others keep their indices: the slot stays empty for the next spare.
+      b.n.root.removeFromParent();
+      b.dead = true;
+    }
+  }
+
+  /** A ridden bird is where its rider is, this frame: `speed` m/s, `lift` off the ground (a jump). */
+  ride(i: number, pos: Vec2, heading: number, speed: number, lift = 0): void {
+    const b = this.birds[i];
+    if (!b?.rider) return;
+    b.pos = { ...pos };
+    b.heading = heading;
+    b.speed = speed;
+    b.lift = lift;
+  }
+
+  /** Where bird `i` is (for placing a rider). */
+  positionOf(i: number): Vec2 | null {
+    const b = this.birds[i];
+    return b ? { ...b.pos } : null;
+  }
+
   get count(): number {
-    return this.birds.length;
+    return this.birds.filter((b) => !b.dead).length;
   }
 
   positions(): Vec2[] {
-    return this.birds.map((b) => ({ ...b.pos }));
+    return this.birds.filter((b) => !b.dead).map((b) => ({ ...b.pos }));
   }
 
   /** `runners`: people moving fast nearby (they startle the birds). */
   update(dt: number, runners: Vec2[], visible: (p: Vec2) => boolean = () => true): void {
     for (const b of this.birds) {
+      if (b.dead) continue;
+      const scale = THREE.MathUtils.damp(b.scale, b.rider ? RIDE_SCALE : WILD_SCALE, 6, dt);
+      if (scale !== b.scale) { b.scale = scale; b.n.root.scale.setScalar(scale); }
+      if (b.rider) {
+        b.n.mode = b.speed > 3 ? 'run' : b.speed > 0.1 ? 'walk' : 'idle';
+        b.n.root.position.set(b.pos.x, this.world.groundAt(b.pos) + b.lift, b.pos.z);
+        b.n.root.rotation.y = b.heading;
+        const show = visible(b.pos);
+        b.n.root.visible = show;
+        if (show) b.n.update(dt, Math.min(MAX_POSED_SPEED, b.speed / b.scale));
+        continue;
+      }
       // Startled: sprint away from the nearest runner.
       const scare = runners.find((r) => Math.hypot(r.x - b.pos.x, r.z - b.pos.z) < SCARE_RADIUS);
       if (scare && b.speed < SPRINT * 0.9) {
