@@ -12,7 +12,7 @@ import { Cameraman } from './cameraman';
 import { Character, pubkeyColor, CHAR_HEIGHT, PERSON_SCALE, SIT_SEAT_HEIGHT, registerClip, setBadgeResolution } from './character';
 import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises';
 import { buildPerson, skinTone } from '../people/people';
-import { FpHands } from './fpHands';
+import { FpHands, newArmPose } from './fpHands';
 import type { Command } from './director';
 import { buildIsland, type IslandMeshes } from './island';
 import { carrierOf, reachOf, stepRound, type Round } from './mateRound';
@@ -188,6 +188,8 @@ export class World {
   /** Your hands in first person. */
   private readonly hands = new FpHands();
   private handsT = 0;
+  private readonly armPose = newArmPose();
+  private readonly handsEye = new THREE.Vector3();
   private needsResize = false;
   /** Furniture the player bumps into but can jump onto (see PlayerController). */
   readonly solids: Solid[] = [];
@@ -3162,7 +3164,13 @@ export class World {
     }
     this.cam.update(dt);
     this.handsT += dt;
-    if (this.hands.group.visible) this.hands.update(this.camera, { ...this.cam.feelState, t: this.handsT });
+    if (this.hands.group.visible) {
+      // Your arms are your body's (the clip it plays this frame), hung from
+      // your eyes without the camera's own bob and landing dip.
+      const me = this.playerPk ? this.people.get(this.playerPk) : null;
+      const eye = this.handsEye.copy(this.camera.position).sub(this.cam.feelOffset);
+      this.hands.update(this.camera, { ...this.cam.feelState, t: this.handsT, eye }, me?.armPose(this.armPose) ? this.armPose : null);
+    }
     // The miniature lens is for looking down on the island, not through your own eyes.
     this.post.setTiltAmount(this.cam.firstPerson && !this.cam.isWatching ? 0 : this.cam.introProgress);
     this.overlay.update();

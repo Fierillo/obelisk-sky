@@ -17,6 +17,7 @@ import { hashStr, type Vec2 } from './layout';
 import { SangreFx } from './sangre';
 import { clipPhase } from './emotes';
 import { SADDLE_HEIGHT } from './nostrich';
+import { readArmPose, type ArmPose } from './fpHands';
 
 export const CHAR_HEIGHT = 0.72;
 const SCALE = CHAR_HEIGHT / MODEL_HEIGHT;
@@ -519,6 +520,16 @@ export class Character {
   bonePosition(name: string, out = new THREE.Vector3()): THREE.Vector3 | null {
     const b = this.bones.get(name);
     return b ? b.getWorldPosition(out) : null;
+  }
+
+  /**
+   * Where this body's arms are now, in the body's own frame (world units, +z
+   * ahead, +x to its left): shoulder, elbow, wrist, the knuckles, and how
+   * closed the hand is. First person draws your arms from it (fpHands.ts).
+   * False before the model has loaded.
+   */
+  armPose(out: ArmPose): boolean {
+    return !!this.model && readArmPose((n) => this.bones.get(n), this.body, out);
   }
 
   /** Lower and upper body clips (clip names; the same one for the whole body). */

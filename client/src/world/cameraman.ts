@@ -81,6 +81,9 @@ export class Cameraman {
     return { ...this.feel.stride, airborne: this.feelIn.airborne, running: this.feelIn.running };
   }
   private feelIn: FeelInput = { speed: 0, running: false, airborne: false, landed: false, strafe: 0, turn: 0 };
+  /** What the first-person feel added to the eye this frame (bob, landing dip, sway), world space:
+   *  your arms hang from the eye without it (fpHands.ts). */
+  readonly feelOffset = new THREE.Vector3();
   /** In first person but training or sitting: the camera steps out to watch
    *  you (you'd see nothing from your own eyes), and back in when you're done. */
   private watching = false;
@@ -432,8 +435,8 @@ export class Cameraman {
         this.lastYaw = this.fpYaw;
         const o = this.feel.step(dt, { ...this.feelIn, turn });
         const right = new THREE.Vector3(-Math.cos(this.fpYaw), 0, Math.sin(this.fpYaw));
-        eye.y += o.up;
-        eye.addScaledVector(right, o.side);
+        this.feelOffset.set(0, o.up, 0).addScaledVector(right, o.side);
+        eye.add(this.feelOffset);
         const dir = new THREE.Vector3(Math.sin(this.fpYaw) * Math.cos(this.fpPitch), Math.sin(this.fpPitch), Math.cos(this.fpYaw) * Math.cos(this.fpPitch));
         this.camera.up.set(0, 1, 0);
         this.camera.position.copy(eye);
