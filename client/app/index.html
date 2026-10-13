@@ -79,10 +79,14 @@
       </button>
       <button id="login" class="account-btn primary" data-i18n="login">Log in</button>
       <div id="account" class="account" hidden>
-        <button id="account-look" class="account-look" title="Your look">
+        <button id="account-look" class="account-look" title="Your profile" data-i18n-title="account.title" aria-haspopup="menu" aria-expanded="false">
           <span id="account-avatar" class="account-avatar"></span>
           <span class="account-who"><span id="account-name" class="account-name"></span><span id="account-nip" class="account-nip"></span></span>
         </button>
+        <div id="account-menu" class="account-menu" role="menu" hidden>
+          <button class="account-menu-item" role="menuitem" data-act="edit-profile" data-i18n="account.editProfile">Edit profile</button>
+          <button class="account-menu-item" role="menuitem" data-act="your-look" data-i18n="account.look">Your look</button>
+        </div>
         <button id="logout" class="account-btn danger" title="Log out" data-i18n="logout">Log out</button>
       </div>
     </header>

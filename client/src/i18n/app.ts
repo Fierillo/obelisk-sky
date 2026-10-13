@@ -52,6 +52,9 @@ const en = {
   'ctl.about.title': 'About Obelisk Sky',
   'ctl.logout': 'Log out',
   'ctl.logout.title': 'Log out',
+  'account.title': 'Your profile and look',
+  'account.editProfile': 'Edit profile',
+  'account.look': 'Your look',
 };
 
 export type AppKey = keyof typeof en;
@@ -104,6 +107,9 @@ const es: Record<AppKey, string> = {
   'ctl.about.title': 'Acerca de Obelisk Sky',
   'ctl.logout': 'Salir',
   'ctl.logout.title': 'Salir',
+  'account.title': 'Tu perfil y tu aspecto',
+  'account.editProfile': 'Editar perfil',
+  'account.look': 'Tu aspecto',
 };
 
 export const APP_COPY: Record<Lang, Record<AppKey, string>> = { en, es };

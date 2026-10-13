@@ -54,6 +54,8 @@ import { activeRelay, DEFAULT_GROUP_RELAY, normalizeRelay, setActiveRelay, SUGGE
 import { pageHub } from './nostr/hub';
 import { SessionManager, type LoginArgs, type Session } from './nostr/session';
 import { registerHost } from './shims/host';
+import { editOwnProfile, fetchOwnProfile, initialOf } from './nostr/ownProfile';
+import type { ProfileEditorInitial } from '@/types/session/profile';
 import { Soundscape } from './sound';
 import { openZapSheet } from './ui/zapSheet';
 import { connectWallet, forgetWallet, loadWallet, walletKindFor, walletView } from './wallet/wallet';
@@ -339,6 +341,12 @@ void (async () => {
 const hub = pageHub();
 const session = new SessionManager(hub);
 let feed: Feed | null = null;
+/** Counts logins and logouts (the profile editor drops a save begun for another account). */
+let sessionGen = 0;
+/** Your kind 0 as last read or published (the editor's starting point; sky's profile cache keeps only a few fields). */
+let ownKind0: Parameters<typeof initialOf>[0] = null;
+/** The profile editor module, once loaded (React, obelisk-dex's form). Declared here: session.onChange closes it. */
+let profileMount: typeof import('./profile/ProfileMount') | null = null;
 
 // ── districts (sky-only theme config, operator-authored) ─────────────────
 
@@ -420,6 +428,10 @@ function startReadState(): void {
 }
 
 session.onChange((s) => {
+  sessionGen++;
+  ownKind0 = null;
+  closeAccountMenu();
+  profileMount?.closeProfileEditor();
   renderAccount(s);
   // Logged in, the relay's own branding can be read: look again.
   relayShown = '';
@@ -478,6 +490,16 @@ registerHost({
   login: (args) => { freshLogin = true; return session.login(args as LoginArgs); },
   sign: (t) => session.sign(t),
   pubkey: () => session.current?.pubkey ?? null,
+  generation: () => sessionGen,
+  editProfile: async (edit, assertCurrent) => {
+    const s = session.current;
+    if (!s) throw new Error('Not logged in');
+    const ev = await editOwnProfile({ hub, pubkey: s.pubkey, sign: (t) => session.sign(t) }, edit, assertCurrent);
+    ownKind0 = ev;
+    // Through the feed's state, as any kind 0: the pill, badge, chat and card follow.
+    feed?.state.watch(s.pubkey);
+    feed?.state.ingestProfile(ev);
+  },
 });
 
 /** The login module, once loaded (logging out resets it). */
@@ -1409,7 +1431,53 @@ function openLook(first = false): void {
   }, first);
 }
 
-$('account-look').addEventListener('click', () => openLook());
+// ── the account pill: Edit profile / Your look ───────────────────────────
+
+function closeAccountMenu(): void {
+  $('account-menu').hidden = true;
+  $('account-look').setAttribute('aria-expanded', 'false');
+}
+
+$('account-look').addEventListener('click', () => {
+  const menu = $('account-menu');
+  menu.hidden = !menu.hidden;
+  $('account-look').setAttribute('aria-expanded', String(!menu.hidden));
+});
+$('account-menu').addEventListener('click', (e) => {
+  const act = (e.target as Element).closest<HTMLElement>('[data-act]')?.dataset.act;
+  if (!act) return;
+  closeAccountMenu();
+  if (act === 'your-look') openLook();
+  else if (act === 'edit-profile') void openProfile();
+});
+document.addEventListener('pointerdown', (e) => {
+  if (!$('account-menu').hidden && !(e.target as Element).closest('.account')) closeAccountMenu();
+});
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('account-menu').hidden) closeAccountMenu(); });
+
+/** What sky already knows of your profile, for the editor's first paint. */
+function knownProfile(pk: string): ProfileEditorInitial | null {
+  if (ownKind0?.pubkey === pk) return initialOf(ownKind0);
+  const p = world.profiles.get(pk);
+  return p && p.loaded !== false ? { name: p.name, picture: p.avatar, nip05: p.nip05, lud16: p.lud16 ?? null } : null;
+}
+
+async function openProfile(): Promise<void> {
+  const s = session.current;
+  if (!s) return;
+  profileMount ??= await import('./profile/ProfileMount');
+  if (session.current !== s) return;
+  profileMount.openProfileEditor({
+    initial: knownProfile(s.pubkey),
+    load: async () => {
+      const { event } = await fetchOwnProfile({ hub, pubkey: s.pubkey });
+      if (!event || session.current !== s) return null;
+      if (!ownKind0 || ownKind0.created_at < event.created_at) ownKind0 = event;
+      return initialOf(ownKind0);
+    },
+    onSaved: () => toast(lang === 'es' ? 'Perfil guardado.' : 'Profile saved.'),
+  });
+}
 
 // Ask for the avatars of everyone in the village, a batch at a time.
 setInterval(() => { if (session.current) avatars.want([...world.people.keys()]); }, 3000);
