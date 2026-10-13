@@ -60,3 +60,17 @@ describe('stride rate', () => {
     expect(rate(10)).toBeCloseTo(rate(MAX_STRIDE_SPEED), 5);
   });
 });
+
+describe('landing dip on a slow frame', () => {
+  it('settles at 10 fps (a phone, software rendering) instead of flying off', () => {
+    const f = new FpFeel();
+    let o = f.step(0.1, { speed: 0, running: false, airborne: false, landed: true, strafe: 0, turn: 0 });
+    let worst = Math.abs(o.up);
+    for (let i = 0; i < 50; i++) {
+      o = f.step(0.1, { speed: 0, running: false, airborne: false, landed: false, strafe: 0, turn: 0 });
+      worst = Math.max(worst, Math.abs(o.up));
+    }
+    expect(worst).toBeLessThan(0.05);
+    expect(Math.abs(o.up)).toBeLessThan(1e-4);
+  });
+});

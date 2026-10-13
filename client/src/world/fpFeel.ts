@@ -37,6 +37,8 @@ const LAND_KICK = 0.35;
 const SPRING_K = 170;
 const SPRING_DAMP = 2 * Math.sqrt(SPRING_K) * 0.75;
 export const RUN_FOV_KICK = 6;
+/** The landing spring's longest step (s). */
+const SPRING_STEP = 1 / 120;
 
 const damp = (a: number, b: number, rate: number, dt: number) => a + (b - a) * (1 - Math.exp(-rate * dt));
 
@@ -56,9 +58,14 @@ export class FpFeel {
     this.amp = damp(this.amp, target, 10, dt);
     // Landing: a spring pushed down, settling back.
     if (i.landed) this.dipV -= LAND_KICK;
-    const acc = -SPRING_K * this.dip - SPRING_DAMP * this.dipV;
-    this.dipV += acc * dt;
-    this.dip += this.dipV * dt;
+    // In small steps: one step of a slow frame (0.1 s) through a spring this
+    // stiff blows up, and the camera flies off to infinity.
+    const n = Math.ceil(dt / SPRING_STEP);
+    for (let k = 0; k < n; k++) {
+      const h = dt / n;
+      this.dipV += (-SPRING_K * this.dip - SPRING_DAMP * this.dipV) * h;
+      this.dip += this.dipV * h;
+    }
     // A slight lean into strafes and turns.
     const lean = Math.max(-0.02, Math.min(0.02, i.strafe * 0.02 + i.turn * 0.004));
     this.roll = damp(this.roll, lean, 8, dt);
