@@ -3,6 +3,7 @@
 // stops it. What an emote does is world/emotes.ts.
 
 import { EMOTES, type EmoteKind } from '../world/emotes';
+import { vw } from '../i18n/village';
 
 /** The number key for the `i`th emote: 1–9, then 0; none past ten. */
 const keyOf = (i: number): string => (i < 9 ? String(i + 1) : i === 9 ? '0' : '');
@@ -16,17 +17,18 @@ export class EmoteMenu {
     this.el.className = 'emote-menu';
     this.el.hidden = true;
     this.el.setAttribute('role', 'menu');
-    this.el.setAttribute('aria-label', 'Emotes');
+    this.el.setAttribute('aria-label', vw.emotes);
     EMOTES.forEach((e, i) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'emote-btn';
       b.setAttribute('role', 'menuitem');
       b.dataset.kind = e.kind;
-      b.title = `${e.label} (${keyOf(i)})`;
+      const label = vw.emote[e.kind] ?? e.label;
+      b.title = `${label} (${keyOf(i)})`;
       b.innerHTML = `<span class="emote-icon" aria-hidden="true"></span><span class="emote-label"></span><kbd></kbd>`;
       (b.querySelector('.emote-icon') as HTMLElement).textContent = e.icon;
-      (b.querySelector('.emote-label') as HTMLElement).textContent = e.label;
+      (b.querySelector('.emote-label') as HTMLElement).textContent = label;
       (b.querySelector('kbd') as HTMLElement).textContent = keyOf(i);
       b.addEventListener('click', () => this.choose(e.kind));
       this.buttons.set(e.kind, b);

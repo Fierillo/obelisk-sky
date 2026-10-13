@@ -2,11 +2,16 @@
 // session here once, and the shims below forward to it.
 
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools';
+import type { ProfileEdit } from '../nostr/ownProfile';
 
 export interface SkyHost {
   login(args: unknown): Promise<void>;
   sign(t: EventTemplate): Promise<VerifiedEvent>;
   pubkey(): string | null;
+  /** Counts logins and logouts, so work begun for one account is dropped for the next. */
+  generation?(): number;
+  /** Merge, sign and publish your kind 0 (nostr/ownProfile.ts), then refresh sky's caches. */
+  editProfile?(edit: ProfileEdit, assertCurrent: () => void): Promise<void>;
 }
 
 let host: SkyHost | null = null;

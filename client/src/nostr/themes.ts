@@ -16,17 +16,12 @@ import type { Event as NostrEvent, EventTemplate } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import { fetchRelayInfo, operatorPubkeyFromRelayInfo } from '@/services/relay/relay-info';
 import type { ChannelKind } from './groups';
+import { vw } from '../i18n/village';
 
 export const THEMES = ['plaza', 'sports', 'gaming', 'library', 'stage'] as const;
 export type ThemeId = (typeof THEMES)[number];
 
-export const THEME_LABEL: Record<ThemeId, string> = {
-  plaza: 'Plaza',
-  sports: 'Sports ground',
-  gaming: 'Arcade',
-  library: 'Library',
-  stage: 'Stage',
-};
+export const THEME_LABEL: Record<ThemeId, string> = vw.themes;
 
 export interface ThemeConfig {
   channels: Record<string, ThemeId>;

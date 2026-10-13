@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PlayerController, placeAt, RUN_SPEED, WALK_SPEED, RIDE_SPEEDS, FOOT_SPEEDS, RIDE_RUN, RIDE_WALK } from './controller';
+import { PlayerController, placeAt, RUN_SPEED, WALK_SPEED, RIDE_SPEEDS, FOOT_SPEEDS, RIDE_RUN, RIDE_WALK, type Solid } from './controller';
 import { NavGrid } from '../world/layout';
 import { archHeight, BRIDGE_RISE } from '../world/bridge';
 
@@ -239,5 +239,51 @@ describe('riding (RIDE_SPEEDS)', () => {
     c.path = [{ x: 0, z: 0.5 }, { x: 0, z: 1 }, { x: 0, z: 1.5 }, { x: 0, z: 5 }];
     c.step(0.3, { x: 0, y: 0, run: false }, 0);
     expect(c.pos.z).toBeCloseTo(RIDE_WALK * 0.3, 2);
+  });
+});
+
+describe('stairs (the obelisk\'s plinth)', () => {
+  // Two steps 0.16 high round a shaft, all on walkable ground.
+  const steps: Solid[] = [
+    { minX: 2, maxX: 8, minZ: -3, maxZ: 3, top: 0.16, stair: true },
+    { minX: 2.5, maxX: 7.5, minZ: -2.5, maxZ: 2.5, top: 0.32, stair: true },
+    { minX: 3.5, maxX: 6.5, minZ: -1.5, maxZ: 1.5, top: 99 },
+  ];
+  const walkUp = (solids: Solid[]) => {
+    const g = new NavGrid(20);
+    const c = new PlayerController(() => g, { x: 1, z: 0 }, () => solids);
+    for (let i = 0; i < 240; i++) c.step(1 / 60, { x: 0, y: 1, run: false }, Math.PI / 2); // towards +x
+    return c;
+  };
+  it('walks up the steps without jumping, and stops at the shaft', () => {
+    const c = walkUp(steps);
+    expect(c.pos.x).toBeGreaterThan(2.6);
+    expect(c.pos.x).toBeLessThan(3.5);
+    expect(c.height).toBeCloseTo(0.32, 2);
+    expect(c.airborne).toBe(false);
+  });
+  it('walks back down them, feet on each step', () => {
+    const c = walkUp(steps);
+    let air = 0;
+    for (let i = 0; i < 240; i++) { c.step(1 / 60, { x: 0, y: -1, run: false }, Math.PI / 2); if (c.airborne) air++; }
+    expect(c.pos.x).toBeLessThan(2);
+    expect(c.height).toBeCloseTo(0, 2);
+    expect(air).toBe(0);
+  });
+  it('furniture of the same height still needs a jump', () => {
+    const c = walkUp(steps.map((s) => ({ ...s, stair: undefined })));
+    expect(c.pos.x).toBeLessThan(2.1);
+  });
+});
+
+describe('a clicked path', () => {
+  it('stops at a wall instead of climbing it', () => {
+    const g = new NavGrid(20);
+    const wall: Solid[] = [{ minX: 3, maxX: 5, minZ: -1, maxZ: 1, top: 99 }];
+    const c = new PlayerController(() => g, { x: 0, z: 0 }, () => wall);
+    c.path = [{ x: 4, z: 0 }];
+    for (let i = 0; i < 400; i++) c.step(1 / 60, { x: 0, y: 0, run: false }, 0);
+    expect(c.pos.x).toBeLessThan(3);
+    expect(c.height).toBeLessThan(1);
   });
 });

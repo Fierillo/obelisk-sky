@@ -20,6 +20,7 @@ import type { NostrSigner } from '@nostr-wot/signers';
 import { buildChatMessage, sealAndGiftWrap, unwrapGiftWrap } from '@nostr-wot/dm';
 import { encodeDmCallMessage, isFreshCallMessage, parseDmCallMessage, type DmCallMessage, type IncomingDmCallMessage } from '@/services/call/protocol';
 import { activeRelay, profileRelays } from './hub';
+import { vw } from '../i18n/village';
 
 export const KIND_DM_CHAT = 14;
 export const KIND_DM_CALL = 25055;
@@ -157,7 +158,7 @@ export class DmStore {
       if (mine.length) void this.hub.publish({ relays: mine, event: self, authMode: 'never' });
       return null;
     } catch (e) {
-      return e instanceof Error ? e.message : 'Could not send';
+      return e instanceof Error ? e.message : vw.dmCouldNotSend;
     }
   }
 

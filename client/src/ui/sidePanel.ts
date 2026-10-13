@@ -4,6 +4,7 @@
 
 import type { Presence } from '../nostr/presence';
 import { groupMembers, type Rank } from './memberGroups';
+import { vw } from '../i18n/village';
 
 export type SideTab = 'channels' | 'members';
 
@@ -48,7 +49,7 @@ export class SidePanel {
     this.title = div('side-title');
     const x = document.createElement('button');
     x.className = 'chat-min';
-    x.title = 'Close';
+    x.title = vw.close;
     x.textContent = '×';
     x.addEventListener('click', () => this.close());
     head.append(this.title, x);
@@ -96,7 +97,7 @@ export class SidePanel {
     if (id === this.channel) return;
     this.channel = id;
     this.shown = '';
-    this.list.replaceChildren(div('side-empty', 'Loading members…'));
+    this.list.replaceChildren(div('side-empty', vw.loadingMembers));
     void this.renderMembers();
   }
 
@@ -114,22 +115,22 @@ export class SidePanel {
 
   private renderChannels(): void {
     const rows = this.deps.channels();
-    this.title.textContent = `Channels · ${rows.length}`;
+    this.title.textContent = vw.channelsN(rows.length);
     this.pick.hidden = true;
     this.show(`c|${JSON.stringify(rows)}`, () => {
-      if (!rows.length) return [div('side-empty', 'No channels on this relay yet.')];
+      if (!rows.length) return [div('side-empty', vw.noChannelsRelay)];
       return rows.map((c) => {
         const b = document.createElement('button');
         b.className = `side-row${c.unread ? ' unread' : ''}`;
         const icon = span('side-ico', c.kind.startsWith('voice') ? '🔊' : c.kind === 'forum' ? '📰' : '#');
         const name = span('side-name', c.name);
         b.append(icon, name);
-        if (c.here) b.append(span('side-here', `${c.here} here`));
+        if (c.here) b.append(span('side-here', vw.hereN(c.here)));
         if (c.unread || c.mention) b.append(span(`side-badge${c.mention ? ' ping' : ''}`, c.mention ? '@' : String(c.unread)));
         b.addEventListener('click', () => this.deps.onChannel(c.id));
         const members = document.createElement('button');
         members.className = 'side-mini';
-        members.title = 'Members';
+        members.title = vw.members;
         members.textContent = '👥';
         members.addEventListener('click', (e) => { e.stopPropagation(); this.showMembers(c.id); });
         b.append(members);
@@ -159,14 +160,14 @@ export class SidePanel {
     const id = this.channel;
     this.pick.hidden = false;
     this.fillPicker();
-    if (!id) { this.title.textContent = 'Members'; this.show('m|none', () => [div('side-empty', 'No channels yet.')]); return; }
-    if (!this.shown.startsWith(`m|${id}|`)) { this.title.textContent = 'Members'; if (!this.list.querySelector('.side-empty')) this.list.replaceChildren(div('side-empty', 'Loading members…')); }
+    if (!id) { this.title.textContent = vw.members; this.show('m|none', () => [div('side-empty', vw.noChannelsYet)]); return; }
+    if (!this.shown.startsWith(`m|${id}|`)) { this.title.textContent = vw.members; if (!this.list.querySelector('.side-empty')) this.list.replaceChildren(div('side-empty', vw.loadingMembers)); }
     const [m, ranks] = await Promise.all([this.deps.loadMembers(id), this.deps.loadRanks()]);
     if (token !== this.token || this.tab !== 'members') return;
     this.ranks = ranks;
     const pks = [...new Set([...m.members, ...this.deps.posters(id), ...(this.deps.me() ? [this.deps.me()!] : [])])];
     const sections = groupMembers(pks, new Set(m.admins), (pk) => this.ranks[pk], (pk) => this.deps.presenceOf(pk), (pk) => this.deps.profile(pk).name);
-    this.title.textContent = `Members · ${pks.length}`;
+    this.title.textContent = vw.membersN(pks.length);
     const sig = `m|${id}|${this.offlineOpen}|${JSON.stringify(sections.map((s) => [s.key, s.rows.map((r) => [r.pk, r.admin, r.presence, r.rank?.name ?? '', this.deps.profile(r.pk)])]))}`;
     this.show(sig, () => {
       const out: HTMLElement[] = [];
@@ -200,10 +201,10 @@ export class SidePanel {
       av.style.background = this.deps.colorOf(pk);
     }
     const dot = span(`side-dot ${presence}`, '');
-    dot.title = presence === 'online' ? 'Online' : presence === 'afk' ? 'Away (AFK)' : 'Offline';
+    dot.title = vw.presence[presence];
     av.append(dot);
     const names = div('side-names');
-    names.append(span('side-name', `${admin ? '🛡️ ' : ''}${p.name}${pk === this.deps.me() ? ' (you)' : ''}`));
+    names.append(span('side-name', `${admin ? '🛡️ ' : ''}${p.name}${pk === this.deps.me() ? vw.you : ''}`));
     if (p.nip05) names.append(span('side-nip', p.nip05.replace(/^_@/, '')));
     b.append(av, names);
     if (rank) {
@@ -212,7 +213,7 @@ export class SidePanel {
       badge.style.color = rank.color;
       b.append(badge);
     }
-    if (presence === 'afk') b.append(span('side-afk', 'AFK'));
+    if (presence === 'afk') b.append(span('side-afk', vw.afk));
     b.addEventListener('click', () => this.deps.onMember(pk));
     return b;
   }

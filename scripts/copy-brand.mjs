@@ -54,6 +54,11 @@ const globals = readFileSync('vendor/obelisk/src/app/globals.css', 'utf8').repla
     '@source "../../vendor/obelisk/src/app/*/app/panes/channel/ComposerAttachments.tsx";',
     '@source "../../vendor/obelisk/src/utils/chat/picker";',
     '@source "./chat/composer";',
+    // The profile editor (client/src/profile): the app's desktop form and its appearance editor.
+    '@source "../../vendor/obelisk/src/app/*/app/settings/EditProfileForm.tsx";',
+    '@source "../../vendor/obelisk/src/app/*/app/settings/ProfileFormField.tsx";',
+    '@source "../../vendor/obelisk/src/components/settings/account";',
+    '@source "./profile";',
   ].join('\n'),
 );
 // Paths in globals.css are relative to src/app; the copy lives in client/src.

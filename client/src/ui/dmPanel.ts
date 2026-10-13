@@ -3,6 +3,8 @@
 // Text goes in as textContent only (never markup from a relay).
 
 import type { DirectMessage } from '../nostr/dm';
+import { vw } from '../i18n/village';
+import { lang } from '../i18n/lang';
 
 export interface DmPanelDeps {
   me(): string | null;
@@ -36,7 +38,7 @@ export class DmPanel {
     this.input = document.createElement('textarea');
     this.input.rows = 1;
     this.input.className = 'chat-input';
-    this.input.placeholder = 'Private message…';
+    this.input.placeholder = vw.dmPlaceholder;
     this.input.addEventListener('keydown', (e) => {
       e.stopPropagation(); // typing never walks
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void this.submit(); }
@@ -44,7 +46,7 @@ export class DmPanel {
     });
     const send = document.createElement('button');
     send.className = 'chat-send';
-    send.textContent = 'Send';
+    send.textContent = vw.dmSend;
     send.addEventListener('click', () => void this.submit());
     composer.append(this.input, send);
     this.el.append(this.head, this.list, this.error, composer);
@@ -91,15 +93,15 @@ export class DmPanel {
       av.style.background = this.deps.colorOf(peer);
     }
     const titles = div('chat-titles');
-    titles.append(div('chat-title', p.name), div('chat-sub', `Private · ${this.deps.presence(peer)}${p.nip05 ? ` · ${p.nip05.replace(/^_@/, '')}` : ''}`));
+    titles.append(div('chat-title', p.name), div('chat-sub', `${vw.dmSub(this.deps.presence(peer))}${p.nip05 ? ` · ${p.nip05.replace(/^_@/, '')}` : ''}`));
     const call = document.createElement('button');
     call.className = 'chat-min dm-call';
-    call.title = 'Voice call';
+    call.title = vw.dmCall;
     call.textContent = '📞';
     call.addEventListener('click', () => this.deps.call(peer));
     const x = document.createElement('button');
     x.className = 'chat-min';
-    x.title = 'Close';
+    x.title = vw.close;
     x.textContent = '×';
     x.addEventListener('click', () => this.close());
     this.head.replaceChildren(av, titles, call, x);
@@ -107,10 +109,10 @@ export class DmPanel {
     const msgs = this.deps.thread(peer).slice(-80);
     const rows = msgs.map((m) => {
       const row = div(`dm-msg${m.from === me ? ' mine' : ''}`);
-      row.append(div('dm-text', m.text), div('dm-time', new Date(m.at * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })));
+      row.append(div('dm-text', m.text), div('dm-time', new Date(m.at * 1000).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })));
       return row;
     });
-    if (!rows.length) rows.push(div('chat-empty', 'Say hi. Only the two of you can read this (NIP-17).'));
+    if (!rows.length) rows.push(div('chat-empty', vw.dmEmpty));
     this.list.replaceChildren(...rows);
     this.list.scrollTop = this.list.scrollHeight;
   }

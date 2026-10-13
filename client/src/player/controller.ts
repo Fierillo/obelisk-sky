@@ -23,8 +23,9 @@ export const COYOTE_TIME = 0.1;
 /** …and a press this early before landing still counts. */
 export const JUMP_BUFFER = 0.12;
 
-/** Solid furniture: blocks walking, but can be jumped onto and stood on. */
-export interface Solid { minX: number; maxX: number; minZ: number; maxZ: number; top: number }
+/** Solid furniture: blocks walking, but can be jumped onto and stood on.
+ *  `stair`: a step you walk up and down (up to STAIR_UP high), no jump needed. */
+export interface Solid { minX: number; maxX: number; minZ: number; maxZ: number; top: number; stair?: boolean }
 
 /** Getting up to speed and coming to a stop take a moment, not a frame (s). */
 export const ACCEL_TAU = 0.09;
@@ -32,10 +33,19 @@ export const DECEL_TAU = 0.07;
 
 /** You step onto anything this low without jumping (a kerb, a mat). */
 export const STEP_UP = 0.06;
+/** A stair (Solid.stair, the obelisk's plinth) is walked up and down this high a step. */
+export const STAIR_UP = 0.2;
+/** A solid this much above your feet is a wall, not furniture: a clicked path stops at it. */
+const WALL_HEIGHT = 1;
 /** Raised ground (a bridge's arch, a ramp) is climbed and descended by the
  *  distance you move, up to this slope, so a long step (a slow frame, a
  *  run) doesn't stall on it or hop off it. */
 export const MAX_RAMP_SLOPE = 0.9;
+
+/** A stair under or right beside p (you're on a flight of steps). */
+export function stairAt(solids: readonly Solid[], p: Vec2, pad = 0.12): boolean {
+  return solids.some((s) => s.stair && p.x >= s.minX - pad && p.x <= s.maxX + pad && p.z >= s.minZ - pad && p.z <= s.maxZ + pad);
+}
 
 /** The highest solid under p (0 = the ground). */
 export function surfaceAt(solids: readonly Solid[], p: Vec2, pad = 0): number {
@@ -88,7 +98,8 @@ export class PlayerController {
   get airborne(): boolean {
     // Just stepped down a stair or a ramp (snapped on the next step): still on your feet.
     const moved = this.prevPos ? dist(this.pos, this.prevPos) : 0;
-    const slack = this.sinceGrounded === 0 ? STEP_UP + moved * MAX_RAMP_SLOPE : 1e-4;
+    const step = stairAt(this.solids(), this.pos) ? STAIR_UP : STEP_UP;
+    const slack = this.sinceGrounded === 0 ? step + moved * MAX_RAMP_SLOPE : 1e-4;
     return this.height > this.floorAt(this.pos, 0.02) + slack || this.vy > 0;
   }
 
@@ -151,7 +162,10 @@ export class PlayerController {
         if (d < 0.05) { this.path.shift(); continue; }
         const k = Math.min(1, left / d);
         const dx = (t.x - this.pos.x) * k, dz = (t.z - this.pos.z) * k;
-        this.pos = { x: this.pos.x + dx, z: this.pos.z + dz };
+        const next = { x: this.pos.x + dx, z: this.pos.z + dz };
+        // A path never climbs a wall (the obelisk's shaft): it ends there.
+        if (this.floorAt(next, 0.02) > this.height + WALL_HEIGHT) { this.path = []; break; }
+        this.pos = next;
         this.heading = Math.atan2(dx, dz);
         left -= d * k;
       }
@@ -178,7 +192,8 @@ export class PlayerController {
     // `height` is your feet's height: the ground is 0, a bench its seat.
     const floor = this.floorAt(this.pos, 0.02);
     // Walking down a slope or stairs keeps your feet on it (no little falls).
-    if (this.sinceGrounded === 0 && this.vy <= 0 && this.height > floor && this.height - floor <= STEP_UP + this.lastMove * MAX_RAMP_SLOPE) this.height = floor;
+    const stepDown = stairAt(this.solids(), this.pos) || (this.prevPos !== null && stairAt(this.solids(), this.prevPos)) ? STAIR_UP : STEP_UP;
+    if (this.sinceGrounded === 0 && this.vy <= 0 && this.height > floor && this.height - floor <= stepDown + this.lastMove * MAX_RAMP_SLOPE) this.height = floor;
     const grounded = this.height <= floor + 1e-4 && this.vy <= 0;
     this.sinceGrounded = grounded ? 0 : this.sinceGrounded + dt;
     if (this.jumpBuffered > 0 && this.sinceGrounded <= COYOTE_TIME && this.vy <= 0) {
@@ -218,7 +233,9 @@ export class PlayerController {
       if (t <= here) return false;
       // Ground (not furniture) rises with the distance: you walk up it.
       const ramp = this.ground(p) >= t - 1e-6 ? Math.hypot(p.x - this.pos.x, p.z - this.pos.z) * MAX_RAMP_SLOPE : 0;
-      return t > this.height + STEP_UP + ramp;
+      // Stairs are walked up a step at a time.
+      const up = stairAt(this.solids(), p) ? STAIR_UP : STEP_UP;
+      return t > this.height + up + ramp;
     };
     const walk = (p: Vec2) => g.isWalkable(p) || this.extraWalkable(p);
     const ok = (p: Vec2) => walk(p)

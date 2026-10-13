@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { APP_COPY, applyAppLang, t } from './app';
-import { pick } from './lang';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { APP_COPY, applyAppLang, t, type AppKey } from './app';
+import { pick, urlWithoutLang } from './lang';
 
 describe('the village page in each language', () => {
   it('has every word in Spanish too', () => {
@@ -28,5 +30,24 @@ describe('the village page in each language', () => {
     expect(b.title).toBe('Ajustes');
     expect(b.getAttribute('aria-label')).toBe('Ajustes');
     expect(b.textContent).toBe('Ajustes');
+  });
+  it('gives an aria-label of its own', () => {
+    document.body.innerHTML = '<button class="card-close" aria-label="Close" data-i18n-aria="close"></button><nav aria-label="View controls" data-i18n-aria="controls"></nav>';
+    applyAppLang(document, 'es');
+    expect(document.querySelector('button')!.getAttribute('aria-label')).toBe('Cerrar');
+    expect(document.querySelector('button')!.hasAttribute('title')).toBe(false);
+    expect(document.querySelector('nav')!.getAttribute('aria-label')).toBe('Controles de la vista');
+  });
+  it('knows every key app/index.html asks for', () => {
+    const html = readFileSync(join(__dirname, '../../app/index.html'), 'utf8');
+    const keys = [...html.matchAll(/data-i18n(?:-title|-aria)?="([^"]+)"/g)].map((m) => m[1]);
+    expect(keys.length).toBeGreaterThan(40);
+    for (const k of keys) expect(APP_COPY.es[k as AppKey], k).toBeTruthy();
+    // The call bar, the near prompt and the private call bar come in Spanish too.
+    for (const k of ['call.join', 'call.leave', 'near.dm', 'pcall.hangup', 'bell.read']) expect(keys).toContain(k);
+  });
+  it('drops ?lang= when a language is picked, keeping the rest', () => {
+    expect(urlWithoutLang('https://sky.obelisk.ar/app/?lang=en&relay=public.obelisk.ar')).toBe('https://sky.obelisk.ar/app/?relay=public.obelisk.ar');
+    expect(urlWithoutLang('https://sky.obelisk.ar/app')).toBe('https://sky.obelisk.ar/app');
   });
 });

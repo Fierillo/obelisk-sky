@@ -5,6 +5,7 @@
 
 import { DEFAULT_ZAP_AMOUNT_SATS, ZAP_QUICK_AMOUNTS_SATS, checkZap, type ZapProblem } from '../wallet/zap';
 import type { WalletKind, WalletView } from '../wallet/wallet';
+import { vw } from '../i18n/village';
 
 export interface ZapSheetDeps {
   name(pk: string): string;
@@ -18,12 +19,12 @@ export interface ZapSheetDeps {
   toast(text: string): void;
 }
 
-const UNCONFIRMED = 'Your wallet stopped answering after the payment was sent. Check it, then reload the page before zapping again.';
+const UNCONFIRMED = vw.zapUnconfirmed;
 
 const PROBLEM: Record<ZapProblem, string> = {
-  noAddress: 'They have no Lightning address on their profile, so they can’t be zapped yet.',
-  noWallet: 'Connect a wallet first.',
-  invalidAmount: 'Pick an amount in sats.',
+  noAddress: vw.zapNoAddress,
+  noWallet: vw.zapNoWallet,
+  invalidAmount: vw.zapBadAmount,
 };
 
 /** A payment under way anywhere in the page (one sheet at a time may pay). */
@@ -41,13 +42,13 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
   parent.querySelector('.zap-sheet')?.remove();
   const el = div('themes zap-sheet');
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Send a zap');
+  el.setAttribute('aria-label', vw.zapAria);
   const name = deps.name(recipient);
   // Read again on every paint: their profile may arrive after the sheet opened.
   const lud16 = () => deps.lud16(recipient);
   const head = div('themes-head');
   const sub = div('themes-sub');
-  head.append(div('themes-title', `⚡ Zap ${name}`), sub);
+  head.append(div('themes-title', vw.zapWho(name)), sub);
   const body = div('themes-body');
 
   // Amount: a field and one-tap amounts.
@@ -64,11 +65,11 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
     quick.append(b);
   }
   const amountRow = div('themes-row');
-  amountRow.append(span('Amount (sats)'), amount);
+  amountRow.append(span(vw.zapAmount), amount);
   const comment = document.createElement('input');
   comment.type = 'text';
   comment.maxLength = 200;
-  comment.placeholder = 'Add a note (optional)';
+  comment.placeholder = vw.zapNote;
   comment.className = 'themes-select zap-comment';
 
   // Which wallet pays, or connecting one.
@@ -78,8 +79,8 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
 
   const foot = div('themes-foot');
   const status = div('themes-status');
-  const cancel = button('account-btn', 'Cancel');
-  const zap = button('account-btn primary', '⚡ Zap');
+  const cancel = button('account-btn', vw.cancel);
+  const zap = button('account-btn primary', vw.zap);
   foot.append(status, cancel, zap);
   el.append(head, body, foot);
   parent.append(el);
@@ -98,31 +99,30 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
     const kind = deps.walletKind();
     if (kind === 'nwc') {
       const v = deps.walletView();
-      wallet.append(span(`Pays with your wallet${v?.alias ? ` “${v.alias}”` : ''}.`));
+      wallet.append(span(vw.zapPaysNwc(v?.alias || null)));
       return;
     }
-    if (kind === 'webln') { wallet.append(span('Pays with your browser extension’s wallet.')); return; }
+    if (kind === 'webln') { wallet.append(span(vw.zapPaysWebln)); return; }
     // No wallet: connect one here.
-    wallet.append(div('zap-connect-title', 'Connect a Lightning wallet'),
-      div('zap-hint', 'Paste a Nostr Wallet Connect link from your wallet (Alby Hub, Primal, Coinos, Mutiny…). It’s kept sealed in this browser and forgotten when you log out.'));
+    wallet.append(div('zap-connect-title', vw.zapConnectTitle), div('zap-hint', vw.zapConnectHint));
     const uri = document.createElement('input');
     uri.type = 'password';
     uri.autocomplete = 'off';
     uri.placeholder = 'nostr+walletconnect://…';
     uri.className = 'themes-select zap-uri';
-    const go = button('account-btn primary', 'Connect');
+    const go = button('account-btn primary', vw.zapConnect);
     go.addEventListener('click', async () => {
       if (!uri.value.trim()) return;
       go.disabled = true;
       error.textContent = '';
-      status.textContent = 'Checking your wallet…';
+      status.textContent = vw.zapChecking;
       try {
         await deps.connect(uri.value);
         status.textContent = '';
         paint();
       } catch (e) {
         status.textContent = '';
-        error.textContent = `Couldn’t connect: ${e instanceof Error ? e.message : String(e)}`;
+        error.textContent = vw.zapCouldntConnect(e instanceof Error ? e.message : String(e));
         go.disabled = false;
       }
     });
@@ -134,11 +134,11 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
   function paint(): void {
     paintWallet();
     const address = lud16();
-    sub.textContent = address ?? 'No Lightning address on their profile';
+    sub.textContent = address ?? vw.zapNoAddressSub;
     const problem = checkZap({ lud16: address, sats: Number(amount.value) }, deps.walletKind());
     zap.disabled = busy || mayHavePaid || !!problem;
     cancel.disabled = busy;
-    zap.textContent = busy ? 'Zapping…' : `⚡ Zap ${Number(amount.value) > 0 ? Number(amount.value).toLocaleString() : ''} sats`;
+    zap.textContent = busy ? vw.zapping : vw.zapSats(Number(amount.value) > 0 ? Number(amount.value).toLocaleString() : '');
     if (mayHavePaid) error.textContent = UNCONFIRMED;
     else if (problem === 'noAddress') error.textContent = PROBLEM.noAddress;
     else if (error.textContent === PROBLEM.noAddress) error.textContent = '';
@@ -153,11 +153,11 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
     busy = true;
     paying = true;
     error.textContent = '';
-    status.textContent = 'Paying…';
+    status.textContent = vw.zapPaying;
     paint();
     try {
       const { markerError } = await deps.send(sats, comment.value);
-      deps.toast(markerError ? `⚡ Sent ${sats.toLocaleString()} sats to ${name} (the channel didn’t take the note: ${markerError})` : `⚡ Sent ${sats.toLocaleString()} sats to ${name}`);
+      deps.toast(markerError ? vw.zapSentNoNote(sats.toLocaleString(), name, markerError) : vw.zapSent(sats.toLocaleString(), name));
       busy = false;
       paying = false;
       close();
@@ -167,7 +167,7 @@ export function openZapSheet(parent: HTMLElement, recipient: string, preset: num
       status.textContent = '';
       // It may have paid: no second try from here or any other sheet (a retry would pay twice).
       if (deps.isUnconfirmed(e)) mayHavePaid = true;
-      else error.textContent = `The zap didn’t go through: ${e instanceof Error ? e.message : String(e)}`;
+      else error.textContent = vw.zapFailed(e instanceof Error ? e.message : String(e));
       paint();
     }
   });

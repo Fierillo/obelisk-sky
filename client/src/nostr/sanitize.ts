@@ -5,6 +5,7 @@
 // become placeholders, links shrink to their host.
 
 import { nip19 } from 'nostr-tools';
+import { vw } from '../i18n/village';
 
 export const MAX_TEXT = 280;
 
@@ -24,7 +25,7 @@ export function shortNpub(pubkey: string): string {
     const n = nip19.npubEncode(pubkey);
     return `${n.slice(0, 9)}…${n.slice(-4)}`;
   } catch {
-    return 'someone';
+    return vw.someone;
   }
 }
 
@@ -72,16 +73,16 @@ export function sanitizeText(content: string, nameOf: (pubkey: string) => string
   s = s.replace(NOSTR_URI, (_all, bech: string) => {
     const pk = pubkeyOf(bech);
     if (pk) return `@${nameOf(pk)}`;
-    return '[note]';
+    return vw.placeholder.note;
   });
   s = s.replace(BARE_NPUB, (bech: string) => {
     const pk = pubkeyOf(bech);
     return pk ? `@${nameOf(pk)}` : bech;
   });
   s = s.replace(URL_RE, (url) => {
-    if (IMAGE_EXT.test(url)) return '[image]';
-    if (VIDEO_EXT.test(url)) return '[video]';
-    if (AUDIO_EXT.test(url)) return '[voice note]';
+    if (IMAGE_EXT.test(url)) return vw.placeholder.image;
+    if (VIDEO_EXT.test(url)) return vw.placeholder.video;
+    if (AUDIO_EXT.test(url)) return vw.placeholder.voice;
     try {
       return `[${new URL(url).host.replace(/^www\./, '')}]`;
     } catch {

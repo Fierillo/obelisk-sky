@@ -4,6 +4,7 @@
 
 import { THEMES, THEME_LABEL, type ThemeConfig, type ThemeId } from '../nostr/themes';
 import type { WireGroup } from '../nostr/wire';
+import { vw } from '../i18n/village';
 
 export interface ThemeEditorDeps {
   config: () => ThemeConfig;
@@ -27,10 +28,10 @@ export function openThemeEditor(parent: HTMLElement, deps: ThemeEditorDeps): voi
   head.className = 'themes-head';
   const title = document.createElement('div');
   title.className = 'themes-title';
-  title.textContent = 'Districts';
+  title.textContent = vw.districts;
   const sub = document.createElement('div');
   sub.className = 'themes-sub';
-  sub.textContent = 'Where each channel lives on the island. Only you, the relay operator, can change this; it affects Obelisk Sky only.';
+  sub.textContent = vw.districtsSub;
   head.append(title, sub);
   const body = document.createElement('div');
   body.className = 'themes-body';
@@ -40,7 +41,7 @@ export function openThemeEditor(parent: HTMLElement, deps: ThemeEditorDeps): voi
     s.className = 'themes-select';
     const auto = document.createElement('option');
     auto.value = '';
-    auto.textContent = `Automatic (${autoLabel})`;
+    auto.textContent = vw.automatic(autoLabel);
     s.append(auto);
     for (const th of THEMES) {
       const o = document.createElement('option');
@@ -57,20 +58,20 @@ export function openThemeEditor(parent: HTMLElement, deps: ThemeEditorDeps): voi
   if (Object.keys(cats).length) {
     const h = document.createElement('div');
     h.className = 'themes-section';
-    h.textContent = 'Categories';
+    h.textContent = vw.categories;
     body.append(h);
     for (const [id, name] of Object.entries(cats)) {
       const row = document.createElement('label');
       row.className = 'themes-row';
       const n = document.createElement('span');
-      n.textContent = name || 'Untitled category';
-      row.append(n, select(cfg.categories[id] ?? '', (v) => { if (v) cfg.categories[id] = v; else delete cfg.categories[id]; }, 'by channel'));
+      n.textContent = name || vw.untitledCategory;
+      row.append(n, select(cfg.categories[id] ?? '', (v) => { if (v) cfg.categories[id] = v; else delete cfg.categories[id]; }, vw.byChannel));
       body.append(row);
     }
   }
   const h2 = document.createElement('div');
   h2.className = 'themes-section';
-  h2.textContent = 'Channels';
+  h2.textContent = vw.channels;
   body.append(h2);
   for (const g of deps.groups()) {
     const row = document.createElement('label');
@@ -94,18 +95,18 @@ export function openThemeEditor(parent: HTMLElement, deps: ThemeEditorDeps): voi
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'account-btn';
-  cancel.textContent = 'Cancel';
+  cancel.textContent = vw.cancel;
   cancel.addEventListener('click', () => el.remove());
   const save = document.createElement('button');
   save.type = 'button';
   save.className = 'account-btn primary';
-  save.textContent = 'Save districts';
+  save.textContent = vw.saveDistricts;
   save.addEventListener('click', async () => {
     save.disabled = true;
-    status.textContent = 'Saving…';
+    status.textContent = vw.saving;
     const err = await deps.save(cfg);
     save.disabled = false;
-    if (err) status.textContent = `Not saved: ${err}`;
+    if (err) status.textContent = vw.notSaved(err);
     else el.remove();
   });
   foot.append(status, cancel, save);
