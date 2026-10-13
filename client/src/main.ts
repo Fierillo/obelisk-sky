@@ -494,9 +494,7 @@ function startGuest(why: GuestReason): void {
 /** The villagers' favourite places, for the world to send them wandering
  *  there (a no-op until the world learns haunts). */
 function applyGuestHaunts(): void {
-  const w = world as unknown as { setHaunts?: (pk: string, places: string[]) => void };
-  if (typeof w.setHaunts !== 'function') return; // TODO: world.setHaunts
-  for (const n of NPCS) w.setHaunts(n.pubkey, n.haunts);
+  for (const n of NPCS) world.setHaunts(n.pubkey, n.haunts);
 }
 
 let readState: ReadState | null = null;
