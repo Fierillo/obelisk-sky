@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LoadingScreen, STAGES, islandMap, mapFeatures, mapViewBox, stageAt } from './loading';
+import { LOAD, LoadingScreen, STAGES, loadAt, islandMap, mapFeatures, mapViewBox, stageAt } from './loading';
 import { dist, distToPolyline, onTrack, planIsland, ISLAND_R } from '../world/layout';
 import { LANDMARKS } from '../world/landmarks';
 import { TOP_DOWN_MARGIN } from '../world/cameraman';
@@ -10,8 +10,27 @@ describe('loading stages', () => {
     expect(stageAt(0)).toBe(0);
     expect(stageAt(0.2)).toBe(1);
     expect(stageAt(0.5)).toBe(2);
-    expect(stageAt(0.95)).toBe(3);
+    expect(stageAt(0.7)).toBe(3);
+    expect(stageAt(0.85)).toBe(4);
+    expect(stageAt(0.95)).toBe(5);
     expect(stageAt(1)).toBe(STAGES.length - 1);
+  });
+  it('weigh the boot: models, people, the village, the warm-up; 1 only once warm', () => {
+    expect(loadAt('models', 0)).toBe(0);
+    expect(loadAt('models', 1)).toBeCloseTo(0.6);
+    expect(loadAt('people', 0.5)).toBeCloseTo(0.7);
+    expect(loadAt('people', 1)).toBeCloseTo(0.8);
+    expect(loadAt('village', 1)).toBeCloseTo(0.88);
+    expect(loadAt('warm', 0.999)).toBeLessThan(1);
+    expect(loadAt('warm', 1)).toBe(1);
+    expect(loadAt('people', 3)).toBeCloseTo(0.8);
+    // The parts follow one another with no gap, and the stages start on them.
+    const parts = Object.values(LOAD);
+    for (let i = 1; i < parts.length; i++) expect(parts[i][0]).toBe(parts[i - 1][1]);
+    expect(stageAt(loadAt('people', 0))).toBe(3);
+    expect(stageAt(loadAt('village', 0))).toBe(4);
+    expect(stageAt(loadAt('warm', 0))).toBe(5);
+    expect(STAGES.map((s) => s.label).every(Boolean)).toBe(true);
   });
 });
 

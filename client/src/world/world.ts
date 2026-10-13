@@ -29,7 +29,7 @@ import { Flock } from './nostrich';
 import { WalkPin } from './walkPin';
 import { buildMarshmallow } from './campfire';
 import { findDynamic, mergeStatic } from './merge';
-import { chooseLights, lampLevel, lightBudget, type LightSpot } from './lightBudget';
+import { chooseLights, lampLevel, lightBudget, LightScan, scanOnChange, type LightSpot } from './lightBudget';
 import { buildObelisk, obeliskShape, plinthSteps, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
@@ -213,7 +213,8 @@ export class World {
   /** Every lamp and glow that is a real light, and when the budget was last applied. */
   private budgeted: (THREE.PointLight | THREE.SpotLight)[] = [];
   private lightsAt = -99;
-  private lightsCollectedAt = -99;
+  /** Looks for lights again as soon as something joins the scene (lightBudget.ts). */
+  private lightScan = new LightScan();
   private readonly coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   /** Slots held by landmarks (La Crypta, the nostr-wot HQ, the café, the parrilla). */
   readonly landmarkSlots: Map<LandmarkId, Slot>;
@@ -254,6 +255,7 @@ export class World {
     );
     this.lampGlow = new THREE.MeshStandardMaterial({ color: 0xffe2a8, emissive: 0xffb84d, emissiveIntensity: 0 });
     this.scene.add(this.staticRoot, this.buildingRoot, this.districtRoot, this.gameRoot, this.hands.group);
+    scanOnChange(this.lightScan, [this.scene, this.staticRoot, this.buildingRoot, this.districtRoot, this.gameRoot]);
     this.installPicking();
     this.resize();
     // Resized at the start of the next frame: resizing clears the canvas, and
@@ -990,9 +992,9 @@ export class World {
   }
 
   /** Keep only a budget of point and spot lights on, nearest where you look (lightBudget.ts). */
-  private budgetLights(): void {
-    if (this.elapsed - this.lightsCollectedAt > 3) {
-      this.lightsCollectedAt = this.elapsed;
+  private budgetLights(force = false): void {
+    if (force) this.lightScan.mark();
+    if (this.lightScan.due(this.elapsed)) {
       const found: (THREE.PointLight | THREE.SpotLight)[] = [];
       this.scene.traverse((o) => { if ((o as THREE.PointLight).isPointLight || (o as THREE.SpotLight).isSpotLight) found.push(o as THREE.PointLight); });
       this.budgeted = found;
@@ -3074,6 +3076,124 @@ export class World {
       const s = this.slotFor(groupId);
       return s ? new THREE.Vector3((s.pos.x + s.yard.x) / 2, 0.8, (s.pos.z + s.yard.z) / 2) : null;
     };
+  }
+
+  // ── warm-up ───────────────────────────────────────────────────────────
+
+  /** Show everything hidden in the scene (people still faded out, their
+   *  badges and props, night windows, your hands) but lights; returns what
+   *  to hide again. Opacity is left alone: a material's shader is chosen the
+   *  first time it's drawn, and a fading body must get its see-through one. */
+  private showHidden(): THREE.Object3D[] {
+    const shown: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      if (o.visible || (o as THREE.Light).isLight || (o as THREE.Camera).isCamera) return;
+      o.visible = true;
+      shown.push(o);
+    });
+    return shown;
+  }
+
+  /**
+   * Compile every shader the first seconds will use while the loading screen
+   * still covers the island, so the intro never stalls: the lights budgeted
+   * now (their count is part of each shader), everything hidden shown for the
+   * moment, the scene's materials compiled against the target the frames
+   * really draw into (in parallel where the GPU allows), then real frames
+   * through the post chain: shadows, ambient occlusion and bodies drawn from
+   * above and from where the intro lands. Everything is put back as it was,
+   * and the last frame drawn is the plain view from above.
+   */
+  async warmUp(progress?: (f: number) => void): Promise<void> {
+    if (this.contextLost) return;
+    const r = this.renderer;
+    // Nobody on the island yet (logged out, a feed still on its way): a
+    // stand-in body, so the first person to arrive doesn't stall a frame.
+    let standIn: Character | null = null;
+    if (!this.people.size) {
+      standIn = new Character('warm-up', '');
+      standIn.place(this.plan.plaza.c);
+      this.scene.add(standIn.root);
+    }
+    this.budgetLights(true);
+    progress?.(0.05);
+    let shown: THREE.Object3D[] = [];
+    let compiling: Promise<unknown> = Promise.resolve();
+    const prevTarget = r.getRenderTarget();
+    try {
+      shown = this.showHidden();
+      r.setRenderTarget(this.post.sceneTarget);
+      compiling = r.compileAsync(this.scene, this.camera);
+    } catch (e) {
+      console.warn('[sky] warm-up compile', e);
+    } finally {
+      r.setRenderTarget(prevTarget);
+      for (const o of shown) o.visible = false;
+    }
+    await compiling.catch(() => {});
+    await this.gpuDone();
+    progress?.(0.5);
+    // Let the bar show where it is before the frames hold the page.
+    await new Promise((res) => requestAnimationFrame(() => res(null)));
+    if (this.contextLost) return;
+    const cam = this.camera;
+    const pos = cam.position.clone(), quat = cam.quaternion.clone(), up = cam.up.clone();
+    const shadows = r.shadowMap;
+    const draw = (): void => {
+      shadows.needsUpdate = true;
+      this.post.render(0);
+    };
+    shown = [];
+    try {
+      shown = this.showHidden();
+      draw(); // from above: every body and prop, and their shadows
+      const land = this.cam.introLanding();
+      cam.up.set(0, 1, 0);
+      cam.position.copy(land.pos);
+      cam.lookAt(land.target);
+      cam.updateMatrixWorld();
+      draw(); // where the intro lands, close up
+    } catch (e) {
+      console.warn('[sky] warm-up frame', e);
+    } finally {
+      for (const o of shown) o.visible = false;
+      cam.position.copy(pos);
+      cam.quaternion.copy(quat);
+      cam.up.copy(up);
+      cam.updateMatrixWorld();
+      if (standIn) {
+        standIn.dispose();
+        standIn.badge.material.map?.dispose();
+        standIn.badge.material.dispose();
+      }
+    }
+    // What stays on screen behind the fading loader: the view from above, as it is.
+    try { draw(); } catch { /* the frame loop draws the next one */ }
+    progress?.(0.8);
+    // The GPU works behind the page's back: drawing only queues the work
+    // (and some drivers compile at the first draw). Done means done.
+    await this.gpuDone();
+    progress?.(1);
+  }
+
+  /** Resolves once the GPU has finished everything asked of it so far (a
+   *  WebGL2 fence, polled without blocking the page), or after `capMs`. */
+  private gpuDone(capMs = 20_000): Promise<void> {
+    const gl = this.renderer.getContext();
+    if (this.contextLost || typeof WebGL2RenderingContext === 'undefined' || !(gl instanceof WebGL2RenderingContext)) return Promise.resolve();
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (!sync) return Promise.resolve();
+    gl.flush();
+    const t0 = performance.now();
+    return new Promise((resolve) => {
+      const poll = (): void => {
+        const s = this.contextLost ? gl.WAIT_FAILED : gl.clientWaitSync(sync, 0, 0);
+        if (s === gl.TIMEOUT_EXPIRED && performance.now() - t0 < capMs) { setTimeout(poll, 30); return; }
+        gl.deleteSync(sync);
+        resolve();
+      };
+      poll();
+    });
   }
 
   // ── frame ─────────────────────────────────────────────────────────────

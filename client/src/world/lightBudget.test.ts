@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { chooseLights, lampLevel, lightBudget, type LightSpot } from './lightBudget';
+import * as THREE from 'three';
+import { chooseLights, lampLevel, lightBudget, LightScan, scanOnChange, type LightSpot } from './lightBudget';
 
 const at = (x: number, kind: 'point' | 'spot' = 'point', lit = true): LightSpot => ({ x, y: 0, z: 0, kind, lit });
 
@@ -44,5 +45,29 @@ describe('street lamps', () => {
       expect(v - last).toBeLessThan(0.07);
       last = v;
     }
+  });
+});
+
+describe('looking for new lights', () => {
+  it('rescans on the frame a lamp is added, not 3 s later', () => {
+    const scan = new LightScan(3);
+    const scene = new THREE.Scene();
+    const root = new THREE.Group();
+    scene.add(root);
+    scanOnChange(scan, [scene, root]);
+    expect(scan.due(0)).toBe(true); // the first frame always looks
+    expect(scan.due(0.016)).toBe(false);
+    root.add(new THREE.PointLight());
+    expect(scan.due(0.032)).toBe(true); // the same frame
+    expect(scan.due(0.048)).toBe(false);
+    const house = new THREE.Group();
+    house.add(new THREE.PointLight());
+    root.add(house); // a house with its lamp
+    expect(scan.due(0.064)).toBe(true);
+    root.remove(house);
+    expect(scan.due(0.08)).toBe(true);
+    // Nothing added: the backstop every 3 s.
+    expect(scan.due(3)).toBe(false);
+    expect(scan.due(3.1)).toBe(true);
   });
 });
