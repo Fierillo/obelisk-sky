@@ -653,7 +653,7 @@ function enterAsPlayer(): void {
   const s = session.current;
   if (!s) return;
   world.setPlayer(s.pubkey);
-  controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids, (p) => world.insideWalkable(p), (p) => world.groundAt(p));
+  controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids, (p) => world.playerWalkable(p), (p) => world.groundAt(p));
   world.cam.followPlayer(world.personAnchor(s.pubkey));
 }
 

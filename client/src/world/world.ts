@@ -20,7 +20,7 @@ import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bri
 import {
   assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
-  millBlocked, type MillSite, turnedHalf, waterworks, parkSite,
+  millBlocked, type MillSite, turnedHalf, waterworks, parkSite, PLINTH_HALF, CELL as NAV_CELL,
 } from './layout';
 import { fbm2 } from './noise';
 import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, PARK_MAT, TRACK_LANES, TRACK_TOP, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildPopcorn, buildMate, buildTrack, trackLap } from './districts';
@@ -30,7 +30,7 @@ import { WalkPin } from './walkPin';
 import { buildMarshmallow } from './campfire';
 import { findDynamic, mergeStatic } from './merge';
 import { chooseLights, lampLevel, lightBudget, type LightSpot } from './lightBudget';
-import { buildObelisk, plinthSteps, type Obelisk } from './obelisk';
+import { buildObelisk, obeliskShape, plinthSteps, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
 import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
@@ -759,6 +759,28 @@ export class World {
   }
 
   /** Inside a building you can enter (its room or doorway): walkable for the player. */
+  /** On the obelisk's plinth, round its shaft: the grid blocks it (villagers
+   *  walk round), people walk up its steps (stair solids). */
+  onPlinth(p: Vec2): boolean {
+    const c = this.plan.plaza.c;
+    const d = Math.max(Math.abs(p.x - c.x), Math.abs(p.z - c.z));
+    // Out to where the grid's blocked cells end (PLINTH_HALF + 0.2, rounded out to a cell).
+    return d < PLINTH_HALF + 0.2 + NAV_CELL && d > obeliskShape(8).base;
+  }
+
+  /** Where a person (you, or someone live) may stand that the grid doesn't
+   *  know: inside buildings you can enter, and on the obelisk's steps. */
+  playerWalkable(p: Vec2): boolean {
+    return this.insideWalkable(p) || this.onPlinth(p);
+  }
+
+  /** How high someone standing at p is: the ground, or the step of a stair under them. */
+  standHeight(p: Vec2): number {
+    let h = this.groundAt(p);
+    for (const s of this.solids) if (s.stair && p.x >= s.minX && p.x <= s.maxX && p.z >= s.minZ && p.z <= s.maxZ && s.top > h) h = s.top;
+    return h;
+  }
+
   insideWalkable(p: Vec2): boolean {
     for (const e of this.enterables()) {
       const l = e.local(p);
@@ -1095,8 +1117,11 @@ export class World {
     this.obelisk.group.position.set(c.x, 0, c.z);
     this.obelisk.group.rotation.y = 0;
     this.staticRoot.add(this.obelisk.group);
-    // Its steps are furniture: you bump into them, or jump up them.
-    for (const st of plinthSteps(8)) this.solids.push({ minX: c.x - st.half, maxX: c.x + st.half, minZ: c.z - st.half, maxZ: c.z + st.half, top: st.top });
+    // Its steps are stairs: walked up and down (the grid keeps villagers off
+    // them; you walk them through playerWalkable). The shaft is a wall.
+    for (const st of plinthSteps(8)) this.solids.push({ minX: c.x - st.half, maxX: c.x + st.half, minZ: c.z - st.half, maxZ: c.z + st.half, top: st.top, stair: true });
+    const shaft = obeliskShape(8).base;
+    this.solids.push({ minX: c.x - shaft, maxX: c.x + shaft, minZ: c.z - shaft, maxZ: c.z + shaft, top: 99 });
 
     // Lanterns around the plaza.
     const n = 8;
@@ -2831,7 +2856,7 @@ export class World {
   }
 
   private walkable(p: Vec2): Vec2 {
-    return this.grid.isWalkable(p) || this.insideWalkable(p) ? p : this.grid.nearestWalkable(p) ?? p;
+    return this.grid.isWalkable(p) || this.playerWalkable(p) ? p : this.grid.nearestWalkable(p) ?? p;
   }
 
   /** As far towards `to` as the ground allows in a straight line (keys don't walk through walls). */
@@ -3082,7 +3107,7 @@ export class World {
     }
     for (const c of this.people.values()) {
       // The viewer's own height comes with drive(); seats carry their own height.
-      c.groundY = c.external || this.seatOf.has(c.pk) ? 0 : this.groundAt(c.pos);
+      c.groundY = c.external || this.seatOf.has(c.pk) ? 0 : this.standHeight(c.pos);
       // Off screen (with a margin for their shadow): not drawn, not posed.
       this.cullSphere.center.set(c.root.position.x, c.root.position.y + 0.4, c.root.position.z);
       const seen = c.pk === this.playerPk || this.frustum.intersectsSphere(this.cullSphere);
