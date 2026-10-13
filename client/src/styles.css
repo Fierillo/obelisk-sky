@@ -233,7 +233,8 @@ button { font: inherit; color: inherit; }
 .gate { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 5; }
 .gate[hidden] { display: none; }
 .gate-card { pointer-events: auto; text-align: center; color: var(--ink); background: rgba(255, 255, 255, 0.84); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 22px; padding: 26px 30px; max-width: min(380px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(15, 42, 68, 0.28); }
-.gate-mark { width: 72px; height: 72px; }
+/* The mark on a disc of sky (as in the login modal): its pale cloud vanishes on the white card and the rest reads lopsided. */
+.gate-mark { display: block; width: 76px; height: 76px; padding: 6px; box-sizing: border-box; margin: 0 auto 2px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #cfeaff 0%, #8fd3ff 100%); box-shadow: 0 6px 18px rgba(15, 42, 68, 0.18), inset 0 0 0 2px rgba(255, 255, 255, 0.7); }
 .gate-title { font: 800 22px var(--sans); letter-spacing: -0.01em; margin: 6px 0 8px; }
 .gate-text { font-size: 14px; line-height: 1.5; color: var(--ink-muted); }
 .gate-card .account-btn.primary { color: var(--ink); }
