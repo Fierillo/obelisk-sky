@@ -1,6 +1,6 @@
 # AGENTS.md: Obelisk Sky
 
-Obelisk Sky (https://sky.obelisk.ar) is a 3D floating-island village that is also a real Obelisk client. Every NIP-29 channel on the selected relay is a house; people walk to the house of the channel they post in, walk over to whoever they reply to, sit and drink mate, train in the park, join voice calls and play games. You log in with your own Nostr key; the server holds no keys and fetches nothing from relays. Everything happens in the browser.
+Obelisk Sky (https://sky.obelisk.ar) is a 3D floating-island village that is also a real Obelisk client. Every NIP-29 channel on the selected relay is a house; people walk to the house of the channel they post in, walk over to whoever they reply to, sit and drink mate, train in the park, join voice calls and play games. You log in with your own Nostr key; the server holds no keys and fetches nothing from relays. Everything happens in the browser. Logged out, or with an account the relay hasn't admitted, you get the guest island: a scripted village, local only (below).
 
 This is the one instruction file for every agent here; `CLAUDE.md` only imports it. When the code moves, fix the sentence here in the same change.
 
@@ -24,6 +24,7 @@ npm run vendor                                  # re-snapshot obelisk-dex src (s
 node scripts/make-icons.mjs                     # favicon.ico, icon-192/512, maskable, apple-touch from brand/sky-mark-flat.svg
 node scripts/build-people.mjs                   # rebuild character assets from _dl/quaternius
 node scripts/make-og.mjs <1200x630.png>         # redraw the link-preview card client/public/og.jpg (text kept in the centre square: WhatsApp crops to it; bump ?v=)
+node scripts/guest-npcs.mjs                     # re-resolve the guest island's villagers (NIP-05 / npub, kind 0 checked on public relays; read only) into client/src/guest/npcs.json
 ```
 
 Deploy = `npm run build && pm2 restart obelisk-sky`, then check through the tunnel: `/`, `/app`, `/healthz`, the village's `assets/app-*.js`, and any new asset you added (`curl -I https://sky.obelisk.ar/...`). Run typecheck and the full test suite before every deploy.
@@ -33,7 +34,7 @@ Deploy = `npm run build && pm2 restart obelisk-sky`, then check through the tunn
 ```
 client/
   index.html            the landing page at / (English inline; src/landing/ swaps to Spanish); a GitHub button in the header and a link in the footer (github.com/obelisk-app/obelisk-sky)
-  app/index.html        the village at /app: OG/Twitter tags, header, gate, loading screen
+  app/index.html        the village at /app: OG/Twitter tags, header, the guest banner (#gate), loading screen
   public/               served as-is: models/ (Kenney town+nature, pets, people/), brand/ (sky-mark.svg, sky-mark-flat.svg), landing/, og.jpg, icons
   src/main.ts           wiring: session, feed, world, chat, voice, games, prefs, keyboard, boot order
   src/landing/          the landing page: copy.ts (en/es words), landing.ts (language switch), landing.css
@@ -61,13 +62,14 @@ client/
   src/player/           PlayerController (walk/run/jump, solids, interiors), input (double-tap run)
   src/nostr/            hub, session, feed/state, publish, readstate, avatars, profileStore, ownProfile (editing your kind 0), themes, liveCalls (calls on now: SFU 31314 rooms and 20078 beacons, who shares a screen), theater (the screening),
                         activity (live sitting/training), motion (live movement)
+  src/guest/            the guest island: npcs.json (villagers, from scripts/guest-npcs.mjs), script.ts (houses, threads, answers; pure, en/es), feed.ts (GuestFeed: Feed's hooks, played from the script), look.ts (your look in this browser only)
   src/chat/             React islands: obelisk-dex's message components (messageBody), and its message bar (composer/)
   src/profile/          React island: obelisk-dex's profile editor (ProfilePanel, mounted by ProfileMount)
   src/audio/            emote music (positional, clustered) and its synth loops; music at places (placeMusic.ts)
   src/ui/               obeliskLinks (note/profile links into obelisk.ar), theaterPanel (the hall's controls), chat panel, side panel (channels and members, left), DM panel, creator (+ lookPreview, its 3D stage), settings, relay modal, controls guide, content (bubbles), loading (top-down map)
   src/shims/            replacements for obelisk-dex modules (the seam, see below)
 server/                 static server + link preview
-scripts/                vendor, copy-brand, make-icons, copy-assets, build-people, make-og
+scripts/                vendor, copy-brand, make-icons, copy-assets, build-people, make-og, guest-npcs
 vendor/obelisk/         pinned snapshot of obelisk-dex src (COMMIT file says which), aliased as @/
 _dl/                    downloaded source packs (Kenney, Quaternius zips), not served
 ```
@@ -98,6 +100,7 @@ Obelisk-dex code is imported from `vendor/obelisk` as `@/...` (Vite alias and ts
   - kind 30078 `obelisk-sky:activity:v1` (`nostr/activity.ts`): what you're doing live. Tags `op` start/stop, `spot`, NIP-40 `expiration` (90 s); content `{v,op,spot,kind,since}`. Kinds: the exercises (park and gym), `sit` (seats only), `run` (track lanes only), and on a `here:` spot an `emote:<kind>` or `ride` (remote signers only). Published 0.3 s after you sit or train, re-sent every 45 s, a stop when you get up. Two claims on one spot: the earlier `since` holds it.
   - ephemeral kind 20390 (`nostr/motion.ts`): live movement. Content `{v,t,p,mv?,run?,d?|h?,j?,e?,es?,y?,lp?,rd?}` (`y`: body yaw, or the eyes' yaw in first person; `lp`: first-person look pitch, ±0.6, tilts the remote head; standing, a 30° turn is a change worth sending) (`rd: 1`: riding a nostrich, walked at the ride speeds on a bird; getting on or off is a change worth sending, sent at the normal pace even while backing off) (`j: 1`: they just jumped; sent at take-off, at most every 400 ms, and replayed with the controller's jump physics; `e`: the emote they're playing while standing, `world/emotes.ts` kinds only, starting/stopping one is a change worth sending; `es`: when it began, their wall clock in ms, clamped to `t`): position plus a click's destination (`d`) or a key heading (`h`). Sent on a click, a turn, start/stop running or stopping; a correction every 2 s by keys / 4 s on a path; a 30 s heartbeat standing; never more than 1/s, backing off to 8 s when the relay refuses. Starting or ending an emote is sent at the normal pace even while backing off. Off with the `shareMotion` pref and for remote signers (nip46): their emotes go out as an activity instead (`here:<x*10>:<z*10>` spot, kind `emote:<kind>`), played by main.ts `playEmoteClaims` through `applyMotion`; riding goes out the same way, as kind `ride` on the `here:` spot where they got on.
 - **Remote signers (NIP-46)** run on sky's own `nostr/remoteSigner.ts`, as obelisk-dex's bridge does: the login widget closes its paired signer when its modal unmounts, so sky builds a BunkerSigner on the same client key (no second `connect()`; on reload only when the pointer has a secret, then the account is checked). Every request has a deadline, the user's own requests (relay AUTH, posts) go before background ones (DM unwraps, read-state; one at a time), and a closed signer is rebuilt once. Never install the widget's `args.signer` for nip46.
+- **The guest island** (`guest/`, `nostr/guest.ts`): for a visitor who isn't logged in, or a logged-in account the relay refuses (the Feed's `onAccess('refused')`). main.ts `startGuest` stops the relay feed, read-state, DMs, activity, motion and the theater and starts a `GuestFeed` through the same `handle()`: six houses (Bitcoin, Nostr dev, Art & memes, Mate & chat, Fitness, which becomes the gym, and the Campfire voice channel, an ombú with its call off) as 39000-style metas, and `script.ts` threads played as local kind 9 / kind 7 events (hashed ids, `sig: ''`) from the villagers in `npcs.json` (well-known Nostr and La Crypta accounts; their kind 0s are read from the public profile relays, never the group relay). It opens with a snapshot of the last six hours, then plays a line or reaction every so often, reshuffling and recasting the threads each loop; a villager answers what you write now and then. The lines are made-up village chat, never anyone's words, and the banner says the chats are a demo. You walk as yourself when refused, as a per-tab random guest pubkey named Guest / Invitado when logged out (`guestPubkey`). Nothing is signed or published: `isGuest()` makes `publishToGroup` / `publishSigned` return a local unsigned event (`localEvent`, ingested into the guest state, so chat, reactions and games work here), `SessionManager.sign` refuse, `guardHub` refuse every hub publish (DMs, profile edits, read-state, voice), and motion and activity aren't sent; your look is kept in localStorage only (`guest/look.ts`). Hidden there: calls (call bar, theater joins), DMs (Message/Call, the DM panel), zaps (`/zap`, ⚡ Zap, the wallet sheet), Edit profile, the bell, "Open in Obelisk". `#gate` is now a slim banner (`gate.guestLoggedOut` / `gate.guestRefused`, × hides it) with the login a tap away, and the status pill reads "LIVE · Guest island". A login, or a relay switch with access, goes back to the real feed (`startFeed` clears the flag). Villagers' `haunts` wait for a world hook (`applyGuestHaunts`, a no-op until `World.setHaunts` exists).
 - The group relay (public.obelisk.ar) only accepts events from whitelisted pubkeys after NIP-42 AUTH. Sky-only events are therefore signed with the player's own key (no throwaway session keys), and its per-pubkey rate limit is unknown: keep send rates conservative.
 
 ## World rules that are easy to break

@@ -20,6 +20,7 @@ import type { NostrSigner } from '@nostr-wot/signers';
 import { buildChatMessage, sealAndGiftWrap, unwrapGiftWrap } from '@nostr-wot/dm';
 import { encodeDmCallMessage, isFreshCallMessage, parseDmCallMessage, type DmCallMessage, type IncomingDmCallMessage } from '@/services/call/protocol';
 import { activeRelay, profileRelays } from './hub';
+import { isGuest } from './guest';
 import { vw } from '../i18n/village';
 
 export const KIND_DM_CHAT = 14;
@@ -143,6 +144,7 @@ export class DmStore {
 
   /** NIP-17 chat to `peer`, plus our own copy. */
   async send(peer: string, text: string): Promise<string | null> {
+    if (isGuest()) return vw.dmCouldNotSend;
     const rumor = buildChatMessage(this.me, peer, text) as UnsignedEvent;
     rumor.created_at = Math.floor(Date.now() / 1000);
     const id = getEventHash(rumor);
@@ -164,6 +166,7 @@ export class DmStore {
 
   /** A call control message (invite, accept, …), as obelisk-dex wraps it. */
   async sendCall(peer: string, msg: DmCallMessage, selfNotice = false): Promise<void> {
+    if (isGuest()) return;
     const now = Math.floor(Date.now() / 1000);
     const rumor: UnsignedEvent = { pubkey: this.me, kind: KIND_DM_CALL, created_at: now, tags: [['p', peer]], content: encodeDmCallMessage(msg) };
     const wrap = await this.wrapExpiring(peer, rumor, now + CALL_WRAP_TTL_S);

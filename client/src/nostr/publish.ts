@@ -7,6 +7,7 @@ import type { EventTemplate, VerifiedEvent } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import { extractMentionPubkeysFromMessage } from '@/utils/message-text/mentions';
 import { activeRelay } from './hub';
+import { guestAuthor, isGuest, localEvent } from './guest';
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -57,6 +58,11 @@ const ALREADY_MEMBER = /already a member/i;
  * `restricted:` is retried once with the hub authenticating first.
  */
 export async function publishToGroup(hub: RelayHub, sign: (t: EventTemplate) => Promise<VerifiedEvent>, template: EventTemplate): Promise<PublishOutcome> {
+  // The guest island: a local event (no signature), never sent (nostr/guest.ts).
+  if (isGuest()) {
+    const pk = guestAuthor();
+    return pk ? { ok: true, event: localEvent(template, pk) } : { ok: false, event: null, reason: 'guest', needsJoin: false };
+  }
   let event: VerifiedEvent;
   try {
     event = await sign(template);
@@ -69,6 +75,7 @@ export async function publishToGroup(hub: RelayHub, sign: (t: EventTemplate) => 
 /** Publish an event that is already signed (e.g. your cached look, to a relay
  *  that doesn't have it yet), with the same AUTH retry. */
 export async function publishSigned(hub: RelayHub, event: VerifiedEvent): Promise<PublishOutcome> {
+  if (isGuest()) return { ok: true, event };
   let [res] = await hub.publish({ relays: [activeRelay()], event });
   if (res?.status === 'rejected' && /^restricted:/i.test(res.reason ?? '')) {
     [res] = await hub.publish({ relays: [activeRelay()], event, authMode: 'auth-first' });

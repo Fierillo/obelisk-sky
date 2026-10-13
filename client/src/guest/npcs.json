@@ -1,0 +1,198 @@
+[
+  {
+    "pubkey": "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d",
+    "name": "fiatjaf",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "nostrwot",
+      "pond"
+    ]
+  },
+  {
+    "pubkey": "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
+    "name": "jb55",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "campfire",
+      "plaza"
+    ]
+  },
+  {
+    "pubkey": "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2",
+    "name": "jack",
+    "home": "bitcoin",
+    "haunts": [
+      "pond",
+      "plaza",
+      "campfire"
+    ]
+  },
+  {
+    "pubkey": "04c915daefee38317fa734444acee390a8269fe5810b2241e5e6dd343dfbecc9",
+    "name": "ODELL",
+    "home": "bitcoin",
+    "haunts": [
+      "parrilla",
+      "campfire",
+      "plaza"
+    ]
+  },
+  {
+    "pubkey": "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93",
+    "name": "Gigi",
+    "home": "art-memes",
+    "haunts": [
+      "pond",
+      "coffee",
+      "park"
+    ]
+  },
+  {
+    "pubkey": "fa984bd7dbb282f07e16e7ae87b26a2a7b9b90b7246a44771f0cf5ae58018f52",
+    "name": "pablof7z",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "gym",
+      "plaza"
+    ]
+  },
+  {
+    "pubkey": "97c70a44366a6535c145b333f973ea86dfdc2d7a99da618c40c64705ad98e322",
+    "name": "hodlbod",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "track",
+      "park"
+    ]
+  },
+  {
+    "pubkey": "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
+    "name": "Vitor Pamplona",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "gym",
+      "nostrwot"
+    ]
+  },
+  {
+    "pubkey": "3f770d65d3a764a9c5cb503ae123e62ec7598ad035d836e2a810f3877a745b24",
+    "name": "Derek Ross",
+    "home": "art-memes",
+    "haunts": [
+      "plaza",
+      "parrilla",
+      "campfire"
+    ]
+  },
+  {
+    "pubkey": "63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed",
+    "name": "Kieran",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "market",
+      "track"
+    ]
+  },
+  {
+    "pubkey": "eab0e756d32b80bcd464f3d844b8040303075a13eabc3599a762c9ac7ab91f4f",
+    "name": "Lyn Alden",
+    "home": "bitcoin",
+    "haunts": [
+      "coffee",
+      "pond",
+      "market"
+    ]
+  },
+  {
+    "pubkey": "1bc70a0148b3f316da33fe3c89f23e3e71ac4ff998027ec712b905cd24f6a411",
+    "name": "Karnage",
+    "home": "fitness",
+    "haunts": [
+      "gym",
+      "track",
+      "park"
+    ]
+  },
+  {
+    "pubkey": "50d94fc2d8580c682b071a542f8b1e31a200b0508bab95a33bef0855df281d63",
+    "name": "calle",
+    "home": "bitcoin",
+    "haunts": [
+      "coffee",
+      "market"
+    ]
+  },
+  {
+    "pubkey": "d61f3bc5b3eb4400efdae6169a5c17cabf3246b514361de939ce4a1a0da6ef4a",
+    "name": "miljan",
+    "home": "nostr-dev",
+    "haunts": [
+      "coffee",
+      "plaza"
+    ]
+  },
+  {
+    "pubkey": "e2ccf7cf20403f3f2a4a55b328f0de3be38558a7d5f33632fdaaefc726c1c8eb",
+    "name": "utxo",
+    "home": "art-memes",
+    "haunts": [
+      "parrilla",
+      "campfire",
+      "track"
+    ]
+  },
+  {
+    "pubkey": "7fa56f5d6962ab1e3cd424e758c3002b8665f7b0d8dcee9fe9e288d7751ac194",
+    "name": "verbiricha",
+    "home": "mate",
+    "haunts": [
+      "coffee",
+      "nostrwot",
+      "pond"
+    ]
+  },
+  {
+    "pubkey": "3efdaebb1d8923ebd99c9e7ace3b4194ab45512e2be79c1b7d68d9243e0d2681",
+    "name": "Damus",
+    "home": "nostr-dev",
+    "haunts": [
+      "plaza"
+    ]
+  },
+  {
+    "pubkey": "2ad91f1dca2dcd5fc89e7208d1e5059f0bac0870d63fc3bac21c7a9388fa18fd",
+    "name": "agustin",
+    "home": "mate",
+    "haunts": [
+      "parrilla",
+      "coffee",
+      "gym"
+    ]
+  },
+  {
+    "pubkey": "149cdeff6f77f4a4f6d4e921311a791f63e706d1e0c1b99018cced8c749602fa",
+    "name": "claudio",
+    "home": "fitness",
+    "haunts": [
+      "gym",
+      "park",
+      "parrilla"
+    ]
+  },
+  {
+    "pubkey": "7c45dcfb2e93594ce43bc2b16fd29b3c38ba0daf42ae8561fe6f0353892b7df4",
+    "name": "naranja",
+    "home": "mate",
+    "haunts": [
+      "plaza",
+      "parrilla",
+      "pond"
+    ]
+  }
+]

@@ -226,18 +226,28 @@ button { font: inherit; color: inherit; }
 .account-btn:hover { background: rgba(60, 60, 60, 0.8); }
 .account-btn.primary { background: var(--green); border-color: var(--green); color: #0a0a0a; }
 .account-btn.primary:hover { filter: brightness(1.08); }
-.account-btn.big { padding: 11px 22px; font-size: 14px; margin-top: 14px; }
 .account { display: flex; align-items: center; gap: 8px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 999px; padding: 4px 4px 4px 14px; }
 .account[hidden], .account-btn[hidden] { display: none; }
 .account-name { font: 600 12.5px var(--sans); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gate { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 5; }
+.account-btn.big { padding: 11px 22px; font-size: 14px; margin-top: 14px; }
+/* The guest island's banner: a slim cloud strip under the header, the login a tap away. */
+.gate { position: absolute; top: 66px; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(620px, calc(100vw - 32px)); pointer-events: none; z-index: 5; }
 .gate[hidden] { display: none; }
-.gate-card { pointer-events: auto; text-align: center; color: var(--ink); background: rgba(255, 255, 255, 0.84); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 22px; padding: 26px 30px; max-width: min(380px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(15, 42, 68, 0.28); }
-/* The mark on a disc of sky (as in the login modal): its pale cloud vanishes on the white card and the rest reads lopsided. */
-.gate-mark { display: block; width: 76px; height: 76px; padding: 6px; box-sizing: border-box; margin: 0 auto 2px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #cfeaff 0%, #8fd3ff 100%); box-shadow: 0 6px 18px rgba(15, 42, 68, 0.18), inset 0 0 0 2px rgba(255, 255, 255, 0.7); }
-.gate-title { font: 800 22px var(--sans); letter-spacing: -0.01em; margin: 6px 0 8px; }
-.gate-text { font-size: 14px; line-height: 1.5; color: var(--ink-muted); }
-.gate-card .account-btn.primary { color: var(--ink); }
+.gate-card { pointer-events: auto; display: flex; align-items: center; gap: 10px; color: var(--ink); background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 999px; padding: 5px 6px 5px 6px; box-shadow: 0 10px 30px rgba(15, 42, 68, 0.22); }
+/* The mark on a disc of sky (as in the login modal): its pale cloud vanishes on the white card. */
+.gate-mark { flex: none; width: 30px; height: 30px; padding: 3px; box-sizing: border-box; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #cfeaff 0%, #8fd3ff 100%); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.7); }
+.gate-text { flex: 1 1 auto; min-width: 0; font-size: 12.5px; line-height: 1.35; color: var(--ink); }
+.gate-card .account-btn.primary { flex: none; color: var(--ink); padding: 7px 14px; }
+.gate-card .account-btn[hidden] { display: none; }
+.gate-hide { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--ink-muted); cursor: pointer; }
+.gate-hide:hover { background: rgba(15, 42, 68, 0.08); }
+.gate-hide svg { width: 14px; height: 14px; }
+@media (max-width: 720px) { .gate { top: 56px; } .gate-text { font-size: 11.5px; } .gate-mark { display: none; } .gate-card { border-radius: 16px; padding-left: 12px; } }
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 540px) { .gate { top: 50px; } }
+/* The chat panel open on the right: the banner keeps to the left of it. */
+@media (min-width: 721px) { body.chat-open .gate { left: 16px; transform: none; max-width: calc(100vw - 440px); } }
+/* On a phone the chat takes the screen's side or bottom: the banner steps aside until it closes. */
+@media (max-width: 720px), (pointer: coarse) and (orientation: landscape) and (max-height: 540px) { body.chat-open .gate { display: none; } }
 .login-host { position: relative; z-index: 20; }
 
 /* The login modal (@nostr-wot/ui, re-hosted from obelisk-dex) in sky's
