@@ -18,6 +18,10 @@
 @source "../../vendor/obelisk/src/app/*/app/panes/channel/ComposerAttachments.tsx";
 @source "../../vendor/obelisk/src/utils/chat/picker";
 @source "./chat/composer";
+@source "../../vendor/obelisk/src/app/*/app/settings/EditProfileForm.tsx";
+@source "../../vendor/obelisk/src/app/*/app/settings/ProfileFormField.tsx";
+@source "../../vendor/obelisk/src/components/settings/account";
+@source "./profile";
 
 @theme {
   --color-lc-black: #0a0a0a;

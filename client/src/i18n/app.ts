@@ -92,6 +92,9 @@ const en = {
   'pcall.accept': 'Accept',
   'pcall.mute': 'Mute',
   'pcall.hangup': 'Hang up',
+  'account.title': 'Your profile and look',
+  'account.editProfile': 'Edit profile',
+  'account.look': 'Your look',
 };
 
 export type AppKey = keyof typeof en;
@@ -181,6 +184,9 @@ const es: Record<AppKey, string> = {
   'pcall.accept': 'Atender',
   'pcall.mute': 'Silenciar',
   'pcall.hangup': 'Cortar',
+  'account.title': 'Tu perfil y tu aspecto',
+  'account.editProfile': 'Editar perfil',
+  'account.look': 'Tu aspecto',
 };
 
 export const APP_COPY: Record<Lang, Record<AppKey, string>> = { en, es };

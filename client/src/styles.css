@@ -964,3 +964,26 @@ body.menu-open .controls button[hidden] { display: none; }
 .zap-connect { display: flex; gap: 8px; align-items: center; }
 .zap-error { margin-top: 10px; font: 12.5px/1.4 var(--sans); color: #ffb4a8; }
 .zap-error:empty { display: none; }
+
+/* ── the account pill's menu (Edit profile / Your look) ─────── */
+.account { position: relative; }
+.account-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 170px; display: flex; flex-direction: column; padding: 6px; background: rgba(23, 23, 23, 0.97); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45); z-index: 9; }
+.account-menu[hidden] { display: none; }
+.account-menu-item { border: 0; background: none; color: var(--white); text-align: left; padding: 9px 12px; border-radius: 9px; font: 600 13px var(--sans); cursor: pointer; white-space: nowrap; }
+.account-menu-item:hover, .account-menu-item:focus-visible { background: rgba(255, 255, 255, 0.08); color: var(--green); outline: none; }
+
+/* ── the profile editor (profile/ProfilePanel.tsx): obelisk-dex's form in a dark sheet that scrolls inside ── */
+.profile-host { position: relative; z-index: 60; }
+.profile-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px); }
+.profile-sheet { width: min(560px, 100%); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; background: var(--dark); color: var(--white); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55); overflow: hidden; }
+.profile-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+.profile-sheet-close { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); }
+.profile-sheet-close:hover { background: rgba(255, 255, 255, 0.08); color: var(--white); }
+.profile-sheet-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+/* Phones sideways (and short windows): edge to edge, the description folded away. */
+@media (max-height: 540px) {
+  .profile-overlay { padding: 8px; }
+  .profile-sheet { max-height: calc(100dvh - 16px); }
+  .profile-sheet-head { padding: 8px 14px 6px; }
+  .profile-sheet-head p { display: none; }
+}
