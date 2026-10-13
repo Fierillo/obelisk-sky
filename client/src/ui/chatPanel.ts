@@ -9,6 +9,8 @@
 import type { WireGroup, WireMessage, WireReaction } from '../nostr/wire';
 import { pubkeyColor } from '../world/character';
 import { renderContent } from './content';
+import { kindLabel, vw } from '../i18n/village';
+import { lang } from '../i18n/lang';
 import type { MentionPerson, ReplyTarget } from '../chat/composer/useSkyComposer';
 
 export const QUICK_REACTIONS = ['❤️', '👍', '😂', '🔥', '🤙', '⚡', '👀', '🎉'];
@@ -68,13 +70,13 @@ export class ChatPanel {
     this.title = div('chat-title');
     this.sub = div('chat-sub');
     titles.append(this.title, this.sub);
-    const min = button('chat-min', 'Minimise');
+    const min = button('chat-min', vw.minimise);
     min.textContent = '–';
     min.addEventListener('click', () => this.setMinimised(!this.minimised));
-    const games = button('chat-min chat-games', 'Start a game here');
-    games.textContent = 'Game';
+    const games = button('chat-min chat-games', vw.gameHere);
+    games.textContent = vw.game;
     games.addEventListener('click', () => { if (this.group) this.deps.newGame?.(this.group.id); });
-    const x = button('chat-min chat-close', 'Close');
+    const x = button('chat-min chat-close', vw.close);
     x.textContent = '×';
     x.addEventListener('click', () => { this.close(); this.onClose?.(); });
     head.append(titles, games, min, x);
@@ -98,7 +100,7 @@ export class ChatPanel {
     this.el.hidden = false;
     document.body.classList.add('chat-open');
     this.title.textContent = g.name;
-    this.sub.textContent = g.kind === 'forum' ? 'Publication' : g.kind.startsWith('voice') ? 'Voice channel' : 'Text channel';
+    this.sub.textContent = kindLabel(g.kind);
     if (changed) { this.replyTo = null; this.error.hidden = true; this.setMinimised(false); }
     this.renderComposer();
     this.render();
@@ -200,15 +202,15 @@ export class ChatPanel {
     this.error.replaceChildren();
     const msg = document.createElement('span');
     const needsJoin = /member/i.test(reason);
-    msg.textContent = needsJoin ? 'This channel is members-only.' : `Not sent: ${reason}`;
+    msg.textContent = needsJoin ? vw.membersOnly : vw.notSent(reason);
     this.error.append(msg);
     if (needsJoin && this.group) {
       const g = this.group;
-      const join = button('chat-join', 'Request to join');
-      join.textContent = 'Request to join';
+      const join = button('chat-join', vw.requestJoin);
+      join.textContent = vw.requestJoin;
       join.addEventListener('click', async () => {
         const e = await this.deps.join(g.id);
-        msg.textContent = e ? `Join request failed: ${e}` : 'Join requested. An admin has to approve it.';
+        msg.textContent = e ? vw.joinFailed(e) : vw.joinRequested;
         join.remove();
       });
       this.error.append(join);
@@ -240,7 +242,7 @@ export class ChatPanel {
     this.list.replaceChildren();
     if (!msgs.length) {
       const empty = div('chat-empty');
-      empty.textContent = 'Nobody has said anything here in the last 30 days. Be the first.';
+      empty.textContent = vw.chatEmpty;
       this.list.append(empty);
     }
     const me = this.deps.me();
@@ -261,7 +263,7 @@ export class ChatPanel {
     who.textContent = this.deps.nameOf(m.pubkey);
     const when = document.createElement('span');
     when.className = 'chat-when';
-    when.textContent = new Date(m.createdAt * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    when.textContent = new Date(m.createdAt * 1000).toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
     meta.append(who, when);
     if (m.replyTo) {
       const r = document.createElement('span');
@@ -280,17 +282,17 @@ export class ChatPanel {
 
     const actions = div('chat-actions');
     if (me) {
-      const reply = button('chat-act', 'Reply');
-      reply.textContent = 'Reply';
+      const reply = button('chat-act', vw.reply);
+      reply.textContent = vw.reply;
       reply.addEventListener('click', () => { this.setReply(m); this.deps.onReplyPick?.(m); });
-      const react = button('chat-act', 'React');
-      react.textContent = 'React';
+      const react = button('chat-act', vw.react);
+      react.textContent = vw.react;
       react.addEventListener('click', () => { this.pickerFor = this.pickerFor === m.id ? null : m.id; this.render(); });
       actions.append(reply, react);
       if (m.pubkey === me) {
-        const del = button('chat-act danger', 'Delete');
-        del.textContent = 'Delete';
-        del.addEventListener('click', () => { if (confirm('Delete this message for everyone?')) this.deps.remove(m); });
+        const del = button('chat-act danger', vw.delete);
+        del.textContent = vw.delete;
+        del.addEventListener('click', () => { if (confirm(vw.deleteConfirm)) this.deps.remove(m); });
         actions.append(del);
       }
     }
@@ -321,7 +323,7 @@ export class ChatPanel {
   private picker(m: WireMessage): HTMLElement {
     const p = div('chat-picker');
     for (const e of QUICK_REACTIONS) {
-      const b = button('chat-pick', `React ${e}`);
+      const b = button('chat-pick', vw.reactWith(e));
       b.textContent = e;
       b.addEventListener('click', () => { this.pickerFor = null; this.deps.react(m, e); this.render(); });
       p.append(b);

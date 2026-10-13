@@ -4,11 +4,12 @@
 // main.ts draws and wires them.
 
 import type { Episode } from '../world/player';
+import { vw } from '../i18n/village';
 
 export const SPANS = [
-  { id: '24h', label: '24 h', seconds: 86400 },
-  { id: '7d', label: '7 days', seconds: 7 * 86400 },
-  { id: '30d', label: '30 days', seconds: 30 * 86400 },
+  { id: '24h', label: vw.spans['24h'], seconds: 86400 },
+  { id: '7d', label: vw.spans['7d'], seconds: 7 * 86400 },
+  { id: '30d', label: vw.spans['30d'], seconds: 30 * 86400 },
 ] as const;
 export type SpanId = (typeof SPANS)[number]['id'];
 

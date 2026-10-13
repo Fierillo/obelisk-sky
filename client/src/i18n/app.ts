@@ -1,6 +1,8 @@
-// Words of the village's own page (app/index.html, the gate, the loader, the
-// rotate card) in each language. Elements carry `data-i18n` (text) or
-// `data-i18n-title` (title and aria-label) with a key from here.
+// Words of the village's own page (app/index.html: the header, the gate, the
+// loader, the rotate card, the bottom bar, the call bars) in each language.
+// Elements carry `data-i18n` (text), `data-i18n-title` (title and
+// aria-label) or `data-i18n-aria` (aria-label alone) with a key from here.
+// Words drawn later, inside the village, are i18n/village.ts.
 
 import { lang, type Lang } from './lang';
 
@@ -52,6 +54,40 @@ const en = {
   'ctl.about.title': 'About Obelisk Sky',
   'ctl.logout': 'Log out',
   'ctl.logout.title': 'Log out',
+  'relay.switch': 'Switch relay',
+  'relay.label': 'Relay',
+  'status.switch': 'Switch between Live and History',
+  'status.aria': 'Live or History: tap to switch',
+  'tab.channels': 'Channels',
+  'tab.channels.title': 'Channels on this relay',
+  'tab.online': 'Online',
+  'tab.members.title': 'Members: who’s online, away and offline',
+  'bell': 'Mentions and replies',
+  'bell.read': 'Mark all read',
+  'menu': 'Menu',
+  'look': 'Your look',
+  'close': 'Close',
+  'tl.spans': 'How far back',
+  'tl.peaks': 'Busiest moments',
+  'tl.drag': 'Drag across a stretch to replay it, or click a moment',
+  'tl.now': 'now',
+  'controls': 'View controls',
+  'call.join': 'Join call',
+  'call.stay': 'Stay',
+  'call.stay.title': 'Stay in the call wherever you walk',
+  'call.mic': 'Mic',
+  'call.mic.title': 'Microphone',
+  'call.cam': 'Camera',
+  'call.leave': 'Leave',
+  'call.app': 'Open in Obelisk',
+  'near.dm': '💬 Message',
+  'near.dm.title': 'Private message (M)',
+  'near.call': '📞 Call',
+  'near.call.title': 'Private voice call',
+  'theater': 'Theater',
+  'pcall.accept': 'Accept',
+  'pcall.mute': 'Mute',
+  'pcall.hangup': 'Hang up',
 };
 
 export type AppKey = keyof typeof en;
@@ -104,6 +140,40 @@ const es: Record<AppKey, string> = {
   'ctl.about.title': 'Acerca de Obelisk Sky',
   'ctl.logout': 'Salir',
   'ctl.logout.title': 'Salir',
+  'relay.switch': 'Cambiar de relay',
+  'relay.label': 'Relay',
+  'status.switch': 'Cambiar entre En vivo e Historial',
+  'status.aria': 'En vivo o Historial: tocá para cambiar',
+  'tab.channels': 'Canales',
+  'tab.channels.title': 'Canales de este relay',
+  'tab.online': 'En línea',
+  'tab.members.title': 'Miembros: quién está en línea, ausente o desconectado',
+  'bell': 'Menciones y respuestas',
+  'bell.read': 'Marcar todo como leído',
+  'menu': 'Menú',
+  'look': 'Tu apariencia',
+  'close': 'Cerrar',
+  'tl.spans': 'Cuánto para atrás',
+  'tl.peaks': 'Momentos con más movimiento',
+  'tl.drag': 'Arrastrá sobre un tramo para repetirlo, o hacé clic en un momento',
+  'tl.now': 'ahora',
+  'controls': 'Controles de la vista',
+  'call.join': 'Entrar a la llamada',
+  'call.stay': 'Quedarme',
+  'call.stay.title': 'Seguir en la llamada adonde camines',
+  'call.mic': 'Micrófono',
+  'call.mic.title': 'Micrófono',
+  'call.cam': 'Cámara',
+  'call.leave': 'Salir',
+  'call.app': 'Abrir en Obelisk',
+  'near.dm': '💬 Mensaje',
+  'near.dm.title': 'Mensaje privado (M)',
+  'near.call': '📞 Llamar',
+  'near.call.title': 'Llamada de voz privada',
+  'theater': 'Cine',
+  'pcall.accept': 'Atender',
+  'pcall.mute': 'Silenciar',
+  'pcall.hangup': 'Cortar',
 };
 
 export const APP_COPY: Record<Lang, Record<AppKey, string>> = { en, es };
@@ -124,5 +194,10 @@ export function applyAppLang(root: ParentNode, l: Lang = lang): void {
     if (!(key in APP_COPY[l])) continue;
     el.title = t(key, {}, l);
     if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', t(key, {}, l));
+  }
+  // An aria-label of its own (no title, or one that says something else).
+  for (const el of root.querySelectorAll<HTMLElement>('[data-i18n-aria]')) {
+    const key = el.dataset.i18nAria as AppKey;
+    if (key in APP_COPY[l]) el.setAttribute('aria-label', t(key, {}, l));
   }
 }

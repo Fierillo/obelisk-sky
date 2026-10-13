@@ -8,6 +8,7 @@
 // only when that changes so a slider being dragged isn't rebuilt under you.
 
 import type { HandWant, Screening } from '../nostr/theater';
+import { vw } from '../i18n/village';
 
 export interface TheaterChannel { id: string; name: string; kind: string }
 
@@ -67,24 +68,24 @@ export function theaterView(i: TheaterInput): TheaterView {
   const s = i.screening;
   const voice = i.channels.filter((c) => isVoiceKind(c.kind));
   const showing = s?.channel ?? i.picked;
-  const name = (id: string | null) => (id ? i.channels.find((c) => c.id === id)?.name ?? 'a channel' : '');
+  const name = (id: string | null) => (id ? i.channels.find((c) => c.id === id)?.name ?? vw.aChannel : '');
   const mode: TheaterMode = i.hosting ? 'host' : s ? 'viewer' : 'pick';
   const inThisCall = !!showing && i.inCall === showing;
   const canSpeakMe = !s || s.host === i.me || s.mic.includes(i.me);
   const canShareMe = !s || s.host === i.me || s.screen.includes(i.me);
   const liveNote = i.live && !inThisCall
-    ? `🔴 Live now: ${i.live.count || 'people'} in the call${i.live.screens.length ? `, ${i.nameOf(i.live.screens[0])} sharing their screen` : ''}. `
+    ? vw.liveNote(i.live.count, i.live.screens.length ? i.nameOf(i.live.screens[0]) : null)
     : '';
   const status = liveNote + (mode === 'pick'
-    ? voice.length ? (i.picked ? `Ready to show ${name(i.picked)}. Host a screening to put your screen on the big screen.` : 'Nothing is showing. Pick a voice channel: its chat and call become the hall’s.') : 'This relay has no voice channels to show.'
+    ? voice.length ? (i.picked ? vw.readyToShow(name(i.picked)) : vw.nothingShowing) : vw.noVoice
     : mode === 'host'
-      ? i.sharing ? 'You’re hosting and your screen is on the big screen.' : 'You’re hosting. Share your screen to start the show.'
-      : `${i.nameOf(s!.host)} is hosting${i.playing ? '' : (i.refused ?? []).length ? ` (${i.nameOf(i.refused![0])} is sharing: waiting for the host to put it up)` : ' (nothing on screen yet)'}.${inThisCall ? canSpeakMe ? ' You may talk.' : ' Your mic is off until the host lets you talk.' : ''}`);
+      ? i.sharing ? vw.hostingSharing : vw.hostingIdle
+      : `${vw.isHosting(i.nameOf(s!.host))}${i.playing ? '' : (i.refused ?? []).length ? vw.refusedNote(i.nameOf(i.refused![0])) : vw.nothingOnScreen}.${inThisCall ? canSpeakMe ? vw.mayTalk : vw.micOffUntil : ''}`);
   const handPks = new Map(i.hands.map((h) => [h.pk, h.want]));
   const peoplePks = [...new Set([...i.hands.map((h) => h.pk), ...i.participants])].filter((pk) => pk !== i.me);
   return {
     mode,
-    title: showing ? name(showing) : 'Theater',
+    title: showing ? name(showing) : vw.theater,
     status,
     channels: voice.map((c) => ({ id: c.id, name: c.name, selected: c.id === showing })),
     canPick: (mode === 'pick' || mode === 'host') && voice.length > 0,
@@ -183,7 +184,7 @@ export class TheaterPanel {
     r.classList.toggle('collapsed', this.collapsed);
     const head = h('button', 'theater-head');
     head.type = 'button';
-    head.title = this.collapsed ? 'Open the theater controls' : 'Fold the controls away';
+    head.title = this.collapsed ? vw.openControls : vw.foldControls;
     head.setAttribute('aria-expanded', String(!this.collapsed));
     head.append(h('span', 'theater-badge', '🎬'), h('span', 'theater-title', v.title), h('span', 'theater-fold', this.collapsed ? '▸' : '▾'));
     head.addEventListener('click', () => { this.collapsed = !this.collapsed; this.chosen = true; this.shownKey = ''; this.show(v); });
@@ -192,14 +193,14 @@ export class TheaterPanel {
     r.append(h('div', 'theater-status', v.status));
 
     for (const p of v.pending) {
-      acts0(r, action(`🖥 Show ${p.name}’s screen`, `${p.name} is sharing their screen. Put it on the big screen?`, 'primary', () => this.act.grant(p.pk, 'screen', true)));
+      acts0(r, action(vw.showScreen(p.name), vw.showScreenExplain(p.name), 'primary', () => this.act.grant(p.pk, 'screen', true)));
     }
 
     if (v.canPick) {
       const sel = h('select', 'theater-pick');
-      sel.setAttribute('aria-label', 'Channel to show');
+      sel.setAttribute('aria-label', vw.channelToShow);
       if (!v.channels.some((c) => c.selected)) {
-        const o = h('option', '', 'Pick a channel…');
+        const o = h('option', '', vw.pickChannel);
         o.value = '';
         o.disabled = o.selected = true;
         sel.append(o);
@@ -215,22 +216,22 @@ export class TheaterPanel {
     }
 
     const acts = h('div', 'theater-actions');
-    if (v.canStart) acts.append(action('▶ Host a screening', 'You’ll be the host: share a tab or your screen on the big screen.', 'primary', () => this.act.start()));
-    if (v.canJoin) acts.append(action('🎧 Join the audience', 'Watch and listen. Your mic stays off until the host lets you talk.', 'primary', () => this.act.join()));
+    if (v.canStart) acts.append(action(vw.hostScreening, vw.hostScreeningExplain, 'primary', () => this.act.start()));
+    if (v.canJoin) acts.append(action(vw.joinAudience, vw.joinAudienceExplain, 'primary', () => this.act.join()));
     if (v.canShare) acts.append(v.sharing
-      ? action('■ Stop sharing', 'Take your screen off the big screen.', 'danger', () => this.act.share(false))
-      : action('🖥 Share your screen', 'Pick a tab (tick “share audio” for its sound) or a window.', 'primary', () => this.act.share(true)));
+      ? action(vw.stopSharing, vw.stopSharingExplain, 'danger', () => this.act.share(false))
+      : action(vw.shareScreen, vw.shareScreenExplain, 'primary', () => this.act.share(true)));
     if (v.raise) {
-      if (v.raise.mine) acts.append(action('✋ Lower hand', `You asked to ${v.raise.mine === 'mic' ? 'talk' : 'share your screen'}. The host will answer.`, '', () => this.act.raise('down')));
+      if (v.raise.mine) acts.append(action(vw.lowerHand, vw.askedTo(v.raise.mine === 'mic'), '', () => this.act.raise('down')));
       else {
-        if (v.raise.mic) acts.append(action('✋ Ask to talk', 'The host can turn your mic on.', '', () => this.act.raise('mic')));
-        if (v.raise.screen) acts.append(action('✋ Ask to share', 'The host can let you put your screen up.', '', () => this.act.raise('screen')));
+        if (v.raise.mic) acts.append(action(vw.askTalk, vw.askTalkExplain, '', () => this.act.raise('mic')));
+        if (v.raise.screen) acts.append(action(vw.askShare, vw.askShareExplain, '', () => this.act.raise('screen')));
       }
     }
-    if (v.canTakeOver) acts.append(action('Take over', 'You’re an admin of this channel: become the host.', '', () => this.act.takeOver()));
-    acts.append(action('📺 Watch mode', 'Just the film, the call and the chat; the village pauses (saves your battery).', '', () => this.act.watch()));
-    if (v.canFullscreen) acts.append(action('⛶ Full screen', 'Watch the film filling your screen (Esc to come back).', '', () => this.act.fullscreen()));
-    if (v.mode === 'host') acts.append(action('■ End screening', 'Stops the show for everyone; the hall is free again.', 'danger', () => this.act.end()));
+    if (v.canTakeOver) acts.append(action(vw.takeOver, vw.takeOverExplain, '', () => this.act.takeOver()));
+    acts.append(action(vw.watchMode, vw.watchModeExplain, '', () => this.act.watch()));
+    if (v.canFullscreen) acts.append(action(vw.fullScreen, vw.fullScreenExplain, '', () => this.act.fullscreen()));
+    if (v.mode === 'host') acts.append(action(vw.endScreening, vw.endScreeningExplain, 'danger', () => this.act.end()));
     if (acts.childElementCount) r.append(acts);
 
     if (v.canFullscreen) {
@@ -240,7 +241,7 @@ export class TheaterPanel {
       vol.max = '1';
       vol.step = '0.05';
       vol.value = String(this.vol);
-      vol.setAttribute('aria-label', 'Film volume');
+      vol.setAttribute('aria-label', vw.filmVolume);
       vol.addEventListener('input', () => { this.vol = Number(vol.value); this.act.volume(this.vol); });
       const lab = h('label', 'theater-vol-row');
       lab.append(h('span', '', '🔊'), vol);
@@ -249,13 +250,13 @@ export class TheaterPanel {
 
     if (v.people.length) {
       const list = h('div', 'theater-people');
-      list.append(h('div', 'theater-explain', 'In the call: 🎙 lets someone talk, 🖥 lets them share their screen, Host hands the hall to them.'));
+      list.append(h('div', 'theater-explain', vw.inCallExplain));
       for (const p of v.people) {
         const line = h('div', 'theater-person');
         line.append(h('span', 'theater-name', `${p.hand ? '✋ ' : ''}${p.name}`));
-        line.append(btn(p.mic ? '🎙 on' : '🎙', p.mic ? 'on' : '', () => this.act.grant(p.pk, 'mic', !p.mic), p.mic ? 'Take the mic back' : 'Allow to talk'));
-        line.append(btn(p.screen ? '🖥 on' : '🖥', p.screen ? 'on' : '', () => this.act.grant(p.pk, 'screen', !p.screen), p.screen ? 'Take the screen back' : 'Allow to share their screen'));
-        line.append(btn('Host', '', () => this.act.handOver(p.pk), 'Hand the hall over'));
+        line.append(btn(p.mic ? `🎙 ${vw.granted}` : '🎙', p.mic ? 'on' : '', () => this.act.grant(p.pk, 'mic', !p.mic), p.mic ? vw.takeMic : vw.allowTalk));
+        line.append(btn(p.screen ? `🖥 ${vw.granted}` : '🖥', p.screen ? 'on' : '', () => this.act.grant(p.pk, 'screen', !p.screen), p.screen ? vw.takeScreen : vw.allowScreen));
+        line.append(btn(vw.host, '', () => this.act.handOver(p.pk), vw.handHall));
         list.append(line);
       }
       r.append(list);
@@ -271,7 +272,7 @@ export function openFullscreenVideo(stream: MediaStream): () => void {
   v.autoplay = true;
   v.playsInline = true;
   v.srcObject = stream;
-  const close = btn('✕', 'theater-full-close', () => done(), 'Close (Esc)');
+  const close = btn('✕', 'theater-full-close', () => done(), vw.closeEsc);
   wrap.append(v, close);
   document.body.append(wrap);
   void v.play().catch(() => {});
@@ -309,7 +310,7 @@ export class WatchView {
     this.video.autoplay = true;
     this.video.playsInline = true;
     this.card = h('div', 'theater-watch-card');
-    const back = btn('← Back to the village', 'theater-watch-back', () => this.onClose(), 'Esc');
+    const back = btn(vw.backToVillage, 'theater-watch-back', () => this.onClose(), 'Esc');
     this.el.append(this.video, this.card, back);
     parent.prepend(this.el);
     document.body.classList.add('watching');

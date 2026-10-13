@@ -8,6 +8,7 @@ import type { DmCallSession } from '@/services/call/session';
 import type { DmCallMediaState, DmCallPhase } from '@/services/call/session-config';
 import { newCallId, type DmCallMessage, type IncomingDmCallMessage } from '@/services/call/protocol';
 import { generateSecretKey } from 'nostr-tools';
+import { vw } from '../i18n/village';
 
 export type CallStatus = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'active' | 'reconnecting' | 'ended';
 export type CallEnd = 'local-hangup' | 'remote-hangup' | 'declined' | 'busy' | 'no-answer' | 'missed' | 'cancelled' | 'answered-elsewhere' | 'connect-failed' | 'connection-lost' | 'error';
@@ -75,11 +76,11 @@ export class PrivateCall {
     this.set({ status: 'outgoing', peer, callId, micOn: true, connectedAt: null, endReason: null, error: null });
     await this.beforeCall();
     let Ctor: SessionCtor;
-    try { Ctor = await this.load(); } catch { return this.fail(callId, 'Could not load the call'); }
+    try { Ctor = await this.load(); } catch { return this.fail(callId, vw.callLoadFailed); }
     if (this.state.callId !== callId || this.state.status !== 'outgoing') return;
     const s = this.makeSession(Ctor, 'caller', callId, CALL_RELAYS, peer);
     this.session = s;
-    try { await s.acquireMedia(); } catch { return this.fail(callId, 'Microphone blocked: allow it to call.'); }
+    try { await s.acquireMedia(); } catch { return this.fail(callId, vw.callMicBlocked); }
     if (this.session !== s) return;
     s.listen();
     this.stopRing = this.ring('out');
@@ -90,7 +91,7 @@ export class PrivateCall {
     }, RING_TIMEOUT_MS);
     try {
       await this.signals()!.sendCall(peer, { type: 'invite', callId, eph: s.selfEph, relays: CALL_RELAYS, video: false });
-    } catch { this.fail(callId, 'Could not reach them'); }
+    } catch { this.fail(callId, vw.callUnreachable); }
   }
 
   async accept(): Promise<void> {
@@ -101,7 +102,7 @@ export class PrivateCall {
     let Ctor: SessionCtor;
     try { Ctor = await this.load(); } catch {
       void this.signals()?.sendCall(inv.from, { type: 'decline', callId: inv.callId }, true).catch(() => {});
-      return this.fail(inv.callId, 'Could not load the call');
+      return this.fail(inv.callId, vw.callLoadFailed);
     }
     if (this.invite !== inv || this.state.status !== 'incoming') return;
     const s = this.makeSession(Ctor, 'callee', inv.callId, inv.relays, inv.from);
@@ -109,7 +110,7 @@ export class PrivateCall {
     this.set({ status: 'connecting' });
     try { await s.acquireMedia(); } catch {
       void this.signals()?.sendCall(inv.from, { type: 'decline', callId: inv.callId }, true).catch(() => {});
-      return this.fail(inv.callId, 'Microphone blocked: allow it to talk.');
+      return this.fail(inv.callId, vw.callMicBlockedTalk);
     }
     if (this.session !== s) return;
     // Two paths to the caller, raced: the hello on the call relay and the

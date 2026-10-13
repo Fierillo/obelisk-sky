@@ -32,6 +32,7 @@ import { useComposerUploads } from '@/hooks/chat/composer/useComposerUploads';
 import { useBotCommands } from '@/hooks/relay/operator/useBotCommands';
 import { getProfile, subscribeProfile } from '../../nostr/profileStore';
 import { SKY_SLASH_COMMANDS, skyBuiltinOf, unsupportedCommandOf } from './commands';
+import { vw } from '../../i18n/village';
 
 /** A message being answered: what the reply bar shows and the `e`/`p` tags need. */
 export interface ReplyTarget { id: string; pubkey: string; content: string }
@@ -207,7 +208,7 @@ export function useSkyComposer({
     }
     // /zap is frontend-only, like the app's: the sheet pays, then posts the ⚡.
     if (/^\/zap(\s|$)/i.test(content)) {
-      const err = onZap ? onZap(resolveDraftMentions(content, draftMentions), replyingTo) : 'Log in to zap.';
+      const err = onZap ? onZap(resolveDraftMentions(content, draftMentions), replyingTo) : vw.loginToZap;
       if (err) { setSendError(err); return; }
       setSendError(null);
       setDraft('');

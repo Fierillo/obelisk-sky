@@ -1,11 +1,13 @@
 // Settings: this browser's preferences (prefs.ts), applied live, in the
-// village's language (the landing page's choice, i18n/lang.ts).
+// village's language (the landing page's choice, i18n/lang.ts), which the
+// first row switches (remembered for the landing page too, then a reload).
 
 import { CHAT_OPEN_PREFS, QUALITIES, TIMES, type Prefs, type PrefsStore } from '../prefs';
-import { lang, type Lang } from '../i18n/lang';
+import { LANGS, lang, switchLang, type Lang } from '../i18n/lang';
 
 const EN = {
   title: 'Settings', sub: 'Saved in this browser only.',
+  language: 'Language · Idioma',
   graphics: 'Graphics', quality: 'Quality', renderingAt: 'Rendering at:', resolution: 'Resolution', shadows: 'Shadows',
   ao: 'Ambient occlusion', aoHint: '(soft contact shadows)', bloom: 'Glow (bloom)', tilt: 'Toy-town view',
   tiltHint: '(blurs the top and bottom so the island looks like a tiny model)', grass: 'Grass',
@@ -25,6 +27,7 @@ const EN = {
 
 const ES: typeof EN = {
   title: 'Ajustes', sub: 'Se guardan solo en este navegador.',
+  language: 'Idioma · Language',
   graphics: 'Gráficos', quality: 'Calidad', renderingAt: 'Dibujando en:', resolution: 'Resolución', shadows: 'Sombras',
   ao: 'Oclusión ambiental', aoHint: '(sombras suaves de contacto)', bloom: 'Brillo (bloom)', tilt: 'Vista maqueta',
   tiltHint: '(desenfoca arriba y abajo para que la isla parezca una miniatura)', grass: 'Pasto',
@@ -44,7 +47,11 @@ const ES: typeof EN = {
 
 export const SETTINGS_WORDS: Record<Lang, typeof EN> = { en: EN, es: ES };
 
-export function openSettings(parent: HTMLElement, store: PrefsStore, currentLevel: () => string, l: Lang = lang): void {
+/** Each language by its own name, the same on every screen. */
+export const LANG_NAMES: Record<Lang, string> = { en: 'English', es: 'Español' };
+
+/** `onLang`: a language was picked (by default it is remembered and the page reloads into it). */
+export function openSettings(parent: HTMLElement, store: PrefsStore, currentLevel: () => string, l: Lang = lang, onLang: (l: Lang) => void = switchLang): void {
   const w = SETTINGS_WORDS[l];
   parent.querySelector('.settings')?.remove();
   const el = document.createElement('div');
@@ -119,6 +126,19 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
     return s;
   };
 
+  // The language first, named in both, so it can be found whichever one is on.
+  const langSel = document.createElement('select');
+  langSel.className = 'themes-select settings-lang';
+  for (const o of LANGS) {
+    const opt = document.createElement('option');
+    opt.value = o;
+    opt.textContent = LANG_NAMES[o];
+    langSel.append(opt);
+  }
+  langSel.value = l;
+  langSel.addEventListener('change', () => { if (langSel.value !== l) onLang(langSel.value as Lang); });
+  row(w.language, langSel);
+
   section(w.graphics);
   const levelHint = document.createElement('small');
   row(w.quality, select('quality', QUALITIES, w.quality_));
@@ -163,7 +183,7 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   reset.type = 'button';
   reset.className = 'account-btn';
   reset.textContent = w.reset;
-  reset.addEventListener('click', () => { store.reset(); openSettings(parent, store, currentLevel, l); });
+  reset.addEventListener('click', () => { store.reset(); openSettings(parent, store, currentLevel, l, onLang); });
   const done = document.createElement('button');
   done.type = 'button';
   done.className = 'account-btn primary';

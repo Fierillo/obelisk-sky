@@ -16,6 +16,7 @@
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import type { RemoteTrack } from '@/services/voice/room-state';
 import { silentVoiceUiSink } from '@/services/voice/ui-sink';
+import { vw, type VillageWords } from '../i18n/village';
 
 type VoiceClientT = import('@/services/voice/client').VoiceClient;
 type VoiceClientCtor = typeof import('@/services/voice/client').VoiceClient;
@@ -67,20 +68,20 @@ export function awayCountdown(inCall: boolean, place: string | null, callChannel
 export const RECONNECT_DELAYS = [2, 5, 12];
 
 /** Turn a microphone error into words. */
-export function micMessage(e: unknown): string {
+export function micMessage(e: unknown, w: VillageWords = vw): string {
   const name = e instanceof Error ? e.name : '';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Microphone blocked: allow it in the browser to talk. You can still listen.';
-  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No microphone found. You can still listen.';
-  return 'Microphone unavailable. You can still listen.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return w.micBlocked;
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return w.micMissing;
+  return w.micUnavailable;
 }
 
 /** Turn a screen-share error into words. */
-export function screenMessage(e: unknown): string {
+export function screenMessage(e: unknown, w: VillageWords = vw): string {
   const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
-  if (/screenTaken|taken/i.test(msg)) return 'Someone else is already sharing their screen.';
-  if (/NotAllowed|denied|Permission/i.test(msg)) return 'Screen sharing was cancelled.';
-  if (/NotSupported|getDisplayMedia/i.test(msg)) return 'This browser can’t share its screen.';
-  return 'Could not share the screen.';
+  if (/screenTaken|taken/i.test(msg)) return w.screenTaken;
+  if (/NotAllowed|denied|Permission/i.test(msg)) return w.screenCancelled;
+  if (/NotSupported|getDisplayMedia/i.test(msg)) return w.screenUnsupported;
+  return w.screenFailed;
 }
 
 /** A remote sound: a voice (placed where the person stands) or a shared screen's sound (unplaced). */
@@ -186,7 +187,7 @@ export class CallRoom {
       if (stale()) { await client?.leave().catch(() => {}); return; }
       this.client = null;
       await client?.leave().catch(() => {});
-      this.set({ error: e instanceof Error ? e.message : 'could not join' });
+      this.set({ error: e instanceof Error ? e.message : vw.couldNotJoin });
       this.dropped(retry);
     }
   }
@@ -237,7 +238,7 @@ export class CallRoom {
       this.set({ camOn: on, error: null });
     } catch (e) {
       const name = e instanceof Error ? e.name : '';
-      this.set({ camOn: false, error: on ? (name === 'NotAllowedError' ? 'Camera blocked: allow it in the browser.' : name === 'NotFoundError' ? 'No camera found.' : 'Camera unavailable.') : null });
+      this.set({ camOn: false, error: on ? (name === 'NotAllowedError' ? vw.camBlocked : name === 'NotFoundError' ? vw.camMissing : vw.camUnavailable) : null });
     }
   }
 

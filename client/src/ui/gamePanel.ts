@@ -8,6 +8,7 @@ import { SEAT_COLORS } from '@/constants/games/chain-reaction';
 import {
   canJoin, canStart, claimableTimeout, gameMeta, seatsControlledBy, turnSecondsLeft, type GameSession,
 } from '../games/book';
+import { vw } from '../i18n/village';
 
 export interface GamePanelDeps {
   me: () => string | null;
@@ -22,12 +23,7 @@ export interface GamePanelDeps {
   appLink: (s: GameSession) => string;
 }
 
-const STATUS: Record<GameSession['status'], string> = {
-  waiting: 'Waiting for players',
-  in_progress: 'In progress',
-  finished: 'Finished',
-  cancelled: 'Cancelled',
-};
+const STATUS: Record<GameSession['status'], string> = vw.gameStatus;
 
 export class GamePanel {
   readonly el: HTMLElement;
@@ -70,15 +66,15 @@ export class GamePanel {
     this.el.replaceChildren();
     const head = div('game-head');
     const title = div('game-title');
-    title.textContent = s ? (gameMeta(s.game)?.displayName ?? s.game) : 'Game table';
-    const close = btn('game-close', 'Close');
+    title.textContent = s ? (gameMeta(s.game)?.displayName ?? s.game) : vw.gameTable;
+    const close = btn('game-close', vw.close);
     close.textContent = '×';
     close.addEventListener('click', () => this.close());
     head.append(title, close);
     this.el.append(head);
     if (!s) {
       const p = div('game-note');
-      p.textContent = 'This table is older than a day or still loading.';
+      p.textContent = vw.gameTooOld;
       this.el.append(p);
       return;
     }
@@ -86,20 +82,20 @@ export class GamePanel {
     const mine = seatsControlledBy(s, me);
     const status = div('game-status');
     const left = turnSecondsLeft(s);
-    status.textContent = STATUS[s.status] + (s.status === 'in_progress' && left !== null ? ` · ${Math.max(0, left)}s left` : '');
-    if (s.status === 'finished') status.textContent = s.draw ? 'Finished · draw' : `Finished · ${s.winner ? this.label(s, s.winner) : 'no winner'} won`;
+    status.textContent = STATUS[s.status] + (s.status === 'in_progress' && left !== null ? vw.secondsLeft(Math.max(0, left)) : '');
+    if (s.status === 'finished') status.textContent = s.draw ? vw.finishedDraw : vw.finishedWon(s.winner ? this.label(s, s.winner) : null);
     this.el.append(status, this.seatList(s, me));
 
     if (s.game === 'chain-reaction' && (s.status === 'in_progress' || s.status === 'finished')) this.el.append(this.board(s, mine));
     else if (s.game !== 'chain-reaction') {
       const p = div('game-note');
-      p.textContent = 'This game is played in Obelisk. Its board isn’t in the village yet.';
+      p.textContent = vw.gameInObelisk;
       const a = document.createElement('a');
       a.className = 'account-btn primary';
       a.href = this.deps.appLink(s);
       a.target = '_blank';
       a.rel = 'noopener';
-      a.textContent = 'Open in Obelisk';
+      a.textContent = vw.openInObelisk;
       this.el.append(p, a);
     }
 
@@ -110,11 +106,11 @@ export class GamePanel {
       b.addEventListener('click', fn);
       actions.append(b);
     };
-    if (me && s.status === 'waiting' && canJoin(s, me)) add('Join', () => this.deps.join(s), true);
-    if (me && s.status === 'waiting' && canStart(s, me)) add('Start', () => this.deps.start(s), true);
-    if (me && s.status === 'waiting' && s.createdBy === me) add('Cancel table', () => this.deps.cancel(s));
-    if (me && s.status === 'in_progress' && mine.length) add('Resign', () => this.deps.resign(s, s.currentTurn && mine.includes(s.currentTurn) ? s.currentTurn : mine[0] ?? null));
-    if (me && claimableTimeout(s)) add('Claim timeout', () => this.deps.claimTimeout(s));
+    if (me && s.status === 'waiting' && canJoin(s, me)) add(vw.join, () => this.deps.join(s), true);
+    if (me && s.status === 'waiting' && canStart(s, me)) add(vw.start, () => this.deps.start(s), true);
+    if (me && s.status === 'waiting' && s.createdBy === me) add(vw.cancelTable, () => this.deps.cancel(s));
+    if (me && s.status === 'in_progress' && mine.length) add(vw.resign, () => this.deps.resign(s, s.currentTurn && mine.includes(s.currentTurn) ? s.currentTurn : mine[0] ?? null));
+    if (me && claimableTimeout(s)) add(vw.claimTimeout, () => this.deps.claimTimeout(s));
     if (actions.children.length) this.el.append(actions);
   }
 
@@ -129,7 +125,7 @@ export class GamePanel {
     const ids = s.status === 'waiting' ? s.joined : s.participants;
     if (!ids.length) {
       const p = div('game-note');
-      p.textContent = 'No one has joined yet.';
+      p.textContent = vw.noOneJoined;
       list.append(p);
     }
     ids.forEach((id, i) => {
@@ -138,7 +134,7 @@ export class GamePanel {
       dot.className = 'game-dot';
       dot.style.background = s.status === 'waiting' ? '#a3a3a3' : SEAT_COLORS[i % SEAT_COLORS.length].hex;
       const name = document.createElement('span');
-      name.textContent = this.label(s, id) + (me && (id === me || id.startsWith(`${me}#`)) ? ' (you)' : '');
+      name.textContent = this.label(s, id) + (me && (id === me || id.startsWith(`${me}#`)) ? vw.you : '');
       row.append(dot, name);
       if (s.currentTurn === id && s.status === 'in_progress') row.classList.add('turn');
       if (s.eliminated.includes(id)) row.classList.add('out');
@@ -155,7 +151,7 @@ export class GamePanel {
     grid.style.gridTemplateColumns = `repeat(${b.cols}, 1fr)`;
     grid.style.setProperty('--matrix', turn.matrixHex);
     views.forEach((v, i) => {
-      const cell = btn('cr-cell', v.count ? `${v.count} orbs` : 'Empty cell');
+      const cell = btn('cr-cell', v.count ? vw.orbs(v.count) : vw.emptyCell);
       cell.disabled = !v.canClick;
       for (let k = 0; k < Math.min(v.count, 3); k++) {
         const orb = document.createElement('span');
@@ -168,7 +164,7 @@ export class GamePanel {
     });
     const wrap = div('cr-wrap');
     const hint = div('game-note');
-    hint.textContent = turn.myTurn ? 'Your turn: drop an orb on an empty cell or one of yours.' : s.status === 'in_progress' ? `Waiting for ${s.currentTurn ? this.label(s, s.currentTurn) : '…'}` : '';
+    hint.textContent = turn.myTurn ? vw.yourTurn : s.status === 'in_progress' ? vw.waitingFor(s.currentTurn ? this.label(s, s.currentTurn) : '…') : '';
     wrap.append(grid, hint);
     return wrap;
   }

@@ -7,6 +7,7 @@
 
 import * as THREE from 'three';
 import { canvasTexture } from './landmarks/signs';
+import { vw } from '../i18n/village';
 
 const CARD_W = 1024, CARD_H = 576;
 
@@ -25,7 +26,7 @@ export class TheaterScreen {
     this.mat = new THREE.MeshBasicMaterial({ map: this.card, toneMapped: false });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.mat);
     this.mesh.name = 'theater-screen';
-    this.showCard('Theater', 'Pick a channel and start a screening');
+    this.showCard(vw.theater, vw.pickAndStart);
   }
 
   /** What's playing, or null for the card. */

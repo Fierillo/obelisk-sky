@@ -6,6 +6,7 @@
 // take a name, and money must not reach an impostor.
 
 import { npubToHex } from '@nostr-wot/data';
+import { vw, type VillageWords } from '../i18n/village';
 
 export interface ZapTarget { recipient: string; messageId: string | null; sats: number | null }
 export type ZapCommandError = 'ambiguous' | 'unknown-user' | 'no-target' | 'self';
@@ -59,11 +60,11 @@ function resolve(token: string, people: ZapContext['people']): string | 'ambiguo
 }
 
 /** What a refused `/zap` says. */
-export function zapCommandMessage(e: ZapCommandError, token = ''): string {
+export function zapCommandMessage(e: ZapCommandError, token = '', w: VillageWords = vw): string {
   switch (e) {
-    case 'ambiguous': return `More than one person is called “${token}”: pick them from the @ list.`;
-    case 'unknown-user': return `Nobody here is called “${token}”.`;
-    case 'no-target': return 'Nobody to zap yet: reply to a message, or /zap @name.';
-    case 'self': return 'You can’t zap yourself.';
+    case 'ambiguous': return w.zapAmbiguous(token);
+    case 'unknown-user': return w.zapUnknown(token);
+    case 'no-target': return w.zapNoTarget;
+    case 'self': return w.zapSelf;
   }
 }
