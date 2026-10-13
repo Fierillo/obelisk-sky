@@ -14,7 +14,11 @@ import { ReadState, countUnread } from './nostr/readstate';
 import { mentionedPubkeys } from './nostr/sanitize';
 import { putProfile, setProfileRequester, clearProfiles } from './nostr/profileStore';
 import { setRoofPing } from './world/buildings';
-import { ThemeStore, resolveTheme, themesTemplate, type ThemeConfig } from './nostr/themes';
+import { EMPTY_THEMES, ThemeStore, resolveTheme, themesTemplate, type ThemeConfig } from './nostr/themes';
+import { guardHub, guestAuthor, guestPubkey, guestReason, isGuest, setGuest, type GuestReason } from './nostr/guest';
+import { GuestFeed } from './guest/feed';
+import { NPCS } from './guest/script';
+import { loadGuestLook, saveGuestLook } from './guest/look';
 import { openThemeEditor } from './ui/themeEditor';
 import { GameBook, createTable, joinTable, startTable, moveOnTable, resignTable, cancelTable, timeoutOnTable, claimableTimeout, gameMarker, type CRSizeKey } from './games/book';
 import { GamePanel } from './ui/gamePanel';
@@ -51,7 +55,7 @@ import { LoadingScreen } from './ui/loading';
 import { installVoiceBridge } from './shims/bridge';
 import { dist, hashStr, ISLAND_R } from './world/layout';
 import { readBoard } from '@/utils/games/chain-reaction/board-view';
-import { activeRelay, DEFAULT_GROUP_RELAY, normalizeRelay, setActiveRelay, SUGGESTED_RELAYS } from './nostr/hub';
+import { ANONYMOUS_IDENTITY, activeRelay, DEFAULT_GROUP_RELAY, normalizeRelay, profileRelays, setActiveRelay, SUGGESTED_RELAYS } from './nostr/hub';
 import { pageHub } from './nostr/hub';
 import { SessionManager, type LoginArgs, type Session } from './nostr/session';
 import { registerHost } from './shims/host';
@@ -338,11 +342,18 @@ void (async () => {
 
 // ── session + feed ───────────────────────────────────────────────────────
 // No server keys: the browser reads the relay as the signed-in user, through
-// the same RelayHub obelisk-dex uses. Logged out, the island stays empty.
+// the same RelayHub obelisk-dex uses. Logged out, or refused by the relay, you
+// get the guest island instead (guest/): scripted, local, nothing published.
 
-const hub = pageHub();
+// On the guest island the hub publishes nothing (nostr/guest.ts).
+const hub = guardHub(pageHub());
 const session = new SessionManager(hub);
-let feed: Feed | null = null;
+let feed: Feed | GuestFeed | null = null;
+
+/** Who you are in the village: your account, or on the guest island the tab's guest. */
+function myPk(): string | null {
+  return session.current?.pubkey ?? (isGuest() ? guestAuthor() : null);
+}
 /** Counts logins and logouts (the profile editor drops a save begun for another account). */
 let sessionGen = 0;
 /** Your kind 0 as last read or published (the editor's starting point; sky's profile cache keeps only a few fields). */
@@ -355,6 +366,13 @@ let profileMount: typeof import('./profile/ProfileMount') | null = null;
 let themes: ThemeStore | null = null;
 
 function applyDistricts(): void {
+  if (isGuest()) {
+    // No operator here: every house by its name (a "Fitness" house is the sports district's).
+    world.setDistricts(new Map(groups.map((g) => [g.id, resolveTheme(g, EMPTY_THEMES, {})] as const)));
+    const btn = document.querySelector<HTMLButtonElement>('.controls [data-act="districts"]');
+    if (btn) btn.hidden = true;
+    return;
+  }
   if (!themes) return;
   const map = new Map(groups.map((g) => [g.id, resolveTheme(g, themes!.config, themes!.categoryOf)] as const));
   world.setDistricts(map);
@@ -368,6 +386,8 @@ async function saveThemes(cfg: ThemeConfig): Promise<string | null> {
 }
 
 function startFeed(): void {
+  // Back from the guest island (a login, a relay switch): the real village.
+  setGuest(null);
   feed?.stop();
   themes?.stop();
   themes = new ThemeStore(hub, activeRelay());
@@ -388,13 +408,18 @@ function startFeed(): void {
   startActivity();
   book = new GameBook();
   book.onChange((id) => { gamePanel.refresh(id); scheduleTables(); });
-  feed = new Feed(hub, {
+  const f: Feed = new Feed(hub, {
     onMsg: (m) => (ready ? handle(m) : pending.push(m)),
-    onAccess: (a, reason) => renderAccess(a, reason),
+    onAccess: (a, reason) => {
+      if (a !== 'refused') { renderAccess(a, reason); return; }
+      if (reason) console.info('[sky] relay refused:', reason);
+      // Not admitted: the guest island meanwhile (after this callback returns).
+      setTimeout(() => { if (feed === f && session.current) startGuest('refused'); }, 0);
+    },
     onGame: (ev) => book.ingest(ev),
   });
-  feed.start();
-  const f = feed;
+  feed = f;
+  f.start();
   clearProfiles();
   setProfileRequester((pk) => f.state.watch(pk));
   // Your own picture and name, from the profile relays, even before you post.
@@ -409,6 +434,71 @@ function resetVillage(): void {
   if (ready) world.clearGroups();
 }
 
+/**
+ * The guest island (guest/, nostr/guest.ts): for a visitor who isn't logged
+ * in, or an account the relay refuses. Scripted houses and villagers, your
+ * character and your words kept in this tab; no calls, DMs or zaps, and
+ * nothing signed or published.
+ */
+function startGuest(why: GuestReason): void {
+  const s = session.current;
+  const me = s?.pubkey ?? guestPubkey();
+  if (feed instanceof GuestFeed && guestReason() === why && guestAuthor() === me) { renderAccess(why); return; }
+  feed?.stop();
+  feed = null;
+  themes?.stop();
+  themes = null;
+  readState?.stop();
+  readState = null;
+  dms?.stop();
+  dms = null;
+  dmPanel.close();
+  pcall.hangup();
+  void call.leave();
+  avatars.stop();
+  activity.stop();
+  motion.stop();
+  stopTheater();
+  world.syncClaims([]);
+  setGuest(why, me);
+  if (world.cam.firstPerson) toggleFirstPerson();
+  world.setPlayer(null);
+  controller = null;
+  resetVillage();
+  if (!s) {
+    // Reads only, as nobody (the hub wants an identity before any query).
+    hub.setIdentity(ANONYMOUS_IDENTITY);
+    const p = { pubkey: me, name: vw.guestName, avatar: null, nip05: null, loaded: true };
+    world.setProfile(p);
+    putProfile(p);
+  }
+  const look = loadGuestLook(me);
+  if (look) world.setAvatar(me, look);
+  const g = new GuestFeed(hub, { onMsg: (m) => (ready ? handle(m) : pending.push(m)) }, {
+    lang,
+    relay: activeRelay(),
+    me,
+    guestName: s ? null : vw.guestName,
+    // Kind 0s from the public profile relays only: the group relay would ask for AUTH.
+    profileRelays: () => profileRelays().filter((r) => r !== activeRelay()),
+  });
+  feed = g;
+  clearProfiles();
+  setProfileRequester((pk) => g.state.watch(pk));
+  g.start();
+  renderAccess(why);
+  renderBell();
+  renderCall();
+}
+
+/** The villagers' favourite places, for the world to send them wandering
+ *  there (a no-op until the world learns haunts). */
+function applyGuestHaunts(): void {
+  const w = world as unknown as { setHaunts?: (pk: string, places: string[]) => void };
+  if (typeof w.setHaunts !== 'function') return; // TODO: world.setHaunts
+  for (const n of NPCS) w.setHaunts(n.pubkey, n.haunts);
+}
+
 let readState: ReadState | null = null;
 
 /** Read cursors live on the group relay (per relay, as in the app). */
@@ -416,7 +506,7 @@ function startReadState(): void {
   readState?.stop();
   readState = null;
   const s = session.current;
-  if (!s) return;
+  if (!s || isGuest()) return;
   const sg = s.signer;
   readState = new ReadState(hub, {
     pubkey: s.pubkey,
@@ -431,6 +521,8 @@ function startReadState(): void {
 
 session.onChange((s) => {
   sessionGen++;
+  // Logged in: off the guest island (startFeed below opens the real village).
+  if (s) setGuest(null);
   ownKind0 = null;
   closeAccountMenu();
   profileMount?.closeProfileEditor();
@@ -449,7 +541,7 @@ session.onChange((s) => {
   startDms();
   if (!s) pcall.hangup();
   if (!s) { dmPanel.close(); }
-  if (!s) { feed?.stop(); feed = null; avatars.stop(); activity.stop(); motion.stop(); stopTheater(); world.syncClaims([]); resetVillage(); renderAccess('logged-out'); loginMount?.resetLogin(); forgetWallet(); }
+  if (!s) { startGuest('logged-out'); loginMount?.resetLogin(); forgetWallet(); }
   else void loadWallet(s.pubkey);
   if (s && freshLogin) awaitEntry(s);
   else clearTimeout(entryTimer);
@@ -485,7 +577,7 @@ function playEntrance(): void {
   sound.whoosh();
 }
 
-void session.restore().then((ok) => { if (!ok) { renderAccount(null); renderAccess('logged-out'); } });
+void session.restore().then((ok) => { if (!ok) { renderAccount(null); startGuest('logged-out'); } });
 
 // The re-hosted obelisk-dex login modal reaches sky through this host.
 registerHost({
@@ -512,10 +604,15 @@ $('login').addEventListener('click', async () => {
 });
 $('logout').addEventListener('click', () => session.logout());
 $('gate-login').addEventListener('click', () => $('login').click());
+/** The guest banner, put away (until the reason changes). */
+let gateHiddenFor: string | null = null;
+$('gate-hide').addEventListener('click', () => { gateHiddenFor = $('gate').dataset.state ?? null; $('gate').hidden = true; });
 
 function renderAccount(s: Session | null): void {
   $('login').hidden = !!s;
   $('account').hidden = !s;
+  // On the guest island your kind 0 can't be published: only your look (kept here).
+  ($('account-menu').querySelector('[data-act="edit-profile"]') as HTMLElement).hidden = isGuest();
   (document.querySelector('.controls [data-act="logout"]') as HTMLElement).hidden = !s;
   if (!s) return;
   const prof = world.profiles.get(s.pubkey);
@@ -547,24 +644,22 @@ function shortKey(pk: string): string {
   return `${npub.slice(0, 9)}…${npub.slice(-4)}`;
 }
 
-function renderAccess(a: FeedAccess | 'logged-out', reason?: string): void {
+/** The relay's answer, or the guest island's banner (logged out / not admitted). */
+function renderAccess(a: FeedAccess | GuestReason, reason?: string): void {
   $('relay-btn').dataset.state = a;
   const gate = $('gate');
+  const guest = a === 'logged-out' || a === 'refused';
   gate.dataset.state = a;
-  gate.hidden = a === 'open' || a === 'connecting';
+  gate.hidden = !guest || gateHiddenFor === a;
   const text = gate.querySelector('.gate-text') as HTMLElement;
-  if (a === 'logged-out') {
-    text.textContent = tr('gate.loggedOut');
-    setStatus('connecting', tr('status.loggedOut'));
-  } else if (a === 'refused') {
-    text.textContent = tr('gate.refused', { relay: activeRelay().replace(/^wss?:\/\//, '') });
-    setStatus('connecting', tr('status.refused'));
-    if (reason) console.info('[sky] relay refused:', reason);
-  } else if (a === 'offline') {
+  if (a === 'logged-out') text.textContent = tr('gate.guestLoggedOut');
+  else if (a === 'refused') text.textContent = tr('gate.guestRefused', { relay: activeRelay().replace(/^wss?:\/\//, '') });
+  else if (a === 'offline') {
     setStatus('connecting', tr('status.reconnecting'));
-    gate.hidden = true;
+    if (reason) console.info('[sky] relay offline:', reason);
   }
   ($('gate-login') as HTMLElement).hidden = a !== 'logged-out';
+  renderAccount(session.current);
 }
 
 function handle(m: ServerMsg): void {
@@ -586,8 +681,9 @@ function handle(m: ServerMsg): void {
       enterAsPlayer();
       playEntrance();
       placeOfficial();
-      if (session.current) maybeShowControlsGuide($('app'));
+      if (myPk()) maybeShowControlsGuide($('app'));
       maybeWelcome();
+      if (isGuest()) applyGuestHaunts();
       break;
     }
     case 'profile':
@@ -681,11 +777,11 @@ let candidate: string | null = null;
 let candidateFor = 0;
 
 function enterAsPlayer(): void {
-  const s = session.current;
-  if (!s) return;
-  world.setPlayer(s.pubkey);
+  const pk = myPk();
+  if (!pk) return;
+  world.setPlayer(pk);
   controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids, (p) => world.playerWalkable(p), (p) => world.groundAt(p));
-  world.cam.followPlayer(world.personAnchor(s.pubkey));
+  world.cam.followPlayer(world.personAnchor(pk));
 }
 
 function stepPlayer(dt: number): void {
@@ -794,7 +890,7 @@ $('chat-hint').addEventListener('click', () => openHintedChat());
 
 world.hooks.onBubbleClick = (msgId) => {
   const m = player.events.find((e): e is Extract<Ev, { k: 'msg' }> => e.k === 'msg' && e.m.id === msgId)?.m;
-  if (!m || !session.current) return;
+  if (!m || !myPk()) return;
   const g = groups.find((x) => x.id === m.groupId);
   if (g) chat.open(g);
   chat.setReply(m);
@@ -1066,7 +1162,7 @@ function notePost(pk: string, at: number): void {
 function presenceOf(pk: string): Presence {
   const now = Date.now();
   const posted = now - (lastPost.get(pk) ?? 0) < POSTED_ONLINE_MS;
-  const live = pk === session.current?.pubkey || !!motion.get(pk) || liveClaimers.has(pk);
+  const live = pk === myPk() || !!motion.get(pk) || liveClaimers.has(pk);
   if (!live) return posted ? 'online' : 'offline';
   const p = presence.of(pk, true, now);
   return p === 'afk' && posted ? 'online' : p;
@@ -1075,7 +1171,7 @@ function presenceOf(pk: string): Presence {
 const members = new MembersStore(hub, () => themes?.operator ?? null);
 const side = new SidePanel($('app'), {
   channels: () => groups.map((g) => {
-    const me = session.current?.pubkey ?? null;
+    const me = myPk();
     const msgs = msgsOf(g.id);
     const cursor = readState?.cursorFor(g.id) ?? 0;
     const here = [...world.people.values()].filter((c) => { const s = world.slotFor(g.id); return s && Math.hypot(c.pos.x - s.yard.x, c.pos.z - s.yard.z) < 2.6; }).length;
@@ -1086,13 +1182,14 @@ const side = new SidePanel($('app'), {
     };
   }),
   defaultChannel: () => place ?? chat.groupId ?? groups[0]?.id ?? null,
-  loadMembers: (id) => members.load(id),
+  // On the guest island the houses aren't the relay's: no members to ask for.
+  loadMembers: (id) => (isGuest() ? Promise.resolve({ members: [], admins: [] } as unknown as Awaited<ReturnType<typeof members.load>>) : members.load(id)),
   posters: (id) => [...new Set(msgsOf(id).map((m) => m.pubkey))],
   loadRanks: () => members.loadRoles(),
   presenceOf,
   profile: (pk) => { const p = world.profiles.get(pk); return { name: p?.name ?? world.nameOf(pk), avatar: p?.avatar ?? null, nip05: p?.nip05 ?? null }; },
   colorOf: (pk) => pubkeyColor(pk),
-  me: () => session.current?.pubkey ?? null,
+  me: () => myPk(),
   // Show its house and open its chat right here: no need to walk over.
   onChannel: (id) => openChannel(id),
   onMember: (pk) => showPerson(pk),
@@ -1136,7 +1233,7 @@ dmPanel.onClose = () => { if (!chat.groupId) document.body.classList.remove('cha
 
 /** Open a private conversation with `pk` (it takes the chat panel's place). */
 function openDm(pk: string): void {
-  if (!session.current || pk === session.current.pubkey) return;
+  if (!session.current || isGuest() || pk === session.current.pubkey) return;
   if (chat.groupId) chat.el.hidden = true;
   dmPanel.open(pk);
 }
@@ -1145,7 +1242,7 @@ function startDms(): void {
   dms?.stop();
   dms = null;
   const s = session.current;
-  if (!s) return;
+  if (!s || isGuest()) return;
   const store = new DmStore(hub, s.pubkey, s.signer);
   dms = store;
   store.onMessage((peer, m, fresh) => {
@@ -1193,7 +1290,7 @@ function renderNearHint(): void {
   const el = $('near-hint');
   const me = world.playerPk;
   let best: string | null = null, bd = 2.2;
-  if (me && controller && session.current) {
+  if (me && controller && session.current && !isGuest()) {
     for (const c of world.people.values()) {
       if (c.pk === me) continue;
       const d = Math.hypot(c.pos.x - controller.pos.x, c.pos.z - controller.pos.z);
@@ -1238,7 +1335,7 @@ async function publish(template: Parameters<typeof publishToGroup>[2]): Promise<
 
 const chat = new ChatPanel($('app'), {
   onProfile: (pk) => showPerson(pk),
-  me: () => session.current?.pubkey ?? null,
+  me: () => myPk(),
   nameOf: (pk) => world.nameOf(pk),
   avatarOf: (pk) => world.profiles.get(pk)?.avatar ?? null,
   messages: msgsOf,
@@ -1255,8 +1352,9 @@ const chat = new ChatPanel($('app'), {
   remove: (m) => { void publish(deletionTemplate(m.groupId, m.id, 9)); },
   join: (g) => publish(joinTemplate(g)),
   onGame: (id) => openGame(id),
-  newGame: (g) => { if (session.current) newGameDialog(g); },
+  newGame: (g) => { if (myPk()) newGameDialog(g); },
   zap: (g, command, replyTo) => {
+    if (isGuest()) return vw.guestOnly;
     const me = session.current?.pubkey ?? null;
     if (!me) return vw.loginToZap;
     const parsed = parseZapCommand(command, {
@@ -1270,12 +1368,12 @@ const chat = new ChatPanel($('app'), {
   onReplyPick: (m) => {
     // Walk over to the person you're answering.
     const other = world.people.get(m.pubkey);
-    if (controller && other && m.pubkey !== session.current?.pubkey) controller.walkTo(other.pos);
+    if (controller && other && m.pubkey !== myPk()) controller.walkTo(other.pos);
   },
 });
 /** Everyone the @-picker (and /zap @name) may mean: anyone on the relay, plus whoever walks the village. */
 function chatPeople(g: string): { pubkey: string; name: string; picture: string | null }[] {
-  void members.load(g);
+  if (!isGuest()) void members.load(g);
   const pks = new Set<string>(world.people.keys());
   for (const ch of groups) {
     const m = members.cached(ch.id);
@@ -1290,6 +1388,7 @@ function chatPeople(g: string): { pubkey: string; name: string; picture: string 
 /** Open the zap sheet for `recipient` in channel `groupId` (their message `messageId`, if one). */
 function openZap(groupId: string, recipient: string, messageId: string | null, sats: number | null): void {
   const s = session.current;
+  if (isGuest()) { toast(vw.guestOnly); return; }
   if (!s) { toast(vw.loginToZap); return; }
   void loadWallet(s.pubkey);
   // The account and relay the zap starts with: a switch mid-payment posts no marker.
@@ -1356,7 +1455,7 @@ function goToMessage(m: WireMessage): void {
 
 function renderBell(): void {
   const bell = $('bell');
-  bell.hidden = !session.current;
+  bell.hidden = !session.current || isGuest();
   const pings = openPings();
   const count = $('bell-count');
   count.hidden = !pings.length;
@@ -1415,17 +1514,17 @@ let avatars = new AvatarStore(hub);
 const LOOK_ASKED = 'obelisk-sky/look-asked';
 
 function myLook(): Avatar {
-  const pk = session.current?.pubkey;
+  const pk = myPk();
   if (!pk) return DEFAULT_AVATAR;
   // Nothing saved yet: the look your pubkey already gives your character.
-  const saved = avatars.get(pk);
+  const saved = isGuest() ? loadGuestLook(pk) : avatars.get(pk);
   if (saved?.look) return saved;
   const look = world.people.get(pk)?.look ?? defaultLook(hashStr(pk));
   return { ...(saved ?? DEFAULT_AVATAR), v: 2, look: { ...look } };
 }
 
 function openLook(first = false): void {
-  const pk = session.current?.pubkey;
+  const pk = myPk();
   if (!pk) return;
   const before = myLook();
   openCreator($('app'), {
@@ -1433,6 +1532,8 @@ function openLook(first = false): void {
     preview: (a) => world.setAvatar(pk, a),
     cancel: () => world.setAvatar(pk, before),
     save: async (a) => {
+      // The guest island: kept in this browser only.
+      if (isGuest()) { saveGuestLook(pk, a); world.setAvatar(pk, a); return null; }
       const out = await publishToGroup(hub, (t) => session.sign(t), avatarTemplate(a, avatars.createdAt(pk)));
       if (!out.ok) return out.reason;
       avatars.ingest(out.event);
@@ -1492,7 +1593,7 @@ async function openProfile(): Promise<void> {
 }
 
 // Ask for the avatars of everyone in the village, a batch at a time.
-setInterval(() => { if (session.current) avatars.want([...world.people.keys()]); }, 3000);
+setInterval(() => { if (session.current && !isGuest()) avatars.want([...world.people.keys()]); }, 3000);
 
 // ── live activities (kind 30078 obelisk-sky:activity:v1) ─────────────────
 // What you're doing (a bench, dips at the bars) goes to the relay, and what
@@ -1516,8 +1617,8 @@ let pendingJump = 0;
 function tickMotion(): void {
   const s = session.current;
   const pk = world.playerPk;
-  // A remote signer (bunker) can't sign this often; it still shares activities.
-  if (!s || !pk || !controller || motionBusy || s.method === 'nip46' || !prefs.get().shareMotion) return;
+  // A remote signer (bunker) can't sign this often; it still shares activities. The guest island shares nothing.
+  if (!s || isGuest() || !pk || !controller || motionBusy || s.method === 'nip46' || !prefs.get().shareMotion) return;
   const path = controller.path;
   // A jump is sent while it's fresh (within ~0.6 s of take-off), else dropped.
   if (pendingJump && performance.now() - pendingJump > 600) pendingJump = 0;
@@ -1566,6 +1667,7 @@ function startActivity(): void {
 }
 
 function publishActivity(a: Activity | null, since: number): void {
+  if (isGuest()) return;
   activitySend = activitySend.then(async () => {
     const pk = session.current?.pubkey;
     if (!pk) return;
@@ -1584,7 +1686,7 @@ function yieldSpot(to: string): void {
 }
 
 function tickActivity(): void {
-  if (!session.current) return;
+  if (!myPk()) return;
   const pk = world.playerPk;
   let mine = pk ? world.activityOf(pk) ?? remoteSignerEmote(pk) : null;
   if (pk) {
@@ -1655,7 +1757,7 @@ window.addEventListener('pagehide', () => { if (beacon.published) publishActivit
 /** First visit with no saved look: offer the creator once. */
 function maybeWelcome(): void {
   const pk = session.current?.pubkey;
-  if (!pk) return;
+  if (!pk || isGuest()) return;
   let asked = false;
   try { asked = localStorage.getItem(`${LOOK_ASKED}/${pk}`) === '1'; } catch { /* private mode */ }
   if (asked) return;
@@ -2015,7 +2117,8 @@ function renderCall(): void {
   const voiceHere = here && (here.kind === 'voice' || here.kind === 'voice-sfu') ? here : null;
   const inCall = !!s.channelId;
   const bar = $('callbar');
-  bar.hidden = !session.current || (!inCall && !voiceHere);
+  // No calls on the guest island.
+  bar.hidden = !session.current || isGuest() || (!inCall && !voiceHere);
   if (bar.hidden) return;
   const callGroup = inCall ? groups.find((g) => g.id === s.channelId) : voiceHere;
   ($('call-title') as HTMLElement).textContent = callGroup?.name ?? vw.voice;
@@ -2061,7 +2164,7 @@ call.onChange(() => {
 /** Join a channel's call: through the SFU for voice-sfu; in the theater, quiet unless the host lets you talk. */
 function joinCall(g: WireGroup, audience = false): void {
   const s = session.current;
-  if (!s) return;
+  if (!s || isGuest()) return;
   const sc = theater.current();
   // An audience (joining from the theater's seats) comes in quiet; so does anyone the host hasn't let talk.
   const quiet = audience || (!!sc && sc.channel === g.id && !canSpeak(sc, s.pubkey));
@@ -2225,7 +2328,7 @@ function syncTheater(): void {
 
 function renderTheater(): void {
   const me = session.current?.pubkey;
-  if (!me || !inTheaterHall) { theaterPanel.hide(); return; }
+  if (!me || !inTheaterHall || isGuest()) { theaterPanel.hide(); return; }
   const sc = theater.current();
   const channel = sc?.channel ?? null;
   if (channel && !hosting && amAdminOf?.channel !== channel) {
@@ -2254,7 +2357,7 @@ function renderTheater(): void {
 /** Walked into the hall: if something is on (a screening, or a call already live), you're connected to it as audience. */
 function autoJoinTheater(): void {
   const ch = theaterChannel();
-  if (!ch || !session.current || call.state.channelId === ch) return;
+  if (!ch || !session.current || isGuest() || call.state.channelId === ch) return;
   const live = theater.current()?.channel === ch || !!liveCalls.get(ch);
   const g = groups.find((x) => x.id === ch);
   if (live && g && isVoiceKind(g.kind)) { showTheaterChat(ch); joinCall(g, true); }
@@ -2377,7 +2480,7 @@ function tickTheater(dt: number): void {
   theaterTick -= dt;
   if (theaterTick > 0) return;
   theaterTick = 1;
-  if (!session.current) return;
+  if (!session.current || isGuest()) return;
   if (screeningBeacon.update(hosting, Date.now())) publishScreening(hosting);
   // The channel list and the hands change without telling the panel (it redraws only on a change).
   if (inTheaterHall) renderTheater();
@@ -2488,7 +2591,7 @@ function refreshSigns(): void {
     last.set(e.m.groupId, e.at);
     if (at - e.at < 86400) day.set(e.m.groupId, (day.get(e.m.groupId) ?? 0) + 1);
   }
-  const me = session.current?.pubkey ?? null;
+  const me = isGuest() ? null : session.current?.pubkey ?? null;
   pinged.clear();
   // The newest unread ping in each channel.
   const pings = pingIn;
@@ -2506,7 +2609,8 @@ function refreshSigns(): void {
   $('tab-channels-n').textContent = String(groups.length);
   // Online now: live in the village or active in the last minutes (AFK not counted).
   const online = new Set<string>([...motion.livePks(), ...liveClaimers, ...[...lastPost.keys()].filter((pk) => presenceOf(pk) === 'online')]);
-  if (session.current) online.add(session.current.pubkey);
+  const mine = myPk();
+  if (mine) online.add(mine);
   let n = 0;
   for (const pk of online) if (presenceOf(pk) === 'online') n++;
   $('tab-members-n').textContent = String(n);
@@ -2538,7 +2642,9 @@ function setStatus(mode: string, text: string): void {
 
 function renderStatus(s: PlayerStatus): void {
   const missed = s.missed ? vw.newCount(s.missed) : '';
-  if (s.mode === 'live') { setStatus(s.history ? 'replay' : 'live', s.history ? `${vw.historyPick}${missed}` : vw.live); return; }
+  // On the guest island the pill says so ("LIVE · Guest island").
+  const guest = isGuest() ? ` · ${tr('status.guest')}` : '';
+  if (s.mode === 'live') { setStatus(s.history ? 'replay' : 'live', s.history ? `${vw.historyPick}${missed}` : `${vw.live}${guest}`); return; }
   const d = new Date(s.at * 1000);
   const when = d.toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   const g = s.episode ? groups.find((x) => x.id === s.episode!.groupId) : null;
@@ -2722,7 +2828,8 @@ function showPerson(pk: string): void {
     body.append(el('div', 'sub', `${vw.personPresence[pres]} · ${vw.messages30(msgs.length)}`));
     body.append(messageList(msgs, false));
     const actions = el('div', 'actions');
-    if (session.current && pk !== session.current.pubkey) {
+    // No DMs, calls or zaps on the guest island.
+    if (session.current && !isGuest() && pk !== session.current.pubkey) {
       const msg = el('button', 'pill primary', vw.message);
       msg.addEventListener('click', () => { $('card').hidden = true; openDm(pk); });
       const ring = el('button', 'pill', vw.call);
@@ -2761,13 +2868,16 @@ function showGroup(id: string): void {
     body.append(el('div', 'sub', `${kind} · ${vw.messages30(msgs.length)}`));
     if (g.about) body.append(el('div', 'about', g.about));
     body.append(messageList(msgs, true));
-    const actions = el('div', 'actions');
-    const open = el('a', 'pill primary', vw.openInObelisk) as HTMLAnchorElement;
-    open.href = `${OBELISK_APP}?relay=${encodeURIComponent(relayHost)}&c=${encodeURIComponent(id)}`;
-    open.target = '_blank';
-    open.rel = 'noopener';
-    actions.append(open);
-    body.append(actions);
+    // The guest island's houses exist only here.
+    if (!isGuest()) {
+      const actions = el('div', 'actions');
+      const open = el('a', 'pill primary', vw.openInObelisk) as HTMLAnchorElement;
+      open.href = `${OBELISK_APP}?relay=${encodeURIComponent(relayHost)}&c=${encodeURIComponent(id)}`;
+      open.target = '_blank';
+      open.rel = 'noopener';
+      actions.append(open);
+      body.append(actions);
+    }
   });
   world.cam.focus(world.groupAnchor(id), 9);
 }

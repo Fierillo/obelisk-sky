@@ -13,6 +13,7 @@ import { PROFILE_LOOKUP_MAX_WAIT_MS } from '@/constants/nostr-bridge/profile';
 import type { ProfileEditorInitial } from '@/types/session/profile';
 import { activeRelay, profileRelays } from './hub';
 import { publishSigned } from './publish';
+import { isGuest } from './guest';
 
 /** The fields the editor sets (obelisk-dex EditUserMetadataOptions). */
 export interface ProfileEdit {
@@ -105,6 +106,8 @@ export async function fetchOwnProfile(deps: Pick<OwnProfileDeps, 'hub' | 'pubkey
  * answered, and when no relay took the event.
  */
 export async function editOwnProfile(deps: OwnProfileDeps, edit: ProfileEdit, assertCurrent: () => void = () => {}): Promise<VerifiedEvent> {
+  // The guest island publishes nothing (nostr/guest.ts).
+  if (isGuest()) throw new CodedError('profile-load-failed', 'Not available on the guest island.');
   const { event: existing, complete } = await fetchOwnProfile(deps);
   assertCurrent();
   if (!existing && !complete) throw new CodedError('profile-load-failed', 'Could not load your current profile. Try again.');

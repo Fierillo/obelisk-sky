@@ -14,6 +14,7 @@ import type { EventTemplate, VerifiedEvent } from 'nostr-tools';
 import { isSealedBox, openSessionVault, type SealedBox } from '@/lib/crypto';
 import { ANONYMOUS_IDENTITY, activeRelay } from './hub';
 import { RemoteSigner } from './remoteSigner';
+import { isGuest } from './guest';
 
 export const SESSION_KEY = 'obelisk-sky/session';
 const AAD = 'obelisk-sky/session/v1';
@@ -84,6 +85,8 @@ export class SessionManager {
   /** Sign anything as the user (kind 9, 7, 30078, ...). */
   sign(template: EventTemplate): Promise<VerifiedEvent> {
     if (!this.current) return Promise.reject(new Error('not logged in'));
+    // The guest island signs nothing (nostr/guest.ts).
+    if (isGuest()) return Promise.reject(new Error('guest island: nothing is signed'));
     return this.current.signer.signEvent(template) as Promise<VerifiedEvent>;
   }
 

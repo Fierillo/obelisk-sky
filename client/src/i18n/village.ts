@@ -19,6 +19,8 @@ const en = {
   kind: { forum: 'Publication', voice: 'Voice channel', text: 'Text channel' },
   presence: { online: 'Online', afk: 'Away (AFK)', offline: 'Offline' },
   loginToZap: 'Log in to zap.',
+  guestName: 'Guest',
+  guestOnly: 'Not on the guest island: log in with an account the relay admits.',
 
   // The relay switcher and the graphics
   switchRelay: (host: string) => `Switch relay · ${host}`,
@@ -396,6 +398,8 @@ const es: VillageWords = {
   kind: { forum: 'Publicación', voice: 'Canal de voz', text: 'Canal de texto' },
   presence: { online: 'En línea', afk: 'Ausente (AFK)', offline: 'Desconectado' },
   loginToZap: 'Ingresá para mandar zaps.',
+  guestName: 'Invitado',
+  guestOnly: 'No en la isla de invitados: ingresá con una cuenta que el relay admita.',
 
   switchRelay: (host) => `Cambiar de relay · ${host}`,
   nowIn: (host) => `Ahora en ${host}`,

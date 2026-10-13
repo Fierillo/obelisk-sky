@@ -14,6 +14,7 @@ import type { RelayHub, SubscriptionHandle } from '@nostr-wot/relay/hub';
 import { D_TAG_GROUPS, DEBOUNCE_MS } from '@/constants/read-state/sync-options';
 import { parseSyncCursors } from '@/schemas/read-state/sync-cursors';
 import { activeRelay } from './hub';
+import { isGuest } from './guest';
 
 export const FALLBACK_WINDOW_MS = 24 * 3600 * 1000;
 
@@ -149,7 +150,7 @@ export class ReadState {
   };
 
   private async flush(): Promise<void> {
-    if (!this.dirty || document.visibilityState !== 'visible') return;
+    if (!this.dirty || document.visibilityState !== 'visible' || isGuest()) return;
     this.dirty = false;
     try {
       const content = await this.signer.encrypt(JSON.stringify(encodeCursors(this.cursors)));

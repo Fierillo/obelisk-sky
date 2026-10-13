@@ -11,7 +11,7 @@ describe('the village page in each language', () => {
     for (const v of Object.values(APP_COPY.es)) expect(v.trim()).not.toBe('');
   });
   it('fills in names', () => {
-    expect(t('gate.refused', { relay: 'public.obelisk.ar' }, 'es')).toMatch(/^public\.obelisk\.ar es solo por invitación/);
+    expect(t('gate.guestRefused', { relay: 'public.obelisk.ar' }, 'es')).toMatch(/^public\.obelisk\.ar todavía no te admitió/);
   });
   it('puts the words into the page', () => {
     document.body.innerHTML = '<div class="loading-title" data-i18n="loading.island">Raising the island…</div><button data-i18n="rotate.button">Play in full screen</button><b data-i18n="nope">x</b>';
