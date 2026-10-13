@@ -2,6 +2,7 @@
 // pops. Everything is textContent — relay text never becomes HTML.
 
 import * as THREE from 'three';
+import { vw } from '../i18n/village';
 
 interface Anchor { get(): THREE.Vector3 | null }
 
@@ -70,7 +71,7 @@ export class Overlay {
     else body.textContent = opts.quote === false ? text : `“${text}”`;
     if (opts.onClick) {
       el.classList.add('clickable');
-      el.title = 'Reply';
+      el.title = vw.reply;
       el.addEventListener('click', opts.onClick);
     }
     if (opts.reply) {

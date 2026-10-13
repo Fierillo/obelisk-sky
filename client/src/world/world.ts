@@ -46,6 +46,7 @@ import { Sky, type TimeOverride } from './sky';
 import type { Prefs } from '../prefs';
 import { arcPoint, coinCount, flightTime, zapAssets } from './zapFlight';
 import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } from './emotes';
+import { vw } from '../i18n/village';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
 const PAVING_TOP = 0.03, COBBLE_TOP = 0.02, FLOOR_TOP = 0.006;
@@ -1528,7 +1529,7 @@ export class World {
 
   private makePerson(pk: string): Character {
     const prof = this.profiles.get(pk);
-    const c = new Character(pk, prof?.name ?? 'someone');
+    const c = new Character(pk, prof?.name ?? vw.someone);
     c.setProfile(prof?.name ?? shortNpub(pk), prof?.avatar ?? null);
     this.people.set(pk, c);
     this.applyAvatar(c);
@@ -3191,7 +3192,7 @@ function buildGameTable(board: { rows: number; cols: number; cells: { count: num
     ctx.fillStyle = waiting ? '#b4f953' : '#555';
     ctx.font = 'bold 22px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(waiting ? 'JOIN' : '…', 64, 72);
+    ctx.fillText(waiting ? vw.tableJoin : '…', 64, 72);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;

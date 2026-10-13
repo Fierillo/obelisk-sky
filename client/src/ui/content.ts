@@ -8,6 +8,7 @@
 // - NIP-30 `:shortcode:` with an `emoji` tag → <img class="emoji">
 
 import { nip19 } from 'nostr-tools';
+import { vw } from '../i18n/village';
 
 export type Token =
   | { t: 'text'; v: string }
@@ -115,7 +116,7 @@ export function renderContent(el: HTMLElement, content: string, opts: RenderOpts
         a.href = `https://njump.me/${tok.ref}`;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
-        a.textContent = 'note';
+        a.textContent = vw.note;
         el.append(a);
         break;
       }
@@ -147,7 +148,7 @@ export function renderContent(el: HTMLElement, content: string, opts: RenderOpts
         img.loading = 'lazy';
         img.referrerPolicy = 'no-referrer';
         img.addEventListener('click', () => (opts.onImage ? opts.onImage(tok.url) : window.open(tok.url, '_blank', 'noopener')));
-        img.onerror = () => img.replaceWith(Object.assign(document.createElement('a'), { href: tok.url, target: '_blank', rel: 'noopener noreferrer', textContent: 'image' }));
+        img.onerror = () => img.replaceWith(Object.assign(document.createElement('a'), { href: tok.url, target: '_blank', rel: 'noopener noreferrer', textContent: vw.image }));
         media.push(img);
         break;
       }
@@ -156,8 +157,8 @@ export function renderContent(el: HTMLElement, content: string, opts: RenderOpts
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'game-chip';
-        b.textContent = tok.t === 'game' ? 'Game table' : 'App';
-        b.title = tok.t === 'game' ? 'A game started in this channel' : 'An app shared in this channel';
+        b.textContent = tok.t === 'game' ? vw.gameTable : vw.app;
+        b.title = tok.t === 'game' ? vw.gameChipTitle : vw.appChipTitle;
         b.addEventListener('click', () => opts.onGame?.(tok.id));
         el.append(b);
         break;

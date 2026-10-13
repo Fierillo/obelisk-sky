@@ -45,6 +45,7 @@ import { SPANS, binCounts, dragRange, peakLabel, spanSeconds, timeToX, topPeaks,
 import { PrefsStore, type Prefs } from './prefs';
 import { openSettings, SETTINGS_WORDS } from './ui/settings';
 import { lang } from './i18n/lang';
+import { vw, kindLabel } from './i18n/village';
 import { openRelayModal } from './ui/relayModal';
 import { LoadingScreen } from './ui/loading';
 import { installVoiceBridge } from './shims/bridge';
@@ -161,7 +162,7 @@ function renderRelayName(): void {
   const relay = activeRelay();
   const host = relay.replace(/^wss?:\/\//, '').replace(/\/$/, '');
   const btn = $('relay-btn');
-  btn.title = `Switch relay · ${host}`;
+  btn.title = vw.switchRelay(host);
   if (relayShown === relay) return;
   relayShown = relay;
   ($('relay-name') as HTMLElement).textContent = host;
@@ -202,7 +203,7 @@ function switchRelay(url: string): void {
   u.searchParams.set('relay', url.replace(/^wss:\/\//, ''));
   history.replaceState(null, '', u);
   if (session.current) { startReadState(); startFeed(); }
-  toast(`Now in ${url.replace(/^wss?:\/\//, '')}`);
+  toast(vw.nowIn(url.replace(/^wss?:\/\//, '')));
 }
 
 $('relay-btn').addEventListener('click', () => openRelayModal($('app'), {
@@ -250,10 +251,10 @@ world.hooks = {
     // The phone took the graphics away (short of memory): say so, and if
     // they don't come back by themselves, offer a reload.
     clearTimeout(contextTimer);
-    if (ok) { toast('Graphics are back, at a lighter quality.'); return; }
-    toast('The graphics stopped (low on memory). Restarting them…');
+    if (ok) { toast(vw.gfxBack); return; }
+    toast(vw.gfxStopped);
     contextTimer = setTimeout(() => {
-      if (world.contextLost) toast('The graphics didn’t come back. Tap to reload.', () => location.reload());
+      if (world.contextLost) toast(vw.gfxGone, () => location.reload());
     }, 5000);
   },
   onArrive: () => sound.whoosh(),
@@ -453,10 +454,10 @@ let entryTimer: ReturnType<typeof setTimeout> | undefined;
 function awaitEntry(s: Session): void {
   clearTimeout(entryTimer);
   if (s.method !== 'nip46') return;
-  toast('Connected to your signer. Approve its requests to come in.');
+  toast(vw.signerConnected);
   entryTimer = setTimeout(() => {
     if (session.current !== s || world.playerPk) return;
-    toast('Still waiting for your signer app… Tap to try again.', () => startFeed());
+    toast(vw.signerWaiting, () => startFeed());
   }, 25_000);
 }
 
@@ -748,7 +749,7 @@ let chatHintShown = '';
 function renderChatHint(): void {
   const el = $('chat-hint') as HTMLButtonElement;
   const g = chatHint && chatHint === place && chat.groupId !== chatHint ? groups.find((x) => x.id === chatHint) : null;
-  const text = g ? (isTouch() ? `💬 Open the ${g.name} chat` : `💬 Press C to open the ${g.name} chat`) : '';
+  const text = g ? vw.chatHint(g.name, isTouch()) : '';
   if (text === chatHintShown) return;
   chatHintShown = text;
   el.hidden = !text;
@@ -817,7 +818,7 @@ function tickSeatGoal(): void {
   if (controller.path.length) return;
   seatGoal = null;
   if (dist(controller.pos, seat.pos) > 0.6) return;
-  if (seat.taken) { toast('Someone took that seat.'); return; }
+  if (seat.taken) { toast(vw.seatTaken); return; }
   sitOn(seat);
 }
 
@@ -827,13 +828,10 @@ function toggleFirstPerson(): void {
   world.camera.fov = on ? world.fpFov : (innerWidth < innerHeight ? 46 : 32);
   world.camera.updateProjectionMatrix();
   document.querySelector('.controls [data-act="firstperson"]')?.classList.toggle('on', world.cam.firstPerson);
-  if (on) toast(isTouch() ? 'First person: drag to look, the stick to walk. Tap the eye to leave.' : 'First person: click to look with the mouse, WASD to walk, V or Esc to leave.');
+  if (on) toast(isTouch() ? vw.firstPersonTouch : vw.firstPersonKeys);
 }
 
-const EX_LABEL: Record<StationKind, string> = {
-  pullup: 'pull-ups', muscleup: 'muscle-ups', dip: 'dips', pushup: 'push-ups',
-  benchpress: 'bench press', squat: 'squats', curl: 'curls', run: 'laps',
-};
+const EX_LABEL: Record<StationKind, string> = vw.exercise as Record<StationKind, string>;
 
 /** At the park: start (or stop) a set. `pick` chooses among the station's exercises. */
 function toggleTraining(pick = 0): boolean {
@@ -882,7 +880,7 @@ function toggleSeat(): void {
   if (world.isSeated(world.playerPk)) { standPlayer(); return; }
   const seat = world.nearestFreeSeat(controller.pos, 1.8);
   if (seat) sitOn(seat);
-  else toast('No free seat nearby. Benches are around the plaza, by the pond and at the campfire.');
+  else toast(vw.noSeat);
 }
 
 /** "Press E to sit" (or a Sit / Stand up button on touch) near a free seat. */
@@ -902,22 +900,22 @@ function seatHintCompute(hint: { hidden: boolean; textContent: string }): void {
   if (t) {
     hint.hidden = false;
     hint.textContent = t.kind === 'run'
-      ? `Running laps · ${t.reps} lap${t.reps === 1 ? '' : 's'} · ${touch ? 'tap or steer to stop' : 'E or steer to stop'}`
-      : `${EX_LABEL[t.kind][0].toUpperCase()}${EX_LABEL[t.kind].slice(1)} · ${t.reps} rep${t.reps === 1 ? '' : 's'} · ${touch ? 'tap to stop' : 'E to stop'}`;
+      ? vw.laps(t.reps, touch)
+      : vw.reps(EX_LABEL[t.kind], t.reps, touch);
     return;
   }
   const lane = world.nearestStation(controller.pos, 1.9) ? null : world.nearestLane(controller.pos);
   if (lane) {
     hint.hidden = false;
-    const name = ['inside', 'middle', 'outside'][lane.lane!] ?? String(lane.lane! + 1);
-    hint.textContent = touch ? `Run laps (${name} lane)` : `Press E to run laps in the ${name} lane`;
+    const name = vw.lanes[lane.lane!] ?? String(lane.lane! + 1);
+    hint.textContent = vw.lane(name, touch);
     return;
   }
   const st = world.nearestStation(controller.pos, 1.9);
   if (st) {
     hint.hidden = false;
     hint.textContent = touch
-      ? `Do ${EX_LABEL[st.kinds[0]]}`
+      ? vw.doExercise(EX_LABEL[st.kinds[0]])
       : st.kinds.map((k, i) => `${i === 0 ? 'E' : String(i + 1)}: ${EX_LABEL[k]}`).join(' · ');
     return;
   }
@@ -927,16 +925,16 @@ function seatHintCompute(hint: { hidden: boolean; textContent: string }): void {
     // Someone online is using it.
     const who = world.claimedNear(controller.pos, 1.8);
     hint.hidden = !who;
-    if (who) hint.textContent = `${world.nameOf(who)} is using this spot`;
+    if (who) hint.textContent = vw.usingSpot(world.nameOf(who));
     return;
   }
   hint.hidden = false;
   if (seat?.prop && seat.prop !== 'mate') {
-    const what = seat.prop === 'coffee' ? 'work with a coffee' : seat.prop === 'asado' ? 'eat asado' : seat.prop === 'marshmallow' ? 'roast marshmallows by the fire' : seat.prop === 'popcorn' ? 'watch with popcorn' : 'join the table';
-    hint.textContent = touch ? `Sit and ${what}` : `Press E to sit and ${what}`;
+    const what = seat.prop === 'coffee' || seat.prop === 'asado' || seat.prop === 'marshmallow' || seat.prop === 'popcorn' ? vw.sitFor[seat.prop] : vw.sitFor.table;
+    hint.textContent = vw.sit(what, touch);
     return;
   }
-  hint.textContent = seated ? (touch ? 'Stand up' : 'Press E to stand up') : (touch ? 'Sit and drink mate' : 'Press E to sit and drink mate');
+  hint.textContent = seated ? vw.standUp(touch) : vw.sitMate(touch);
 }
 
 $('seat-hint').addEventListener('click', () => { toggleSeat(); renderSeatHint(); });
@@ -946,9 +944,9 @@ function toggleRide(): void {
   const pk = world.playerPk;
   if (!controller || !pk) return;
   if (world.ridingOf(pk) !== null) { getOff(); return; }
-  if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
+  if (world.isSeated(pk) || world.isTraining(pk)) { toast(vw.standFirst(isTouch())); return; }
   const bird = world.rideableNear(controller.pos);
-  if (bird === null) { toast('No nostrich close enough. Walk up to one slowly: they run from runners.'); return; }
+  if (bird === null) { toast(vw.noNostrich); return; }
   controller.stopNow();
   world.clearWalkTarget();
   if (!world.mount(pk, bird)) return;
@@ -975,8 +973,8 @@ function renderRideHint(): void {
   let text = '';
   if (controller && pk) {
     const touch = isTouch();
-    if (world.ridingOf(pk) !== null) text = touch ? 'Get off' : 'Press F to get off';
-    else if (!world.isSeated(pk) && !world.isTraining(pk) && world.rideableNear(controller.pos) !== null) text = touch ? '🐦 Ride' : 'Press F to ride the nostrich';
+    if (world.ridingOf(pk) !== null) text = vw.getOff(touch);
+    else if (!world.isSeated(pk) && !world.isTraining(pk) && world.rideableNear(controller.pos) !== null) text = vw.ride(touch);
   }
   if (real.hidden !== !text) real.hidden = !text;
   if (text && real.textContent !== text) real.textContent = text;
@@ -992,8 +990,8 @@ const emoteMenu = new EmoteMenu($('app'), {
 function doEmote(kind: EmoteKind): void {
   const pk = world.playerPk;
   if (!pk || !controller) { toast(tr('toast.loginToWalk')); return; }
-  if (world.isSeated(pk) || world.isTraining(pk)) { toast(isTouch() ? 'Stand up first.' : 'Stand up first (E, or walk off).'); return; }
-  if (world.ridingOf(pk) !== null) { toast(isTouch() ? 'Get off first.' : 'Get off first (F).'); return; }
+  if (world.isSeated(pk) || world.isTraining(pk)) { toast(vw.standFirst(isTouch())); return; }
+  if (world.ridingOf(pk) !== null) { toast(vw.getOffFirst(isTouch())); return; }
   // No coast: still moving next frame, the body would drop the emote at once.
   controller.stopNow();
   world.clearWalkTarget();
@@ -1098,11 +1096,11 @@ const pcall = new PrivateCall(() => dms, () => session.current?.pubkey ?? null, 
 const dmPanel = new DmPanel($('app'), {
   me: () => session.current?.pubkey ?? null,
   thread: (peer) => dms?.thread(peer) ?? [],
-  send: async (peer, text) => (dms ? dms.send(peer, text) : 'Log in to send private messages.'),
+  send: async (peer, text) => (dms ? dms.send(peer, text) : vw.dmLogin),
   profile: (pk) => { const p = world.profiles.get(pk); return { name: p?.name ?? world.nameOf(pk), avatar: p?.avatar ?? null, nip05: p?.nip05 ?? null }; },
   colorOf: (pk) => pubkeyColor(pk),
   call: (peer) => void pcall.start(peer),
-  presence: (pk) => { const p = presenceOf(pk); return p === 'online' ? 'online' : p === 'afk' ? 'away (AFK)' : 'offline'; },
+  presence: (pk) => vw.dmPresence[presenceOf(pk)],
 });
 dmPanel.onClose = () => { if (!chat.groupId) document.body.classList.remove('chat-open'); else chat.el.hidden = false; };
 
@@ -1138,24 +1136,20 @@ function renderPCall(): void {
   bar.dataset.status = st.status;
   if (bar.hidden) return;
   const name = st.peer ? world.nameOf(st.peer) : '';
-  $('pcall-title').textContent = st.status === 'incoming' ? `📞 ${name} is calling` : `📞 ${name}`;
+  $('pcall-title').textContent = st.status === 'incoming' ? vw.calling(name) : `📞 ${name}`;
   const secs = st.connectedAt ? Math.floor((Date.now() - st.connectedAt) / 1000) : 0;
-  const END: Record<string, string> = {
-    'local-hangup': 'Call ended', 'remote-hangup': 'They hung up', declined: 'Declined', busy: 'Busy on another call',
-    'no-answer': 'No answer', missed: 'Missed call', cancelled: 'Cancelled', 'answered-elsewhere': 'Answered on another device',
-    'connect-failed': "Couldn't connect", 'connection-lost': 'Connection lost', error: st.error ?? 'Call failed',
-  };
-  $('pcall-sub').textContent = st.status === 'outgoing' ? 'Ringing…'
-    : st.status === 'incoming' ? 'Private voice call'
-    : st.status === 'connecting' ? 'Connecting…'
-    : st.status === 'reconnecting' ? 'Reconnecting…'
-    : st.status === 'active' ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${st.micOn ? '' : ' · muted'}`
-    : END[st.endReason ?? 'error'] ?? 'Call ended';
+  const END: Record<string, string> = { ...vw.callEnd, error: st.error ?? vw.callEnd.error };
+  $('pcall-sub').textContent = st.status === 'outgoing' ? vw.ringing
+    : st.status === 'incoming' ? vw.privateCall
+    : st.status === 'connecting' ? vw.connecting
+    : st.status === 'reconnecting' ? vw.reconnecting
+    : st.status === 'active' ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${st.micOn ? '' : vw.muted}`
+    : END[st.endReason ?? 'error'] ?? vw.callEnded;
   $('pcall-accept').hidden = st.status !== 'incoming';
   $('pcall-mic').hidden = !(st.status === 'active' || st.status === 'reconnecting' || st.status === 'connecting');
-  $('pcall-mic').textContent = st.micOn ? 'Mute' : 'Unmute';
+  $('pcall-mic').textContent = st.micOn ? vw.mute : vw.unmute;
   $('pcall-end').hidden = st.status === 'ended';
-  $('pcall-end').textContent = st.status === 'incoming' ? 'Decline' : st.status === 'outgoing' ? 'Cancel' : 'Hang up';
+  $('pcall-end').textContent = st.status === 'incoming' ? vw.decline : st.status === 'outgoing' ? vw.cancel : vw.hangUp;
 }
 pcall.onChange(renderPCall);
 $('pcall-accept').addEventListener('click', () => void pcall.accept());
@@ -1230,7 +1224,7 @@ const chat = new ChatPanel($('app'), {
   newGame: (g) => { if (session.current) newGameDialog(g); },
   zap: (g, command, replyTo) => {
     const me = session.current?.pubkey ?? null;
-    if (!me) return 'Log in to zap.';
+    if (!me) return vw.loginToZap;
     const parsed = parseZapCommand(command, {
       messages: msgsOf(g), me, replyingTo: replyTo,
       people: chatPeople(g).map((p) => ({ pubkey: p.pubkey, names: [p.name] })),
@@ -1262,7 +1256,7 @@ function chatPeople(g: string): { pubkey: string; name: string; picture: string 
 /** Open the zap sheet for `recipient` in channel `groupId` (their message `messageId`, if one). */
 function openZap(groupId: string, recipient: string, messageId: string | null, sats: number | null): void {
   const s = session.current;
-  if (!s) { toast('Log in to zap.'); return; }
+  if (!s) { toast(vw.loginToZap); return; }
   void loadWallet(s.pubkey);
   openZapSheet($('app'), recipient, sats, {
     name: (pk) => world.nameOf(pk),
@@ -1334,7 +1328,7 @@ function renderBell(): void {
   if (!pings.length) {
     const empty = document.createElement('div');
     empty.className = 'bell-empty';
-    empty.textContent = 'Nothing new for you.';
+    empty.textContent = vw.bellEmpty;
     list.append(empty);
   }
   for (const { m, reason } of pings.slice(0, 30)) {
@@ -1500,7 +1494,7 @@ function yieldSpot(to: string): void {
   if (!pk || !controller) return;
   if (world.isSeated(pk)) standPlayer();
   if (world.isTraining(pk)) { world.stopTraining(pk); controller.pos = { ...world.people.get(pk)!.pos }; }
-  toast(`${world.nameOf(to)} got there first.`);
+  toast(vw.gotThere(world.nameOf(to)));
 }
 
 function tickActivity(): void {
@@ -1607,7 +1601,7 @@ function scheduleTables(): void {
 
 async function gameOp(template: Parameters<typeof publishToGroup>[2]): Promise<void> {
   const out = await publishToGroup(hub, (t) => session.sign(t), template);
-  if (!out.ok) { toast(`Game: ${out.reason}`); return; }
+  if (!out.ok) { toast(vw.gameFailed(out.reason)); return; }
   book.ingest(out.event);
 }
 
@@ -1662,21 +1656,17 @@ function cardBanner(src: string, alt: string): HTMLImageElement {
 const LANDMARK_CARDS: Record<Exclude<LandmarkId, 'nostrwot' | 'liberture'>, { title: string; sub: string; about: string; link?: [string, string]; banner?: string }> = {
   lacrypta: {
     banner: 'https://r2a.primal.net/uploads2/5/9e/25/59e25f02b7cf6e54394b3f1a39d6182c345cb3eb3b63c44a80e41988c536a09c.png',
-    title: 'La Crypta', sub: 'Bitcoin and Nostr hub · Buenos Aires',
-    about: 'The house where Obelisk is built. The glowing ₿ ball on the lawn means you found it: walk up the steps, the living room is open.',
-    link: ['Visit lacrypta.ar', 'https://lacrypta.ar'],
+    ...vw.landmarks.lacrypta,
+    link: [vw.landmarks.lacrypta.linkLabel!, 'https://lacrypta.ar'],
   },
   coffee: {
-    title: 'Café', sub: 'Coffee on the corner of the plaza',
-    about: 'Grab a table outside: press E by a chair to sit with a cortado. Medialunas on the house.',
+    ...vw.landmarks.coffee,
   },
   parrilla: {
-    title: 'Parrilla', sub: 'Asado under the quincho',
-    about: 'Chorizos, morcilla and a tira de asado on the grill. Neighbours gather here in the evening: press E on the bench to join them.',
+    ...vw.landmarks.parrilla,
   },
   theater: {
-    title: 'Cine', sub: 'Screenings and talks in a call',
-    about: 'Walk in, pick a channel and start a screening: share a tab or your screen and it plays on the big screen for everyone in the hall. Viewers raise a hand to talk or to share; the host decides. Press E by a seat to sit with popcorn.',
+    ...vw.landmarks.theater,
   },
 };
 
@@ -1692,16 +1682,16 @@ interface BrandCard {
 }
 
 const LIBERTURE_CARD: BrandCard = {
-  name: 'Liberture', sub: 'Biological Operating System', color: '#e0b43a',
+  name: 'Liberture', sub: vw.liberture.sub, color: '#e0b43a',
   banner: 'https://liberture.com/og-image.jpg', logo: '/brand/liberture.svg',
-  about: 'A unified platform combining data-driven insights, coaching and tools to help you unlock peak performance. Its house in the village is the one of the six pillars (work, sleep, nutrition, mind, exercise and finance) glowing over the roof: step inside, there is a desk to work at, a daybed and two cushions to meditate on.',
+  about: vw.liberture.about,
   links: [['liberture.com', 'https://liberture.com']],
 };
 
 const OPENGYM_CARD: BrandCard = {
-  name: 'openGym', sub: 'Self-hosted gym & body-weight tracker', color: '#a3e635',
+  name: 'openGym', sub: vw.opengym.sub, color: '#a3e635',
   banner: 'https://opengym.ch/img/social.jpg', logo: '/brand/opengym.svg',
-  about: 'Plan your week, log every set and see which muscles you trained. Free, open source, no ads, no subscription: an Android app, or self-host it with Docker. The village gym wears its colours: walk in and press E at the bench, the squat rack or the curls.',
+  about: vw.opengym.about,
   links: [['opengym.ch', 'https://opengym.ch'], ['GitHub ↗', 'https://github.com/DuarteSantos8/openGym']],
 };
 
@@ -1712,7 +1702,7 @@ function showBrand(b: BrandCard): void {
     logo.src = b.logo;
     logo.alt = '';
     logo.style.borderColor = b.color;
-    body.append(logo, el('h2', '', b.name), el('div', 'official-badge', 'Official site'), el('div', 'sub', b.sub), el('div', 'about', b.about));
+    body.append(logo, el('h2', '', b.name), el('div', 'official-badge', vw.officialSite), el('div', 'sub', b.sub), el('div', 'about', b.about));
     const actions = el('div', 'actions');
     b.links.forEach(([label, href], i) => {
       const a = el('a', i === 0 ? 'pill primary' : 'pill', label) as HTMLAnchorElement;
@@ -1733,7 +1723,7 @@ function showBrand(b: BrandCard): void {
 /** The gym: openGym's card, with its channel's chat a click away. */
 function showGym(id: string): void {
   const g = groups.find((x) => x.id === id);
-  showBrand({ ...OPENGYM_CARD, extra: g ? [[`💬 #${g.name} chat`, () => { $('card').hidden = true; chat.open(g, 'user'); }]] : [] });
+  showBrand({ ...OPENGYM_CARD, extra: g ? [[vw.channelChat(g.name), () => { $('card').hidden = true; chat.open(g, 'user'); }]] : [] });
 }
 
 world.hooks.onLandmarkClick = (id) => {
@@ -1813,43 +1803,43 @@ function showOfficial(): void {
       body.append(a);
     }
     body.append(el('h2', '', prof?.name ?? 'nostr-wot'));
-    const badge = el('div', 'official-badge', 'Official nostr-wot account');
+    const badge = el('div', 'official-badge', vw.officialAccount);
     body.append(badge);
     if (prof?.nip05) body.append(el('div', 'sub', prof.nip05));
-    const about = el('div', 'about', 'Web of Trust for Nostr: the SDK, the browser extension and the relays Obelisk is built on. Their headquarters is the glass building on the plaza.');
+    const about = el('div', 'about', vw.wotAbout);
     body.append(about);
     const notesBox = el('div', 'official-notes');
-    notesBox.append(el('div', 'game-note', 'Loading their latest notes…'));
+    notesBox.append(el('div', 'game-note', vw.loadingNotes));
     body.append(notesBox);
     const actions = el('div', 'actions');
     const site = el('a', 'pill primary', 'nostr-wot.com') as HTMLAnchorElement;
     site.href = NOSTR_WOT_SITE;
     site.target = '_blank';
     site.rel = 'noopener';
-    const profile = el('a', 'pill', 'Interact on Obelisk ↗') as HTMLAnchorElement;
+    const profile = el('a', 'pill', vw.interact) as HTMLAnchorElement;
     profile.href = obeliskProfileUrl(pk);
-    profile.title = 'Follow, like, repost and reply on Obelisk';
+    profile.title = vw.interactTitle;
     profile.target = '_blank';
     profile.rel = 'noopener';
-    const follow = el('button', 'pill', 'Follow with camera');
+    const follow = el('button', 'pill', vw.followCamera);
     follow.addEventListener('click', () => world.cam.focus(world.personAnchor(pk), 6));
     actions.append(site, profile, follow);
     body.append(actions);
     void loadOfficial().then((o) => {
       if (o.about) about.textContent = o.about;
       notesBox.replaceChildren();
-      if (!o.notes.length) { notesBox.append(el('div', 'game-note', 'No recent notes reached us.')); return; }
-      notesBox.append(el('div', 'themes-section', 'Latest notes'));
+      if (!o.notes.length) { notesBox.append(el('div', 'game-note', vw.noNotes)); return; }
+      notesBox.append(el('div', 'themes-section', vw.latestNotes));
       for (const n of o.notes) {
         const row = el('div', 'official-note');
         const text = el('div', 'chat-text');
         renderContent(text, n.content, { nameOf: (p) => world.nameOf(p), images: [], emojis: {} });
-        const open = el('a', 'note-open', 'Open on Obelisk ↗') as HTMLAnchorElement;
+        const open = el('a', 'note-open', vw.openNote) as HTMLAnchorElement;
         open.href = obeliskNoteUrl(n.id, pk, DEFAULT_SOCIAL_RELAYS);
         open.target = '_blank';
         open.rel = 'noopener';
-        open.title = 'Like, repost or reply on Obelisk';
-        row.append(el('div', 'chat-when', new Date(n.at * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })), text, open);
+        open.title = vw.openNoteTitle;
+        row.append(el('div', 'chat-when', new Date(n.at * 1000).toLocaleDateString(lang, { day: 'numeric', month: 'short' })), text, open);
         notesBox.append(row);
       }
     });
@@ -1883,17 +1873,17 @@ function newGameDialog(groupId: string): void {
   title.innerHTML = '';
   const t = document.createElement('div');
   t.className = 'themes-title';
-  t.textContent = 'Start a game';
+  t.textContent = vw.newGame;
   const sub = document.createElement('div');
   sub.className = 'themes-sub';
-  sub.textContent = 'Opens a table in this channel. People join from the village or from Obelisk.';
+  sub.textContent = vw.newGameSub;
   title.append(t, sub);
   const body = document.createElement('div');
   body.className = 'themes-body';
   const choices: { label: string; game: string; opts: Record<string, unknown> }[] = [
-    ...(['small', 'medium', 'large'] as CRSizeKey[]).map((size) => ({ label: `Chain Reaction · ${size}`, game: 'chain-reaction', opts: { size } })),
-    { label: 'Vesta (plays in Obelisk)', game: 'vesta', opts: { seed: String(Math.floor(Date.now() / 1000) % 100000) } },
-    { label: 'Stacker (plays in Obelisk)', game: 'stacker', opts: { seed: String(Math.floor(Date.now() / 1000) % 100000) } },
+    ...(['small', 'medium', 'large'] as CRSizeKey[]).map((size) => ({ label: `Chain Reaction · ${vw.crSize[size] ?? size}`, game: 'chain-reaction', opts: { size } })),
+    { label: vw.inObelisk('Vesta'), game: 'vesta', opts: { seed: String(Math.floor(Date.now() / 1000) % 100000) } },
+    { label: vw.inObelisk('Stacker'), game: 'stacker', opts: { seed: String(Math.floor(Date.now() / 1000) % 100000) } },
   ];
   for (const ch of choices) {
     const b = document.createElement('button');
@@ -1903,7 +1893,7 @@ function newGameDialog(groupId: string): void {
     b.addEventListener('click', async () => {
       el.remove();
       const out = await publishToGroup(hub, (tpl) => session.sign(tpl), createTable(groupId, ch.game, ch.opts, ch.game === 'chain-reaction' ? 45 : 0));
-      if (!out.ok) { toast(`Game: ${out.reason}`); return; }
+      if (!out.ok) { toast(vw.gameFailed(out.reason)); return; }
       book.ingest(out.event);
       await publish(messageTemplate(groupId, gameMarker(out.event.id), null));
       gamePanel.open(out.event.id);
@@ -1915,7 +1905,7 @@ function newGameDialog(groupId: string): void {
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'account-btn';
-  cancel.textContent = 'Cancel';
+  cancel.textContent = vw.cancel;
   cancel.addEventListener('click', () => el.remove());
   foot.append(document.createElement('span'), cancel);
   el.append(title, body, foot);
@@ -1942,16 +1932,16 @@ function renderCall(): void {
   bar.hidden = !session.current || (!inCall && !voiceHere);
   if (bar.hidden) return;
   const callGroup = inCall ? groups.find((g) => g.id === s.channelId) : voiceHere;
-  ($('call-title') as HTMLElement).textContent = callGroup?.name ?? 'Voice';
+  ($('call-title') as HTMLElement).textContent = callGroup?.name ?? vw.voice;
   const names = s.participants.map((pk) => world.nameOf(pk));
   const left = awayCountdown(inCall, place, s.channelId, awayFor, stayInCall);
   ($('call-who') as HTMLElement).textContent = inCall
-    ? s.reconnecting ? `Reconnecting… (${s.reconnecting}/${RECONNECT_DELAYS.length})`
-      : s.joining ? 'Joining…'
-      : left !== null ? `Walked away: leaving in ${left} s`
+    ? s.reconnecting ? vw.callReconnecting(s.reconnecting, RECONNECT_DELAYS.length)
+      : s.joining ? vw.joining
+      : left !== null ? vw.walkedAway(left)
       : s.micBlocked && s.error ? s.error
-      : names.length ? names.join(', ') : 'Just you so far'
-    : s.error ? `Couldn't join: ${s.error}` : 'Walk in and talk';
+      : names.length ? names.join(', ') : vw.justYou
+    : s.error ? vw.couldntJoin(s.error) : vw.walkInTalk;
   // voice-sfu channels join through obelisk's SFU (voice/callRoom.ts); the app link stays for when it's down.
   const sfu = !inCall && voiceHere?.kind === 'voice-sfu' && !!s.error;
   // In the theater you're connected by picking the channel (or walking in on a screening): no Join here.
@@ -1967,8 +1957,8 @@ function renderCall(): void {
     b.title = title;
     (b.querySelector('.call-toggle-label') as HTMLElement).textContent = label;
   };
-  toggle('call-mic', s.micOn, s.micBlocked ? 'Allow mic' : s.micOn ? 'Mic on' : 'Mic off', s.micBlocked ? 'Allow the microphone in the browser' : s.micOn ? 'Mute your microphone' : 'Turn your microphone on');
-  toggle('call-cam', s.camOn, s.camOn ? 'Camera on' : 'Camera off', s.camOn ? 'Turn your camera off' : 'Turn your camera on');
+  toggle('call-mic', s.micOn, s.micBlocked ? vw.allowMic : s.micOn ? vw.micOn : vw.micOff, s.micBlocked ? vw.allowMicTitle : s.micOn ? vw.muteTitle : vw.unmuteTitle);
+  toggle('call-cam', s.camOn, s.camOn ? vw.camOn : vw.camOff, s.camOn ? vw.camOffTitle : vw.camOnTitle);
   $('call-leave').hidden = !inCall;
   const app = $('call-app') as HTMLAnchorElement;
   app.hidden = !sfu;
@@ -2001,7 +1991,7 @@ $('call-mic').addEventListener('click', () => {
   // In a screening only the host and those it allows may talk.
   const sc = theater.current();
   const me = session.current?.pubkey;
-  if (on && me && sc && sc.channel === call.state.channelId && !canSpeak(sc, me)) { toast('Raise your hand in the theater panel: the host decides who talks.'); return; }
+  if (on && me && sc && sc.channel === call.state.channelId && !canSpeak(sc, me)) { toast(vw.raiseToTalk); return; }
   void call.setMic(on);
 });
 $('call-cam').addEventListener('click', () => {
@@ -2009,7 +1999,7 @@ $('call-cam').addEventListener('click', () => {
   // In a screening the host decides who is on the screen (cameras too).
   const sc = theater.current();
   const me = session.current?.pubkey;
-  if (on && me && sc && sc.channel === call.state.channelId && !canShare(sc, me)) { toast('Raise your hand in the theater panel: the host decides who is on the screen.'); return; }
+  if (on && me && sc && sc.channel === call.state.channelId && !canShare(sc, me)) { toast(vw.raiseToShare); return; }
   void call.setCamera(on);
 });
 $('call-leave').addEventListener('click', () => void call.leave());
@@ -2022,7 +2012,7 @@ function tickCallAway(dt: number): void {
   awayFor += dt;
   const left = awayCountdown(true, place, s.channelId, awayFor, stayInCall);
   if (left !== awayShown) { awayShown = left; renderCall(); }
-  if (left === 0) { void call.leave(); toast('You walked away from the call, so you left it.'); }
+  if (left === 0) { void call.leave(); toast(vw.leftCall); }
 }
 window.addEventListener('beforeunload', () => { void call.leave(); });
 
@@ -2089,7 +2079,7 @@ function publishScreening(spec: ScreeningSpec | null, next?: string): void {
     if (!pk) return;
     const out = await publishToGroup(hub, (t) => session.sign(t), screeningTemplate(activeRelay(), spec, { prevCreatedAt: theater.createdAt(pk), next }));
     if (out.ok) theater.ingest(out.event);
-    else if (spec) toast('The relay refused the screening. Try again in a moment.');
+    else if (spec) toast(vw.screeningRefused);
   }).catch(() => {});
 }
 
@@ -2101,14 +2091,14 @@ function onTheaterChange(): void {
   const handed = prevHost ? theater.latest(prevHost) : null;
   if (me && !hosting && lastScreening && handed?.ended && handed.next === me && nowSec() - handed.at < 60 && !cur) {
     hosting = { channel: lastScreening.channel, since: lastScreening.since, title: lastScreening.title, mic: lastScreening.mic.filter((p) => p !== me), screen: lastScreening.screen.filter((p) => p !== me) };
-    toast(`${world.nameOf(lastScreening.host)} handed you the theater: you're hosting.`);
+    toast(vw.handedYou(world.nameOf(lastScreening.host)));
     const g = groups.find((x) => x.id === hosting!.channel);
     if (g && call.state.channelId !== g.id) joinCall(g);
   }
   // Someone else holds the hall (an admin took over, or an earlier one): stop hosting.
   if (me && hosting && cur && cur.host !== me && theater.latest(me) && !theater.latest(me)!.ended && cur.since < hosting.since) {
     hosting = null;
-    toast(`${world.nameOf(cur.host)} is hosting the theater now.`);
+    toast(vw.hostingNow(world.nameOf(cur.host)));
   }
   if (cur) lastScreening = cur;
   // The host answered your hand: put it down.
@@ -2121,7 +2111,7 @@ function syncTheater(): void {
   const me = session.current?.pubkey ?? null;
   if (hosting) {
     if (call.state.channelId === hosting.channel) hostInCall = true;
-    else if (hostInCall) { hosting = null; hostInCall = false; toast('You left the call, so the screening ended.'); }
+    else if (hostInCall) { hosting = null; hostInCall = false; toast(vw.screeningEnded); }
   } else hostInCall = false;
   const sc = theater.current();
   const channel = theaterChannel();
@@ -2130,18 +2120,18 @@ function syncTheater(): void {
   // Your own mic and screen follow your grants.
   if (me && sc && call.state.channelId === sc.channel) {
     if (call.state.micOn && !canSpeak(sc, me)) void call.setMic(false);
-    if (call.state.sharing && !canShare(sc, me)) { void call.setScreenShare(false); toast('The host took the screen back.'); }
+    if (call.state.sharing && !canShare(sc, me)) { void call.setScreenShare(false); toast(vw.screenTakenBack); }
     if (call.state.camOn && !canShare(sc, me)) void call.setCamera(false);
   }
   const g = channel ? groups.find((x) => x.id === channel) : null;
   const stream = inThisCall ? call.state.screen?.stream ?? null : null;
   const live = channel ? liveCalls.get(channel) : null;
-  const card: [string, string] = !g ? ['Cine', 'Pick a channel and start a screening']
-    : !sc && live && !inThisCall ? [g.name, `🔴 Live now${live.screens.length ? `: ${world.nameOf(live.screens[0])} is sharing` : ''}. Join to watch`]
-    : !sc ? [g.name, 'Start a screening to share your screen here']
-      : !inThisCall ? [g.name, `${world.nameOf(sc.host)} is hosting: join the call to watch`]
-        : [g.name, `Waiting for ${world.nameOf(sc.host)} to share`];
-  world.setTheater({ channel: sc ? channel : null, marquee: sc?.title || (sc && g ? g.name : 'NOW SHOWING'), stream, card });
+  const card: [string, string] = !g ? [vw.cine, vw.pickAndStart]
+    : !sc && live && !inThisCall ? [g.name, vw.liveCard(live.screens.length ? world.nameOf(live.screens[0]) : null)]
+    : !sc ? [g.name, vw.startToShare]
+      : !inThisCall ? [g.name, vw.hostingJoin(world.nameOf(sc.host))]
+        : [g.name, vw.waitingShare(world.nameOf(sc.host))];
+  world.setTheater({ channel: sc ? channel : null, marquee: sc?.title || (sc && g ? g.name : vw.nowShowing), stream, card });
   watchView?.show(stream, card);
   if (!stream && closeFull) { closeFull(); closeFull = null; }
   renderTheater();
@@ -2233,11 +2223,11 @@ const theaterPanel = new TheaterPanel($('theater'), {
     const me = session.current?.pubkey;
     if (!sc || !me) return;
     const now = nowSec();
-    if (want !== 'down' && now - handSentAt < HAND_EVERY_S) { toast('Your hand is up: give the host a moment.'); return; }
+    if (want !== 'down' && now - handSentAt < HAND_EVERY_S) { toast(vw.handUp); return; }
     handSentAt = now;
     myHand = want === 'down' ? null : want;
     renderTheater();
-    void publishToGroup(hub, (t) => session.sign(t), handTemplate(sc.host, sc.channel, want)).then((out) => { if (!out.ok) toast('Could not raise your hand. Try again.'); });
+    void publishToGroup(hub, (t) => session.sign(t), handTemplate(sc.host, sc.channel, want)).then((out) => { if (!out.ok) toast(vw.handFailed); });
   },
   grant(pk, kind, on) {
     if (!hosting) return;
@@ -2255,7 +2245,7 @@ const theaterPanel = new TheaterPanel($('theater'), {
     lastScreening = { ...spec, host: session.current?.pubkey ?? '', id: '', at: nowSec(), exp: 0, ended: false };
     publishScreening(null, pk);
     screeningBeacon.update(null, Date.now());
-    toast(`You handed the theater to ${world.nameOf(pk)}.`);
+    toast(vw.handedTo(world.nameOf(pk)));
     syncTheater();
   },
   takeOver() {
@@ -2447,7 +2437,7 @@ function refreshSigns(): void {
 function setStatus(mode: string, text: string): void {
   const s = $('status');
   s.dataset.mode = mode;
-  s.title = `${text}: tap to switch between Live and History`;
+  s.title = vw.statusTitle(text);
   // "HISTORY · pick a moment": the word, then the detail (dropped on a phone).
   const [word, ...more] = text.split(' · ');
   const t = s.querySelector('.status-text') as HTMLElement;
@@ -2461,12 +2451,12 @@ function setStatus(mode: string, text: string): void {
 }
 
 function renderStatus(s: PlayerStatus): void {
-  const missed = s.missed ? ` · ${s.missed} new` : '';
-  if (s.mode === 'live') { setStatus(s.history ? 'replay' : 'live', s.history ? `HISTORY · pick a moment${missed}` : 'LIVE'); return; }
+  const missed = s.missed ? vw.newCount(s.missed) : '';
+  if (s.mode === 'live') { setStatus(s.history ? 'replay' : 'live', s.history ? `${vw.historyPick}${missed}` : vw.live); return; }
   const d = new Date(s.at * 1000);
-  const when = d.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  const when = d.toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   const g = s.episode ? groups.find((x) => x.id === s.episode!.groupId) : null;
-  setStatus('replay', `REPLAY · ${when}${g ? ` · ${g.name}` : ''}${missed}`);
+  setStatus('replay', `${vw.replay} · ${when}${g ? ` · ${g.name}` : ''}${missed}`);
 }
 
 /** Live: the village now. History: the panel below opens to pick a stretch of the past. */
@@ -2535,7 +2525,7 @@ function drawTimeline(): void {
   g.fillStyle = 'rgba(255,255,255,0.12)';
   const tick = span <= 86400 ? 3600 * 3 : 86400;
   for (let t = Math.ceil(from / tick) * tick; t < now; t += tick) g.fillRect(timeToX(t, from, now) * w, 0, devicePixelRatio, h);
-  $('tl-start').textContent = SPANS.find((s) => s.id === historySpan)!.label + ' ago';
+  $('tl-start').textContent = vw.ago(SPANS.find((s) => s.id === historySpan)!.label);
   renderHistoryChips(peaks);
 }
 window.addEventListener('resize', drawTimeline);
@@ -2551,12 +2541,12 @@ function renderHistoryChips(peaks: ReturnType<typeof topPeaks>): void {
   list.replaceChildren(...peaks.map((p) => {
     const g = groups.find((x) => x.id === p.groupId);
     const b = el('button', 'tl-chip peak');
-    b.append(el('b', undefined, `${p.count}`), ` · ${peakLabel(p.start)}${g ? ` · ${g.name}` : ''}`);
-    b.title = `Replay the ${p.count} messages from then`;
+    b.append(el('b', undefined, `${p.count}`), ` · ${peakLabel(p.start, lang)}${g ? ` · ${g.name}` : ''}`);
+    b.title = vw.replayN(p.count);
     b.addEventListener('click', () => player.playFrom(p.start - 1, p.end, nowSec(), p));
     return b;
   }));
-  if (!peaks.length) list.append(el('span', 'tl-chip', 'Nothing busy in this span yet'));
+  if (!peaks.length) list.append(el('span', 'tl-chip', vw.nothingBusy));
 }
 
 // Drag across the panel to replay that stretch; a click plays the hour after it.
@@ -2580,7 +2570,7 @@ function renderHistoryChips(peaks: ReturnType<typeof topPeaks>): void {
     setTimeout(() => { sel.hidden = true; }, 1200);
     // Start a little before the first message so the scene has context.
     const first = player.events.find((ev) => ev.k === 'msg' && ev.at >= start && ev.at <= end);
-    if (!first) { toast('Nobody wrote anything then. Try a shaded stretch.'); return; }
+    if (!first) { toast(vw.nobodyWrote); return; }
     player.playFrom(first.at - 2, end, now);
   });
 }
@@ -2613,11 +2603,11 @@ function messageList(msgs: WireMessage[], showWho: boolean): HTMLElement {
   for (const m of msgs.slice(-5).reverse()) {
     const row = el('div', 'm');
     const g = groups.find((x) => x.id === m.groupId);
-    const when = new Date(m.createdAt * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    const when = new Date(m.createdAt * 1000).toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
     row.append(el('div', 'meta', `${showWho ? `${world.nameOf(m.pubkey)} · ` : ''}${g?.name ?? ''} · ${when}`), el('div', '', m.text));
     list.append(row);
   }
-  if (!msgs.length) list.append(el('div', 'meta', 'Nothing in the last 30 days.'));
+  if (!msgs.length) list.append(el('div', 'meta', vw.nothing30));
   return list;
 }
 
@@ -2639,36 +2629,36 @@ function showPerson(pk: string): void {
       a.style.background = color;
       body.append(a);
     }
-    body.append(el('h2', '', prof?.name ?? 'someone'));
+    body.append(el('h2', '', prof?.name ?? vw.someone));
     // Their NIP-05 (e.g. name@domain), whether they're here, and how much they wrote.
     if (prof?.nip05) body.append(el('div', 'sub nip', `✓ ${prof.nip05.replace(/^_@/, '')}`));
     const pres = presenceOf(pk);
-    body.append(el('div', 'sub', `${pres === 'online' ? '🟢 Online' : pres === 'afk' ? '💤 Away (AFK)' : '⚪ Offline'} · ${msgs.length} message${msgs.length === 1 ? '' : 's'} in 30 days`));
+    body.append(el('div', 'sub', `${vw.personPresence[pres]} · ${vw.messages30(msgs.length)}`));
     body.append(messageList(msgs, false));
     const actions = el('div', 'actions');
     if (session.current && pk !== session.current.pubkey) {
-      const msg = el('button', 'pill primary', '💬 Message');
+      const msg = el('button', 'pill primary', vw.message);
       msg.addEventListener('click', () => { $('card').hidden = true; openDm(pk); });
-      const ring = el('button', 'pill', '📞 Call');
+      const ring = el('button', 'pill', vw.call);
       ring.addEventListener('click', () => { $('card').hidden = true; void pcall.start(pk); });
       // Zap them for their latest message here (its channel carries the ⚡).
-      const zapBtn = el('button', 'pill', '⚡ Zap');
+      const zapBtn = el('button', 'pill', vw.zap);
       zapBtn.addEventListener('click', () => {
         const last = msgs.at(-1);
         const g = last?.groupId ?? place ?? groups[0]?.id;
-        if (!g) { toast('No channel to zap them in yet.'); return; }
+        if (!g) { toast(vw.noZapChannel); return; }
         $('card').hidden = true;
         openZap(g, pk, last?.id ?? null, null);
       });
       actions.append(msg, ring, zapBtn);
     }
-    const follow = el('button', 'pill', 'Follow with camera');
+    const follow = el('button', 'pill', vw.followCamera);
     follow.addEventListener('click', () => world.cam.focus(world.personAnchor(pk), 6));
-    const profile = el('a', 'pill', 'Profile on Obelisk ↗') as HTMLAnchorElement;
+    const profile = el('a', 'pill', vw.profileOnObelisk) as HTMLAnchorElement;
     profile.href = obeliskProfileUrl(pk);
     profile.target = '_blank';
     profile.rel = 'noopener';
-    profile.title = 'Follow them, see their notes, like and reply on Obelisk';
+    profile.title = vw.profileTitle;
     actions.append(follow, profile);
     body.append(actions);
   });
@@ -2681,12 +2671,12 @@ function showGroup(id: string): void {
   const msgs = player.events.filter((e): e is Extract<Ev, { k: 'msg' }> => e.k === 'msg' && e.m.groupId === id).map((e) => e.m);
   openCard((body) => {
     body.append(el('h2', '', g.name));
-    const kind = g.kind === 'forum' ? 'Publication' : g.kind.startsWith('voice') ? 'Voice channel' : 'Text channel';
-    body.append(el('div', 'sub', `${kind} · ${msgs.length} message${msgs.length === 1 ? '' : 's'} in 30 days`));
+    const kind = kindLabel(g.kind);
+    body.append(el('div', 'sub', `${kind} · ${vw.messages30(msgs.length)}`));
     if (g.about) body.append(el('div', 'about', g.about));
     body.append(messageList(msgs, true));
     const actions = el('div', 'actions');
-    const open = el('a', 'pill primary', 'Open in Obelisk') as HTMLAnchorElement;
+    const open = el('a', 'pill primary', vw.openInObelisk) as HTMLAnchorElement;
     open.href = `${OBELISK_APP}?relay=${encodeURIComponent(relayHost)}&c=${encodeURIComponent(id)}`;
     open.target = '_blank';
     open.rel = 'noopener';
@@ -2743,7 +2733,7 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
       case 'tilt': {
         const on = !prefs.get().tiltShift;
         prefs.set({ tiltShift: on });
-        toast(on ? 'Toy-town view on: the edges blur so the island looks like a tiny model' : 'Toy-town view off: the whole picture is sharp');
+        toast(on ? vw.tiltOn : vw.tiltOff);
         break;
       }
       case 'sound':

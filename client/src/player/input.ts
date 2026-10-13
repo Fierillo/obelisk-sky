@@ -2,6 +2,7 @@
 // typing in the chat composer or any other field.
 
 import type { MoveInput } from './controller';
+import { vw } from '../i18n/village';
 
 export class InputState {
   private keys = new Set<string>();
@@ -117,7 +118,7 @@ export function mountJoystick(parent: HTMLElement, input: InputState): void {
   const jump = document.createElement('button');
   jump.type = 'button';
   jump.className = 'jump-btn';
-  jump.setAttribute('aria-label', 'Jump');
+  jump.setAttribute('aria-label', vw.jump);
   jump.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6 11l6-6 6 6"/></svg>';
   jump.addEventListener('pointerdown', (e) => { e.preventDefault(); jump.setPointerCapture(e.pointerId); input.pressJump(); });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) jump.addEventListener(ev, () => input.releaseJump());

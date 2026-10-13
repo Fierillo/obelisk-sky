@@ -6,6 +6,7 @@
 import { fetchRelayInfo, faviconFor } from '@/services/relay/relay-info';
 import { normalizeRelay } from '../nostr/hub';
 import type { WireGroup } from '../nostr/wire';
+import { vw } from '../i18n/village';
 
 export interface RelayModalDeps {
   active: () => string;
@@ -27,7 +28,7 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
   const el = document.createElement('div');
   el.className = 'themes relays';
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Relays and channels');
+  el.setAttribute('aria-label', vw.relaysAria);
   const close = () => { el.remove(); document.removeEventListener('keydown', onKey); };
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
@@ -36,14 +37,14 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
   head.className = 'themes-head relays-head';
   const title = document.createElement('div');
   title.className = 'themes-title';
-  title.textContent = 'Relays';
+  title.textContent = vw.relays;
   const sub = document.createElement('div');
   sub.className = 'themes-sub';
-  sub.textContent = 'Each relay is its own village. You log in to the one you visit, and only that one.';
+  sub.textContent = vw.relaysSub;
   const x = document.createElement('button');
   x.type = 'button';
   x.className = 'game-close relays-x';
-  x.setAttribute('aria-label', 'Close');
+  x.setAttribute('aria-label', vw.close);
   x.textContent = '×';
   x.addEventListener('click', close);
   head.append(title, sub, x);
@@ -72,15 +73,15 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
       name.textContent = host(url);
       const desc = document.createElement('span');
       desc.className = 'relay-desc';
-      desc.textContent = url === deps.active() ? 'You are here' : '';
+      desc.textContent = url === deps.active() ? vw.youAreHere : '';
       text.append(name, desc);
       row.append(icon, text);
       if (deps.custom().includes(url)) {
         const rm = document.createElement('span');
         rm.className = 'relay-rm';
         rm.setAttribute('role', 'button');
-        rm.setAttribute('aria-label', `Remove ${host(url)}`);
-        rm.title = 'Remove';
+        rm.setAttribute('aria-label', vw.removeRelay(host(url)));
+        rm.title = vw.remove;
         rm.textContent = '×';
         rm.addEventListener('click', (e) => { e.stopPropagation(); deps.removeRelay(url); renderRail(); });
         row.append(rm);
@@ -107,19 +108,19 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
     add.className = 'relay-add';
     const input = document.createElement('input');
     input.className = 'themes-select';
-    input.placeholder = 'Add a relay: wss://…';
-    input.setAttribute('aria-label', 'Relay address');
+    input.placeholder = vw.addRelayPlaceholder;
+    input.setAttribute('aria-label', vw.relayAddress);
     const btn = document.createElement('button');
     btn.type = 'submit';
     btn.className = 'account-btn';
-    btn.textContent = 'Add';
+    btn.textContent = vw.add;
     const err = document.createElement('div');
     err.className = 'relay-err';
     add.append(input, btn, err);
     add.addEventListener('submit', (e) => {
       e.preventDefault();
       const url = normalizeRelay(input.value);
-      if (!url) { err.textContent = 'That doesn’t look like a relay address (wss://…).'; return; }
+      if (!url) { err.textContent = vw.badRelay; return; }
       deps.addRelay(url);
       renderRail();
     });
@@ -130,13 +131,13 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
     chans.replaceChildren();
     const h = document.createElement('div');
     h.className = 'themes-section';
-    h.textContent = `Channels on ${host(deps.active())}`;
+    h.textContent = vw.channelsOn(host(deps.active()));
     chans.append(h);
     const groups = deps.groups();
     if (!groups.length) {
       const p = document.createElement('div');
       p.className = 'game-note';
-      p.textContent = 'No channels yet, or this relay hasn’t let you in.';
+      p.textContent = vw.noChannelsLet;
       chans.append(p);
       return;
     }
@@ -151,7 +152,7 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
       if (cat || order.length > 1) {
         const ch = document.createElement('div');
         ch.className = 'relay-cat';
-        ch.textContent = cat ? names[cat] || 'Untitled' : 'Other';
+        ch.textContent = cat ? names[cat] || vw.untitled : vw.other;
         chans.append(ch);
       }
       for (const g of buckets.get(cat)!) {
@@ -161,7 +162,7 @@ export function openRelayModal(parent: HTMLElement, deps: RelayModalDeps): void 
         const n = document.createElement('span');
         n.textContent = g.name;
         const kind = document.createElement('small');
-        kind.textContent = g.kind === 'forum' ? 'Publication' : g.kind.startsWith('voice') ? 'Voice' : '';
+        kind.textContent = g.kind === 'forum' ? vw.kind.forum : g.kind.startsWith('voice') ? vw.voiceShort : '';
         row.append(n, kind);
         const u = deps.unread(g.id);
         if (u) {

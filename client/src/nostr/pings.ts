@@ -6,6 +6,7 @@
 
 import type { WireMessage } from './wire';
 import { mentionedPubkeys } from './sanitize';
+import { vw, type VillageWords } from '../i18n/village';
 
 export type PingReason = 'reply' | 'mention';
 
@@ -38,7 +39,7 @@ export function openPings(msgs: Iterable<WireMessage>, me: string, c: PingCursor
 }
 
 /** What a ping says: "Ana mentioned you in #general". */
-export function pingTitle(sender: string, reason: PingReason, channel: string | null): string {
-  const what = reason === 'reply' ? 'replied to you' : 'mentioned you';
-  return channel ? `${sender} ${what} in #${channel}` : `${sender} ${what}`;
+export function pingTitle(sender: string, reason: PingReason, channel: string | null, w: VillageWords = vw): string {
+  const what = reason === 'reply' ? w.pingReply : w.pingMention;
+  return channel ? w.pingIn(sender, what, channel) : `${sender} ${what}`;
 }

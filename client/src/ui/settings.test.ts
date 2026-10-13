@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { openSettings, SETTINGS_WORDS } from './settings';
+import { describe, it, expect, vi } from 'vitest';
+import { LANG_NAMES, openSettings, SETTINGS_WORDS } from './settings';
 import { PrefsStore } from '../prefs';
 
 describe('settings in the village’s language', () => {
@@ -15,6 +15,25 @@ describe('settings in the village’s language', () => {
     expect(text).toContain('Gráficos');
     expect(text).toContain('Listo');
     expect(text).not.toContain('Graphics');
+  });
+  it('switches the language from its first row', () => {
+    const root = document.createElement('div');
+    const onLang = vi.fn();
+    openSettings(root, new PrefsStore(), () => 'medium', 'en', onLang);
+    const sel = root.querySelector<HTMLSelectElement>('.settings-lang')!;
+    expect(sel.closest('label')!.textContent).toContain('Language · Idioma');
+    expect([...sel.options].map((o) => o.textContent)).toEqual([LANG_NAMES.en, LANG_NAMES.es]);
+    expect(sel.value).toBe('en');
+    sel.value = 'es';
+    sel.dispatchEvent(new Event('change'));
+    expect(onLang).toHaveBeenCalledWith('es');
+  });
+  it('shows the language row in Spanish as Idioma', () => {
+    const root = document.createElement('div');
+    openSettings(root, new PrefsStore(), () => 'medium', 'es', () => {});
+    const sel = root.querySelector<HTMLSelectElement>('.settings-lang')!;
+    expect(sel.value).toBe('es');
+    expect(sel.closest('label')!.textContent).toContain('Idioma');
   });
 });
 
