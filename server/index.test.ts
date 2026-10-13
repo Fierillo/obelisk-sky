@@ -31,4 +31,10 @@ describe('static host', () => {
     expect(SECURITY_HEADERS['content-security-policy']).toMatch(/script-src[^;]*'wasm-unsafe-eval'/);
     expect(SECURITY_HEADERS['content-security-policy']).not.toMatch(/'unsafe-eval'/);
   });
+  it('lets the page use the mic, the camera and screen sharing (calls), nothing else of the kind', () => {
+    const p = SECURITY_HEADERS['permissions-policy'];
+    expect(p).toContain('microphone=(self)');
+    expect(p).toContain('camera=(self)');
+    expect(p).toContain('display-capture=(self)');
+  });
 });

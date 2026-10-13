@@ -12,6 +12,8 @@ export class Soundscape {
   night = false;
   /** Crickets and the like: their own switch, apart from emotes and music. */
   ambience = true;
+  /** Indoors where outside sounds don't reach (the theater): no crickets. */
+  hush = false;
   footsteps = true;
   private noise: AudioBuffer | null = null;
 
@@ -66,7 +68,7 @@ export class Soundscape {
 
   private ambient(): void {
     if (!this.enabled || !this.ctx) return;
-    if (this.ambience && this.night && Math.random() < 0.5) this.cricket();
+    if (this.ambience && !this.hush && this.night && Math.random() < 0.5) this.cricket();
   }
 
   private tone(freq: number, dur: number, type: OscillatorType, vol: number, glide?: number, delay = 0): void {

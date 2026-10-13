@@ -21,4 +21,12 @@ describe('the village page in each language', () => {
   it('picks the words for a language', () => {
     expect(pick({ en: 'Got it', es: 'Entendido' }, 'es')).toBe('Entendido');
   });
+  it('translates the menu: labels, titles and aria-labels', () => {
+    document.body.innerHTML = '<button data-act="settings" title="Settings" aria-label="Settings" data-i18n-title="ctl.settings.title"><span class="ctl-label" data-i18n="ctl.settings">Settings</span></button>';
+    applyAppLang(document, 'es');
+    const b = document.querySelector('button')!;
+    expect(b.title).toBe('Ajustes');
+    expect(b.getAttribute('aria-label')).toBe('Ajustes');
+    expect(b.textContent).toBe('Ajustes');
+  });
 });

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { buildGym, gymLights, pickGymChannel, BENCH_TOP } from './gym';
+import * as THREE from 'three';
+import { buildGym, gymLights, pickGymChannel, BENCH_TOP, OPENGYM } from './gym';
 import { trackLap, TRACK_LANES } from './districts';
 import { dist } from './layout';
 
@@ -92,5 +93,22 @@ describe('the gym never closes', () => {
     gb.interior.setDoor(1);
     gb.group.updateMatrixWorld(true);
     expect(all().some((m) => at.get(m)?.some((x, i) => Math.abs(x - m.matrixWorld.elements[i]) > 1e-6))).toBe(true);
+  });
+});
+
+describe("the gym wears openGym's look", () => {
+  it('dark cladding and lime accents, no red brick left', () => {
+    const slot = { index: 0, pos: { x: 0, z: 0 }, w: 2, d: 2, rot: 0 } as never;
+    const g = buildGym(slot, 0x3355aa);
+    const colours = new Set<number>();
+    g.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (m && !Array.isArray(m) && m.color) colours.add(m.color.getHex());
+    });
+    expect(colours.has(0xa4553f)).toBe(false);
+    expect(colours.has(OPENGYM.panel)).toBe(true);
+    expect(colours.has(OPENGYM.lime)).toBe(true);
+    // The channel still names the house: its colour stays on the fascia.
+    expect(colours.has(0x3355aa)).toBe(true);
   });
 });

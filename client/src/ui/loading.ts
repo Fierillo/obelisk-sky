@@ -110,6 +110,7 @@ const LANDMARK_MARK: Record<LandmarkId, { color: string; letter: string }> = {
   coffee: { color: '#8a5a3b', letter: 'C' },
   parrilla: { color: '#d8452b', letter: 'P' },
   liberture: { color: '#e0b43a', letter: 'L' },
+  theater: { color: '#b3202f', letter: '▶' },
 };
 
 const deg = (rad: number) => ((rad * 180) / Math.PI).toFixed(1);

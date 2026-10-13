@@ -12,11 +12,12 @@ import { buildCoffeeShop } from './coffee';
 import { buildParrilla } from './parrilla';
 import { buildNostrWotHq } from './nostrwot';
 import { buildLibertureHouse } from './liberture';
+import { buildTheater, type TheaterHall } from './theater';
 
-export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla' | 'liberture';
+export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla' | 'liberture' | 'theater';
 
 /** What a seat at a landmark puts in your hand. */
-export type SeatProp = 'mate' | 'coffee' | 'asado' | 'none' | 'marshmallow';
+export type SeatProp = 'mate' | 'coffee' | 'asado' | 'none' | 'marshmallow' | 'popcorn';
 
 export interface LandmarkSeat {
   pos: Vec2; face: number; y: number; prop: SeatProp;
@@ -45,6 +46,8 @@ export interface LandmarkBuild {
   residentLocal?: Vec2;
   /** A building you can walk into (see world.ts: walkable rooms, doors, cutaway). */
   interior?: LandmarkInterior;
+  /** The theater's screen, marquee and house lights (world.ts `setTheater`). */
+  hall?: TheaterHall;
 }
 
 export interface LocalRect { minX: number; maxX: number; minZ: number; maxZ: number }
@@ -80,6 +83,7 @@ export const LANDMARKS: LandmarkDef[] = [
   { id: 'coffee', want: { x: -6.5, z: 1 }, minSize: 2, forward: 0.25, footprint: { minX: -1.3, maxX: 1.3, minZ: -1.75, maxZ: 0.1 }, lawn: { along: 2.4, across: 1.6 }, build: buildCoffeeShop },
   { id: 'parrilla', want: { x: -7, z: 5.5 }, minSize: 2, forward: 0.1, footprint: { minX: -1.0, maxX: 1.0, minZ: -1.55, maxZ: -0.95 }, lawn: { along: 2.2, across: 1.6 }, build: buildParrilla },
   { id: 'liberture', want: { x: 11.5, z: -0.5 }, minSize: 2, forward: 0.25, footprint: { minX: -1.35, maxX: 1.35, minZ: -1.85, maxZ: 0.1 }, lawn: { along: 2.4, across: 1.6 }, build: buildLibertureHouse },
+  { id: 'theater', want: { x: -4, z: -4.5 }, minSize: 3, forward: 1.15, footprint: { minX: -1.42, maxX: 1.42, minZ: -2.62, maxZ: 0.12 }, lawn: { along: 2.0, across: 1.6 }, build: buildTheater },
 ];
 
 /** Pick each landmark's slot: nearest to what it wants, never shared. */

@@ -2,10 +2,15 @@
 // with a bench press, a squat rack and a curl spot in front of a mirror. Its
 // machines are training stations like the park's (world.ts `stations`), so
 // several people train at once, each on their own machine.
+//
+// It wears openGym's look (github.com/DuarteSantos8/openGym, the self-hosted
+// gym tracker): near-black cladding, lime accents, the lime dumbbell and the
+// "openGym" wordmark over the door, a screen on the back wall with the app's
+// home card, and the dumbbell on the floor.
 
 import * as THREE from 'three';
 import type { ExerciseKind } from './anim/exercises';
-import { bitcoinSign } from './landmarks/signs';
+import { bitcoinSign, canvasTexture } from './landmarks/signs';
 import type { Building } from './buildings';
 import type { LandmarkInterior } from './landmarks';
 import type { Slot, Vec2 } from './layout';
@@ -62,6 +67,9 @@ export function gymLights(night: number): { lamp: number; strip: number; glass: 
 /** The bench's height: the person lies on it. */
 export const BENCH_TOP = 0.2;
 
+/** openGym's palette (its banner and app icon). */
+export const OPENGYM = { ink: 0x0c0e12, panel: 0x161a21, edge: 0x2b3140, lime: 0xa3e635, green: 0x30d158 } as const;
+
 const mat = (color: number, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.75, ...extra });
 
@@ -79,7 +87,7 @@ export function buildBarbell(len = 0.62, plateR = 0.07): THREE.Group {
     p.position.x = s * (len / 2 - 0.06);
     p.castShadow = true;
     g.add(p);
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(plateR * 0.45, plateR * 0.45, 0.034, 12), mat(0xb4f953, { emissive: 0x2a3a10 }));
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(plateR * 0.45, plateR * 0.45, 0.034, 12), mat(OPENGYM.lime, { emissive: 0x2a3a10 }));
     rim.rotation.z = Math.PI / 2;
     rim.position.x = p.position.x;
     g.add(rim);
@@ -104,19 +112,31 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
 
   // Floor: concrete slab, black rubber tiles inside.
   add(box(W + 0.2, 0.14, D + 0.2, mat(0x9a948c)), 0, 0.03, 0);
-  const rubber = add(box(W - 0.1, 0.02, D - 0.1, mat(0x24262b, { roughness: 1 })), 0, 0.105, 0);
+  const rubber = add(box(W - 0.1, 0.02, D - 0.1, mat(0x1c1f25, { roughness: 1 })), 0, 0.105, 0);
   rubber.castShadow = false;
   const F = 0.115; // floor level inside
+  // openGym's dumbbell, painted on the floor in the middle.
+  const decal = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.18), new THREE.MeshStandardMaterial({ map: dumbbellTexture(), transparent: true, roughness: 0.9, depthWrite: false }));
+  decal.rotation.x = -Math.PI / 2;
+  decal.position.set(0, F + 0.002, 0.02);
+  decal.receiveShadow = true;
+  group.add(decal);
 
-  // Walls: brick back wall with a mirror, glass sides and front on a low brick base.
-  const brick = mat(0xa4553f, { roughness: 0.9 });
+  // Walls: dark cladding (openGym's near-black) at the back with a mirror and
+  // the app's screen, glass sides and front on a low clad base.
+  const brick = mat(OPENGYM.panel, { roughness: 0.85 });
   // At night the glass glows a little: the hall reads as lit from outside.
   const glass = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.22, roughness: 0.18, metalness: 0.1, depthWrite: false, emissive: 0xfff4dc, emissiveIntensity: 0 });
-  const frame = mat(0x2b2e34, { metalness: 0.5, roughness: 0.4 });
+  const frame = mat(OPENGYM.edge, { metalness: 0.5, roughness: 0.4 });
   const walls: THREE.Mesh[] = [];
   walls.push(add(box(W, H, T, brick), 0, F + H / 2, -D / 2 + T / 2));
-  const mirror = add(box(W * 0.7, 0.62, 0.012, mat(0xdfe8ee, { metalness: 0.9, roughness: 0.2 })), 0, F + 0.55, -D / 2 + T + 0.007);
+  const mirror = add(box(W * 0.42, 0.62, 0.012, mat(0xdfe8ee, { metalness: 0.9, roughness: 0.2 })), -W * 0.16, F + 0.55, -D / 2 + T + 0.007);
   mirror.castShadow = false;
+  // The openGym home card on a wall screen: today's workout, body weight, the streak.
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.26, W * 0.26 * 0.62), new THREE.MeshBasicMaterial({ map: openGymScreen(), toneMapped: false }));
+  screen.position.set(W * 0.27, F + 0.66, -D / 2 + T + 0.006);
+  group.add(screen);
+  add(box(W * 0.26 + 0.03, W * 0.26 * 0.62 + 0.03, 0.012, mat(OPENGYM.ink)), W * 0.27, F + 0.66, -D / 2 + T + 0.002).castShadow = false;
   const DOOR = 0.62;
   const glassWall = (x: number, z: number, w: number, d: number) => {
     walls.push(add(box(w, 0.28, d, brick), x, F + 0.14, z));
@@ -137,12 +157,20 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
   btc.castShadow = false;
   for (const x of [-W / 2, W / 2, -DOOR / 2, DOOR / 2]) walls.push(add(box(0.06, H, 0.06, frame), x, F + H / 2, D / 2 - T / 2));
 
-  // Flat roof with a deep fascia in the channel's colour and a neon GYM sign.
+  // Flat roof with a fascia in the channel's colour (it names the house), a
+  // lime trim under it, and the openGym sign on top.
   const roofParts: THREE.Object3D[] = [];
-  const roof = add(box(W + 0.3, 0.12, D + 0.3, mat(0x3a3d44)), 0, F + H + 0.06, 0);
+  const roof = add(box(W + 0.3, 0.12, D + 0.3, mat(OPENGYM.edge)), 0, F + H + 0.06, 0);
   roof.name = 'roof';
   roofParts.push(roof);
+  // The lime dumbbell painted across the roof: the gym, seen from above.
+  const roofMark = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W, D) * 0.8, Math.min(W, D) * 0.8 * 0.36), new THREE.MeshStandardMaterial({ map: dumbbellTexture(), transparent: true, roughness: 0.8, depthWrite: false }));
+  roofMark.rotation.x = -Math.PI / 2;
+  roofMark.position.set(0, F + H + 0.122, 0);
+  group.add(roofMark);
+  roofParts.push(roofMark);
   roofParts.push(add(box(W + 0.34, 0.2, 0.06, mat(roofColor)), 0, F + H + 0.02, D / 2 + 0.15));
+  roofParts.push(add(box(W + 0.34, 0.025, 0.065, mat(OPENGYM.lime, { emissive: OPENGYM.lime, emissiveIntensity: 0.35 })), 0, F + H - 0.09, D / 2 + 0.15));
   const sign = gymSign();
   sign.position.set(0, F + H + 0.3, D / 2 + 0.12);
   group.add(sign);
@@ -152,7 +180,7 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
   const stations: GymStation[] = [];
   const steel = mat(0x8d969e, { metalness: 0.7, roughness: 0.35 });
   const pad = mat(0x15161a, { roughness: 0.8 });
-  const accent = mat(0xb4f953, { roughness: 0.5 });
+  const accent = mat(OPENGYM.lime, { roughness: 0.5 });
 
   // Bench press: the bench runs front to back, the lifter lies with the feet
   // toward the door; uprights at the head hold the bar.
@@ -299,28 +327,116 @@ export function buildGym(slot: Slot, roofColor: number): GymBuild {
   return { group, windows, doorLocal: new THREE.Vector3(0, 0, D / 2 + 0.3), height: F + H + 0.5, roofColor, interior, stations, solids, groundAt };
 }
 
-/** "GYM" in lime neon on a dark board. */
-function gymSign(): THREE.Mesh {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 96;
-  const g = c.getContext('2d');
-  if (g) {
-    g.fillStyle = '#16181d';
-    g.fillRect(0, 0, 256, 96);
-    g.font = '800 64px Inter, system-ui, sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.shadowColor = '#b4f953';
-    g.shadowBlur = 18;
-    g.fillStyle = '#d9ff9c';
-    g.fillText('GYM', 104, 52);
-    g.font = '700 26px Inter, system-ui, sans-serif';
-    g.shadowBlur = 10;
-    g.fillStyle = '#ffffff';
-    g.fillText('24h', 214, 54);
+/** openGym's dumbbell (its app icon's five bars), drawn into a box on a 2D canvas. */
+function drawDumbbell(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string): void {
+  // The icon's bars on its 512 grid: bar, inner plates, outer plates.
+  const bars = [[80, 242, 352, 28], [80, 199, 36, 114], [131, 169, 47, 174], [334, 169, 47, 174], [396, 199, 36, 114]];
+  const sx = w / 352, sy = h / 174;
+  g.fillStyle = color;
+  for (const [bx, by, bw, bh] of bars) {
+    const r = Math.min(bw * sx, bh * sy) * 0.3;
+    g.beginPath();
+    g.roundRect(x + (bx - 80) * sx, y + (by - 169) * sy, bw * sx, bh * sy, r);
+    g.fill();
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.23), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+}
+
+/** The lime dumbbell on a clear ground (the floor decal). */
+function dumbbellTexture(): THREE.CanvasTexture {
+  return canvasTexture(512, 184, (g) => drawDumbbell(g, 6, 5, 500, 174, '#a3e635'));
+}
+
+/** openGym's banner: the lime dumbbell and "open" + "Gym" on its dark board. */
+function gymSign(): THREE.Mesh {
+  const tex = canvasTexture(512, 128, (g) => {
+    const grad = g.createLinearGradient(0, 0, 512, 128);
+    grad.addColorStop(0, '#12151b');
+    grad.addColorStop(1, '#0c0e12');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.roundRect(2, 2, 508, 124, 18);
+    g.fill();
+    g.strokeStyle = '#2b3140';
+    g.lineWidth = 4;
+    g.stroke();
+    g.shadowColor = '#a3e635';
+    g.shadowBlur = 14;
+    drawDumbbell(g, 26, 34, 120, 60, '#a3e635');
+    g.font = '800 64px Inter, system-ui, sans-serif';
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    g.shadowBlur = 0;
+    g.fillStyle = '#eef1f6';
+    g.fillText('open', 164, 66);
+    const w = g.measureText('open').width;
+    g.shadowBlur = 16;
+    g.fillStyle = '#a3e635';
+    g.fillText('Gym', 164 + w, 66);
+  });
+  return new THREE.Mesh(new THREE.PlaneGeometry(0.84, 0.21), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, transparent: true }));
+}
+
+/** The app's home card, as on its phone screen: today's workout, body weight and the streak. */
+function openGymScreen(): THREE.CanvasTexture {
+  return canvasTexture(512, 318, (g) => {
+    g.fillStyle = '#000000';
+    g.fillRect(0, 0, 512, 318);
+    g.textBaseline = 'alphabetic';
+    g.fillStyle = '#ffffff';
+    g.font = '800 38px Inter, system-ui, sans-serif';
+    g.fillText('openGym', 22, 48);
+    // Today.
+    g.fillStyle = '#1c1c1e';
+    g.beginPath(); g.roundRect(16, 64, 480, 66, 14); g.fill();
+    g.fillStyle = '#30d158';
+    g.beginPath(); g.roundRect(30, 76, 42, 42, 10); g.fill();
+    drawDumbbell(g, 36, 89, 30, 15, '#ffffff');
+    g.fillStyle = 'rgba(235,235,245,0.6)';
+    g.font = '600 15px Inter, system-ui, sans-serif';
+    g.fillText('TODAY', 86, 90);
+    g.fillStyle = '#ffffff';
+    g.font = '600 24px Inter, system-ui, sans-serif';
+    g.fillText('Push Day', 86, 118);
+    g.fillStyle = '#248a3d';
+    g.beginPath(); g.roundRect(404, 82, 76, 30, 8); g.fill();
+    g.fillStyle = '#30d158';
+    g.font = '600 17px Inter, system-ui, sans-serif';
+    g.fillText('Start', 422, 103);
+    // Body weight, with its line and the dashed goal.
+    g.fillStyle = '#1c1c1e';
+    g.beginPath(); g.roundRect(16, 142, 300, 160, 14); g.fill();
+    g.fillStyle = 'rgba(235,235,245,0.6)';
+    g.font = '500 15px Inter, system-ui, sans-serif';
+    g.fillText('Body weight', 30, 168);
+    g.fillStyle = '#ffffff';
+    g.font = '800 34px Inter, system-ui, sans-serif';
+    g.fillText('78.4', 30, 206);
+    g.fillStyle = '#30d158';
+    g.font = '600 16px Inter, system-ui, sans-serif';
+    g.fillText('↓ 0.5 kg', 112, 206);
+    const pts = [82.5, 82.9, 81.9, 81.8, 81.4, 81.3, 80.6, 80.7, 80.3, 79.6, 79.5, 79.0, 79.1, 78.6, 78.4];
+    const px = (k: number) => 30 + (k / (pts.length - 1)) * 270, py = (v: number) => 290 - (v - 76.8) * 12;
+    g.strokeStyle = '#ffd60a';
+    g.setLineDash([6, 5]);
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(30, py(77)); g.lineTo(300, py(77)); g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = '#30d158';
+    g.lineWidth = 3;
+    g.beginPath();
+    pts.forEach((v, k) => (k ? g.lineTo(px(k), py(v)) : g.moveTo(px(k), py(v))));
+    g.stroke();
+    // The streak.
+    g.fillStyle = '#1c1c1e';
+    g.beginPath(); g.roundRect(328, 142, 168, 160, 14); g.fill();
+    g.fillStyle = '#ff9f0a';
+    g.font = '700 30px Inter, system-ui, sans-serif';
+    g.fillText('🔥', 344, 190);
+    g.fillStyle = '#ffffff';
+    g.font = '800 44px Inter, system-ui, sans-serif';
+    g.fillText('12', 344, 246);
+    g.fillStyle = 'rgba(235,235,245,0.6)';
+    g.font = '600 16px Inter, system-ui, sans-serif';
+    g.fillText('week streak', 344, 274);
+  });
 }

@@ -228,6 +228,35 @@ export function buildCup(): THREE.Group {
   return g;
 }
 
+/** A striped popcorn bucket from the theater, heaped, same scale as the cup. */
+export function buildPopcorn(): THREE.Group {
+  const g = new THREE.Group();
+  const stripes = new THREE.CanvasTexture((() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 8;
+    try { const x = c.getContext('2d'); if (x) for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#ffffff' : '#d7263d'; x.fillRect(i * 8, 0, 8, 8); } } catch { /* tests */ }
+    return c;
+  })());
+  stripes.colorSpace = THREE.SRGBColorSpace;
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.032, 0.085, 12, 1, true), mat(0xffffff, { map: stripes, roughness: 0.7, side: THREE.DoubleSide }));
+  bucket.position.y = 0.043;
+  g.add(bucket);
+  const corn = mat(0xfff1c4, { roughness: 0.95 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const k = new THREE.Mesh(new THREE.IcosahedronGeometry(0.018, 0), corn);
+    k.position.set(Math.cos(a) * 0.022, 0.09 + (i % 2) * 0.008, Math.sin(a) * 0.022);
+    g.add(k);
+  }
+  const top = new THREE.Mesh(new THREE.IcosahedronGeometry(0.02, 0), corn);
+  top.position.y = 0.104;
+  g.add(top);
+  g.scale.setScalar(1.5);
+  g.userData.mouth = new THREE.Vector3(0, 0.1, 0.03);
+  return g;
+}
+
 /** A choripán from the parrilla: a chorizo split in a crusty roll, same scale as the mate. */
 export function buildChoripan(): THREE.Group {
   const g = new THREE.Group();

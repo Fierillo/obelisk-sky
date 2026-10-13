@@ -22,6 +22,36 @@ const en = {
   'rotate.text': 'The village is played in landscape.',
   'rotate.button': 'Go full screen',
   'toast.loginToWalk': 'Log in to walk around as yourself.',
+  'ctl.director': 'Auto camera',
+  'ctl.director.title': 'Auto-director: follow conversations',
+  'ctl.story': 'History',
+  'ctl.story.title': 'History: replay the latest conversation (again to go live)',
+  'ctl.time': 'Time of day',
+  'ctl.time.title': 'Time of day: Buenos Aires',
+  'ctl.signs': 'Signs',
+  'ctl.signs.title': 'Channel signs',
+  'ctl.tilt': 'Toy town',
+  'ctl.tilt.title': 'Toy-town view: blur the top and bottom of the picture so the island looks like a tiny model',
+  'ctl.sound': 'Sound',
+  'ctl.sound.title': 'Ambient sound',
+  'ctl.districts': 'Districts',
+  'ctl.districts.title': 'Districts (relay operator)',
+  'ctl.home': 'Whole island',
+  'ctl.home.title': 'Whole island',
+  'ctl.emote': 'Emotes',
+  'ctl.emote.title': 'Emotes: dance, lotus pose… (G)',
+  'ctl.firstperson': 'First person',
+  'ctl.firstperson.title': 'First-person view (V)',
+  'ctl.settings': 'Settings',
+  'ctl.settings.title': 'Settings',
+  'ctl.help': 'Controls',
+  'ctl.help.title': 'How to play (controls)',
+  'ctl.fullscreen': 'Fullscreen',
+  'ctl.fullscreen.title': 'Fullscreen',
+  'ctl.about': 'About',
+  'ctl.about.title': 'About Obelisk Sky',
+  'ctl.logout': 'Log out',
+  'ctl.logout.title': 'Log out',
 };
 
 export type AppKey = keyof typeof en;
@@ -44,6 +74,36 @@ const es: Record<AppKey, string> = {
   'rotate.text': 'La aldea se juega en horizontal.',
   'rotate.button': 'Pantalla completa',
   'toast.loginToWalk': 'Ingresá para recorrer la aldea con tu personaje.',
+  'ctl.director': 'Cámara automática',
+  'ctl.director.title': 'Cámara automática: sigue las conversaciones',
+  'ctl.story': 'Historial',
+  'ctl.story.title': 'Historial: repetí la última conversación (otra vez para volver al vivo)',
+  'ctl.time': 'Hora del día',
+  'ctl.time.title': 'Hora del día: Buenos Aires',
+  'ctl.signs': 'Carteles',
+  'ctl.signs.title': 'Carteles de los canales',
+  'ctl.tilt': 'Maqueta',
+  'ctl.tilt.title': 'Vista maqueta: desenfoca arriba y abajo para que la isla parezca una miniatura',
+  'ctl.sound': 'Sonido',
+  'ctl.sound.title': 'Sonido ambiente',
+  'ctl.districts': 'Distritos',
+  'ctl.districts.title': 'Distritos (operador del relay)',
+  'ctl.home': 'Toda la isla',
+  'ctl.home.title': 'Toda la isla',
+  'ctl.emote': 'Gestos',
+  'ctl.emote.title': 'Gestos: bailar, loto… (G)',
+  'ctl.firstperson': 'Primera persona',
+  'ctl.firstperson.title': 'Vista en primera persona (V)',
+  'ctl.settings': 'Ajustes',
+  'ctl.settings.title': 'Ajustes',
+  'ctl.help': 'Controles',
+  'ctl.help.title': 'Cómo jugar (controles)',
+  'ctl.fullscreen': 'Pantalla completa',
+  'ctl.fullscreen.title': 'Pantalla completa',
+  'ctl.about': 'Acerca de',
+  'ctl.about.title': 'Acerca de Obelisk Sky',
+  'ctl.logout': 'Salir',
+  'ctl.logout.title': 'Salir',
 };
 
 export const APP_COPY: Record<Lang, Record<AppKey, string>> = { en, es };
@@ -58,5 +118,11 @@ export function applyAppLang(root: ParentNode, l: Lang = lang): void {
   for (const el of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const key = el.dataset.i18n as AppKey;
     if (key in APP_COPY[l]) el.textContent = t(key, {}, l);
+  }
+  for (const el of root.querySelectorAll<HTMLElement>('[data-i18n-title]')) {
+    const key = el.dataset.i18nTitle as AppKey;
+    if (!(key in APP_COPY[l])) continue;
+    el.title = t(key, {}, l);
+    if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', t(key, {}, l));
   }
 }

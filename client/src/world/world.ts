@@ -23,7 +23,7 @@ import {
   millBlocked, type MillSite, turnedHalf, waterworks, parkSite,
 } from './layout';
 import { fbm2 } from './noise';
-import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, PARK_MAT, TRACK_LANES, TRACK_TOP, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildMate, buildTrack, trackLap } from './districts';
+import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, PARK_MAT, TRACK_LANES, TRACK_TOP, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildPopcorn, buildMate, buildTrack, trackLap } from './districts';
 import { buildBarbell, buildGym, pickGymChannel, type GymBuild } from './gym';
 import { Flock } from './nostrich';
 import { WalkPin } from './walkPin';
@@ -34,6 +34,7 @@ import { buildObelisk, plinthSteps, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
 import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
+import type { TheaterHall } from './landmarks/theater';
 import { buildMill, type Mill } from './mill';
 import type { Avatar } from '../nostr/avatars';
 import { laneSpotId, parseSpot, seatSpotId, stationSpotId, type Activity, type Claim } from '../nostr/activity';
@@ -94,6 +95,10 @@ export interface WorldHooks {
   onGroundClick?: (p: Vec2) => void;
   onGameClick?: (gameId: string) => void;
   onLandmarkClick?: (id: LandmarkId) => void;
+  /** A free seat was clicked: walk there and sit. */
+  onSeatClick?: (seat: Seat) => void;
+  /** The theater's big screen was clicked. */
+  onTheaterScreenClick?: () => void;
   onBubbleClick?: (msgId: string) => void;
 }
 
@@ -642,7 +647,8 @@ export class World {
         b.interior?.setDoor(0);
         b.setNight(0, 1);
       });
-      this.meshesMerged += mergeStatic(b.group, (m) => moving.has(m) || m.name === 'roof');
+      // The theater's screen changes picture and shape on its own: never merged.
+      this.meshesMerged += mergeStatic(b.group, (m) => moving.has(m) || m.name === 'roof' || m.name === 'theater-screen');
       b.group.traverse((o) => { o.userData.landmark = d.id; });
       this.staticRoot.add(b.group);
       this.landmarks.set(d.id, b);
@@ -704,9 +710,11 @@ export class World {
   }
 
   /** Buildings you can walk into: landmarks with an interior, and the gym. */
-  private *enterables(): Generator<{ it: LandmarkInterior; local: (p: Vec2) => Vec2 | null; groundAt?: (l: Vec2) => number }> {
+  private *enterables(): Generator<{ it: LandmarkInterior; local: (p: Vec2) => Vec2 | null; world: (l: Vec2) => Vec2; groundAt?: (l: Vec2) => number }> {
     for (const [id, b] of this.landmarks) {
-      if (b.interior) yield { it: b.interior, local: (p) => this.toLandmarkLocal(id, p), groundAt: b.groundAt };
+      const d = LANDMARKS.find((x) => x.id === id);
+      const s = this.landmarkSlots.get(id);
+      if (b.interior && d && s) yield { it: b.interior, local: (p) => this.toLandmarkLocal(id, p), world: (l) => this.landmarkToWorld(s, d.forward, l), groundAt: b.groundAt };
     }
     const slot = this.gymId ? this.slotFor(this.gymId) : null;
     if (this.gym && slot) {
@@ -714,9 +722,40 @@ export class World {
       yield {
         it: this.gym.interior,
         local: (p) => { const dx = p.x - slot.pos.x, dz = p.z - slot.pos.z; return { x: dx * c - dz * sn, z: dx * sn + dz * c }; },
+        world: (l) => this.buildingToWorld(slot, l),
         groundAt: this.gym.groundAt,
       };
     }
+  }
+
+  /** The building you can enter that p is in (its room or doorway), with its door's inside and outside spots. */
+  private enterableAt(p: Vec2): { key: LandmarkInterior; inside: Vec2; outside: Vec2 } | null {
+    for (const e of this.enterables()) {
+      const l = e.local(p);
+      if (!l || !e.it.rooms.some((r) => l.x > r.minX && l.x < r.maxX && l.z > r.minZ && l.z < r.maxZ)) continue;
+      const d = e.it.door;
+      return { key: e.it, inside: e.world({ x: d.x, z: d.z - 0.45 }), outside: e.world({ x: d.x, z: d.z + 0.75 }) };
+    }
+    return null;
+  }
+
+  /**
+   * A walk for the player from `from` to `to`, in and out of buildings: the
+   * nav grid outside, through the door (just outside it, just inside it) and
+   * straight across the room inside. Null when there's no way.
+   */
+  routeFor(from: Vec2, to: Vec2): Vec2[] | null {
+    const a = this.enterableAt(from), b = this.enterableAt(to);
+    if (a && b && a.key === b.key) return [to];
+    const out: Vec2[] = [];
+    let start = from;
+    if (a) { out.push(a.inside, a.outside); start = a.outside; }
+    const end = b ? b.outside : to;
+    const mid = this.grid.findPath(start, end);
+    if (!mid) return null;
+    out.push(...mid);
+    if (b) out.push(b.outside, b.inside, to);
+    return out;
   }
 
   /** Inside a building you can enter (its room or doorway): walkable for the player. */
@@ -1998,8 +2037,75 @@ export class World {
     }
   }
 
-  /** People in a channel's call gather in its pavilion. */
+  // ── the theater ───────────────────────────────────────────────────────
+
+  /** The channel the theater is showing (its call gathers in the hall), or null. */
+  private theaterChannel: string | null = null;
+
+  /** The channel whose house is the gym (dressed as openGym), or null. */
+  get gymChannel(): string | null {
+    return this.gymId;
+  }
+
+  /** The theater's screen, marquee and house lights, if the island has one. */
+  get theaterHall(): TheaterHall | null {
+    return this.landmarks.get('theater')?.hall ?? null;
+  }
+
+  /** Is p in the theater's hall (its room, not the doorway)? */
+  inTheater(p: Vec2): boolean {
+    const b = this.landmarks.get('theater');
+    const l = b?.interior ? this.toLandmarkLocal('theater', p) : null;
+    const r = b?.interior?.rooms[0];
+    return !!(l && r && l.x > r.minX && l.x < r.maxX && l.z > r.minZ && l.z < r.maxZ);
+  }
+
+  /** Is `pk` sitting in the theater? */
+  inTheaterSeat(pk: string): boolean {
+    return this.seatOf.get(pk)?.landmark === 'theater';
+  }
+
+  /**
+   * What the theater shows: the channel (its call gathers in the hall), the
+   * marquee's words, the shared screen (or a card) and whether a film plays.
+   */
+  setTheater(t: { channel: string | null; marquee: string; stream: MediaStream | null; card: [string, string] }): void {
+    const hall = this.theaterHall;
+    this.theaterChannel = t.channel;
+    if (!hall) return;
+    hall.setMarquee(t.marquee);
+    hall.screen.showCard(t.card[0], t.card[1]);
+    hall.screen.attach(t.stream);
+    hall.setPlaying(!!t.stream);
+  }
+
+  /** Keep the film running only while you're near enough to see it. */
+  private updateTheater(): void {
+    const hall = this.theaterHall;
+    const s = this.landmarkSlots.get('theater');
+    if (!hall || !s) return;
+    const from = this.camera.position;
+    hall.screen.setActive(Math.hypot(from.x - s.pos.x, from.z - s.pos.z) < 14);
+  }
+
+  /** People in the theater's call take its seats (the hall has no path in: they fade across). */
+  private gatherInTheater(pks: string[]): void {
+    const chairs = this.seats.filter((s) => s.landmark === 'theater');
+    for (const pk of pks) {
+      if (pk === this.playerPk || !this.people.has(pk) || this.pinned(pk)) continue;
+      if (this.inTheaterSeat(pk) || this.pendingOf.get(pk)) continue;
+      const seat = chairs.find((s) => !s.taken);
+      if (!seat) return;
+      const c = this.people.get(pk)!;
+      this.stand(pk);
+      this.reserve(pk, seat);
+      this.blink(c, seat.pos, () => { this.releasePending(pk); this.sit(pk, seat); });
+    }
+  }
+
+  /** People in a channel's call gather in its pavilion (or in the theater, when it shows that channel). */
   gatherForCall(channelId: string, pks: string[]): void {
+    if (channelId === this.theaterChannel && this.theaterHall) { this.gatherInTheater(pks); return; }
     const slot = this.slotFor(channelId);
     if (!slot) return;
     const others = pks.filter((pk) => pk !== this.playerPk && this.people.has(pk) && !this.pinned(pk));
@@ -2104,7 +2210,7 @@ export class World {
       // hand and lifts it to sip or bite (Character.update).
       const prop = seat.prop ?? 'mate';
       if (prop !== 'none') {
-        c.mate = prop === 'coffee' ? buildCup() : prop === 'asado' ? buildChoripan() : prop === 'marshmallow' ? buildMarshmallow() : buildMate();
+        c.mate = prop === 'coffee' ? buildCup() : prop === 'asado' ? buildChoripan() : prop === 'marshmallow' ? buildMarshmallow() : prop === 'popcorn' ? buildPopcorn() : buildMate();
         // A little larger than life so it reads at village distance.
         c.mate.scale.setScalar(0.75);
         c.body.add(c.mate);
@@ -2690,6 +2796,16 @@ export class World {
       if (!hit) return;
       if (hit.object === ground) { if (!noWalk) this.hooks.onGroundClick?.({ x: hit.point.x, z: hit.point.z }); return; }
       let o: THREE.Object3D | null = hit.object;
+      if (o.name === 'theater-screen' || o.name === 'theater-screen-back') { this.hooks.onTheaterScreenClick?.(); return; }
+      let person = false;
+      for (let q: THREE.Object3D | null = o; q; q = q.parent) if (q.userData.pk) person = true;
+      if (!person && !noWalk) {
+        // A chair: walk to it and sit. A building's floor you can walk on (seen through its walls): walk there.
+        const at = { x: hit.point.x, z: hit.point.z };
+        const seat = this.seatAt(at, hit.point.y);
+        if (seat) { this.hooks.onSeatClick?.(seat); return; }
+        if (this.insideWalkable(at) && hit.point.y < this.groundAt(at) + 0.12) { this.hooks.onGroundClick?.(at); return; }
+      }
       while (o) {
         if (o.userData.pk) { this.hooks.onPersonClick?.(o.userData.pk); return; }
         if (o.userData.gameId) { this.hooks.onGameClick?.(o.userData.gameId); return; }
@@ -2698,6 +2814,19 @@ export class World {
         o = o.parent;
       }
     });
+  }
+
+  /** The free seat a click at p (height y) lands on: on its cushion or its back. */
+  seatAt(p: Vec2, y: number): Seat | null {
+    let best: Seat | null = null, bd = 0.2;
+    for (const s of this.seats) {
+      if (s.taken) continue;
+      // The cushion and the back behind it.
+      const back = { x: s.pos.x - Math.sin(s.face) * 0.08, z: s.pos.z - Math.cos(s.face) * 0.08 };
+      const d = Math.min(dist(p, s.pos), dist(p, back));
+      if (d < bd && y > s.y - 0.25 && y < s.y + 0.4) { bd = d; best = s; }
+    }
+    return best;
   }
 
   /** First person: hide your own body (you are its eyes). */
@@ -2850,6 +2979,7 @@ export class World {
     this.obelisk?.setGlow(night01, this.pulse + (Math.sin(this.elapsed * 2) * 0.5 + 0.5) * 0.08);
     for (const b of this.landmarks.values()) { b.setNight(night01, this.elapsed); b.update?.(dt, this.elapsed); }
     this.updateInteriors();
+    this.updateTheater();
     this.mill?.setNight(night01);
     this.mill?.update(dt, this.elapsed);
     for (const b of this.buildings.values()) for (const w of b.windows) w.visible = night01 > 0.4;

@@ -20,6 +20,8 @@ export interface VoiceHost {
   relay: () => string;
   pubkey: () => string | null;
   sign: (t: EventTemplate) => Promise<VerifiedEvent>;
+  /** Live calls by channel (nostr/liveCalls.ts): the SFU's kind 31314 rooms. */
+  activeCalls?: (cb: (byChannel: Record<string, ActiveCallEntry | undefined>) => void) => () => void;
 }
 
 interface PublishOpts { extraRelays?: string[]; mode?: 'replace'; authRetryOnRestricted?: boolean }
@@ -95,8 +97,8 @@ export function createVoiceBridge(host: VoiceHost) {
     /** The hub budgets REQ slots itself; nothing to reserve. */
     reserveVoiceRelayCapacity: () => () => {},
 
-    /** Kind 31314 is the SFU's; mesh calls never see one. */
-    subscribeActiveCallByChannel: (_cb: (byChannel: Record<string, ActiveCallEntry | undefined>) => void): (() => void) => () => {},
+    /** Kind 31314 (the SFU's rooms), from sky's live-call watcher: the client sees an SFU room close. */
+    subscribeActiveCallByChannel: (cb: (byChannel: Record<string, ActiveCallEntry | undefined>) => void): (() => void) => host.activeCalls?.(cb) ?? (() => {}),
   };
 }
 

@@ -57,6 +57,9 @@ img { display: block; max-width: 100%; }
 .btn.ghost { background: var(--card); color: var(--ink); box-shadow: none; backdrop-filter: blur(8px); }
 .btn.ghost::after { display: none; }
 .btn.small { padding: 9px 16px; font-size: 14px; }
+.btn.gh { display: inline-flex; align-items: center; gap: 7px; }
+.btn.gh::after { display: none; }
+@media (max-width: 520px) { .btn.gh span { display: none; } .btn.gh { padding: 9px 11px; } }
 
 /* ── hero ── */
 .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; max-width: 1180px; margin: 0 auto; padding: 48px 16px 80px; }

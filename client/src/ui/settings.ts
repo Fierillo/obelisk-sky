@@ -1,31 +1,64 @@
-// Settings: this browser's preferences (prefs.ts), applied live.
+// Settings: this browser's preferences (prefs.ts), applied live, in the
+// village's language (the landing page's choice, i18n/lang.ts).
 
 import { CHAT_OPEN_PREFS, QUALITIES, TIMES, type Prefs, type PrefsStore } from '../prefs';
+import { lang, type Lang } from '../i18n/lang';
 
-const QUALITY_LABEL: Record<Prefs['quality'], string> = {
-  auto: 'Automatic (adapts to your device)', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra',
-};
-const CHAT_OPEN_LABEL: Record<Prefs['chatOpen'], string> = {
-  auto: 'Open it automatically', ask: 'Show a button to open it', off: 'Do nothing',
-};
-const TIME_LABEL: Record<Prefs['timeOfDay'], string> = {
-  auto: 'Buenos Aires time', day: 'Always day', sunset: 'Always sunset', night: 'Always night',
+const EN = {
+  title: 'Settings', sub: 'Saved in this browser only.',
+  graphics: 'Graphics', quality: 'Quality', renderingAt: 'Rendering at:', resolution: 'Resolution', shadows: 'Shadows',
+  ao: 'Ambient occlusion', aoHint: '(soft contact shadows)', bloom: 'Glow (bloom)', tilt: 'Toy-town view',
+  tiltHint: '(blurs the top and bottom so the island looks like a tiny model)', grass: 'Grass',
+  world: 'World', time: 'Time of day', signs: 'Channel signs', bubbles: 'Speech bubbles', feed: 'Message feed', feedHint: '(bottom left)',
+  share: 'Share my movement live', shareHint: '(others see you walk)',
+  camera: 'Camera and controls', director: 'Auto camera', directorHint: '(follows conversations)', fov: 'First-person field of view',
+  mouse: 'Mouse sensitivity', invert: 'Invert vertical look',
+  chat: 'Chat', chatOpen: 'Walking into a channel', opacity: 'Panel opacity',
+  soundSec: 'Sound', sound: 'Sound', volume: 'Volume', ambience: 'Ambient sounds', ambienceHint: '(crickets at night)',
+  footsteps: 'Footsteps', footstepsHint: '(walking and running)', emoteMusic: 'Emote music', emoteMusicHint: '(heard near people dancing)',
+  placeMusic: 'Music at places', placeMusicHint: '(the parrilla, the campfires)',
+  reset: 'Reset to defaults', done: 'Done',
+  quality_: { auto: 'Automatic (adapts to your device)', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' } as Record<Prefs['quality'], string>,
+  chatOpen_: { auto: 'Open it automatically', ask: 'Show a button to open it', off: 'Do nothing' } as Record<Prefs['chatOpen'], string>,
+  time_: { auto: 'Buenos Aires time', day: 'Always day', sunset: 'Always sunset', night: 'Always night' } as Record<Prefs['timeOfDay'], string>,
 };
 
-export function openSettings(parent: HTMLElement, store: PrefsStore, currentLevel: () => string): void {
+const ES: typeof EN = {
+  title: 'Ajustes', sub: 'Se guardan solo en este navegador.',
+  graphics: 'Gráficos', quality: 'Calidad', renderingAt: 'Dibujando en:', resolution: 'Resolución', shadows: 'Sombras',
+  ao: 'Oclusión ambiental', aoHint: '(sombras suaves de contacto)', bloom: 'Brillo (bloom)', tilt: 'Vista maqueta',
+  tiltHint: '(desenfoca arriba y abajo para que la isla parezca una miniatura)', grass: 'Pasto',
+  world: 'Mundo', time: 'Hora del día', signs: 'Carteles de los canales', bubbles: 'Globos de diálogo', feed: 'Mensajes', feedHint: '(abajo a la izquierda)',
+  share: 'Compartir mis movimientos en vivo', shareHint: '(los demás te ven caminar)',
+  camera: 'Cámara y controles', director: 'Cámara automática', directorHint: '(sigue las conversaciones)', fov: 'Campo de visión en primera persona',
+  mouse: 'Sensibilidad del mouse', invert: 'Invertir la mirada vertical',
+  chat: 'Chat', chatOpen: 'Al entrar a un canal', opacity: 'Opacidad del panel',
+  soundSec: 'Sonido', sound: 'Sonido', volume: 'Volumen', ambience: 'Sonidos ambientales', ambienceHint: '(grillos de noche)',
+  footsteps: 'Pasos', footstepsHint: '(al caminar y correr)', emoteMusic: 'Música de los gestos', emoteMusicHint: '(se oye cerca de quien baila)',
+  placeMusic: 'Música en los lugares', placeMusicHint: '(la parrilla, los fogones)',
+  reset: 'Volver a lo predeterminado', done: 'Listo',
+  quality_: { auto: 'Automática (se adapta a tu equipo)', low: 'Baja', medium: 'Media', high: 'Alta', ultra: 'Ultra' },
+  chatOpen_: { auto: 'Abrirlo solo', ask: 'Mostrar un botón para abrirlo', off: 'No hacer nada' },
+  time_: { auto: 'Hora de Buenos Aires', day: 'Siempre de día', sunset: 'Siempre atardecer', night: 'Siempre de noche' },
+};
+
+export const SETTINGS_WORDS: Record<Lang, typeof EN> = { en: EN, es: ES };
+
+export function openSettings(parent: HTMLElement, store: PrefsStore, currentLevel: () => string, l: Lang = lang): void {
+  const w = SETTINGS_WORDS[l];
   parent.querySelector('.settings')?.remove();
   const el = document.createElement('div');
   el.className = 'themes settings';
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Settings');
+  el.setAttribute('aria-label', w.title);
   const head = document.createElement('div');
   head.className = 'themes-head';
   const title = document.createElement('div');
   title.className = 'themes-title';
-  title.textContent = 'Settings';
+  title.textContent = w.title;
   const sub = document.createElement('div');
   sub.className = 'themes-sub';
-  sub.textContent = 'Saved in this browser only.';
+  sub.textContent = w.sub;
   head.append(title, sub);
   const body = document.createElement('div');
   body.className = 'themes-body';
@@ -86,55 +119,55 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
     return s;
   };
 
-  section('Graphics');
+  section(w.graphics);
   const levelHint = document.createElement('small');
-  row('Quality', select('quality', QUALITIES, QUALITY_LABEL));
+  row(w.quality, select('quality', QUALITIES, w.quality_));
   levelHint.className = 'settings-hint';
-  levelHint.textContent = `Rendering at: ${currentLevel()}`;
+  levelHint.textContent = `${w.renderingAt} ${currentLevel()}`;
   body.append(levelHint);
-  row('Resolution', slider('resolution', 0.5, 1.5, 0.05, (v) => `${Math.round(v * 100)}%`));
-  row('Shadows', toggle('shadows'));
-  row('Ambient occlusion', toggle('ambientOcclusion'), '(soft contact shadows)');
-  row('Glow (bloom)', toggle('bloom'));
-  row('Toy-town view', toggle('tiltShift'), '(blurs the top and bottom so the island looks like a tiny model)');
-  row('Grass', toggle('grass'));
+  row(w.resolution, slider('resolution', 0.5, 1.5, 0.05, (v) => `${Math.round(v * 100)}%`));
+  row(w.shadows, toggle('shadows'));
+  row(w.ao, toggle('ambientOcclusion'), w.aoHint);
+  row(w.bloom, toggle('bloom'));
+  row(w.tilt, toggle('tiltShift'), w.tiltHint);
+  row(w.grass, toggle('grass'));
 
-  section('World');
-  row('Time of day', select('timeOfDay', TIMES, TIME_LABEL));
-  row('Channel signs', toggle('signs'));
-  row('Speech bubbles', toggle('bubbles'));
-  row('Message feed', toggle('feed'), '(bottom left)');
-  row('Share my movement live', toggle('shareMotion'), '(others see you walk)');
+  section(w.world);
+  row(w.time, select('timeOfDay', TIMES, w.time_));
+  row(w.signs, toggle('signs'));
+  row(w.bubbles, toggle('bubbles'));
+  row(w.feed, toggle('feed'), w.feedHint);
+  row(w.share, toggle('shareMotion'), w.shareHint);
 
-  section('Camera and controls');
-  row('Auto camera', toggle('autoDirector'), '(follows conversations)');
-  row('First-person field of view', slider('fov', 50, 100, 1, (v) => `${v}°`));
-  row('Mouse sensitivity', slider('mouseSensitivity', 0.25, 3, 0.05, (v) => `${v.toFixed(2)}×`));
-  row('Invert vertical look', toggle('invertY'));
+  section(w.camera);
+  row(w.director, toggle('autoDirector'), w.directorHint);
+  row(w.fov, slider('fov', 50, 100, 1, (v) => `${v}°`));
+  row(w.mouse, slider('mouseSensitivity', 0.25, 3, 0.05, (v) => `${v.toFixed(2)}×`));
+  row(w.invert, toggle('invertY'));
 
-  section('Chat');
-  row('Walking into a channel', select('chatOpen', CHAT_OPEN_PREFS, CHAT_OPEN_LABEL));
-  row('Panel opacity', slider('chatOpacity', 0.15, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
+  section(w.chat);
+  row(w.chatOpen, select('chatOpen', CHAT_OPEN_PREFS, w.chatOpen_));
+  row(w.opacity, slider('chatOpacity', 0.15, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
 
-  section('Sound');
-  row('Sound', toggle('sound'));
-  row('Volume', slider('volume', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
-  row('Ambient sounds', toggle('ambience'), '(crickets at night)');
-  row('Footsteps', toggle('footsteps'), '(walking and running)');
-  row('Emote music', toggle('emoteMusic'), '(heard near people dancing)');
-  row('Music at places', toggle('placeMusic'), '(the parrilla, the campfires)');
+  section(w.soundSec);
+  row(w.sound, toggle('sound'));
+  row(w.volume, slider('volume', 0, 1, 0.01, (v) => `${Math.round(v * 100)}%`));
+  row(w.ambience, toggle('ambience'), w.ambienceHint);
+  row(w.footsteps, toggle('footsteps'), w.footstepsHint);
+  row(w.emoteMusic, toggle('emoteMusic'), w.emoteMusicHint);
+  row(w.placeMusic, toggle('placeMusic'), w.placeMusicHint);
 
   const foot = document.createElement('div');
   foot.className = 'themes-foot';
   const reset = document.createElement('button');
   reset.type = 'button';
   reset.className = 'account-btn';
-  reset.textContent = 'Reset to defaults';
-  reset.addEventListener('click', () => { store.reset(); openSettings(parent, store, currentLevel); });
+  reset.textContent = w.reset;
+  reset.addEventListener('click', () => { store.reset(); openSettings(parent, store, currentLevel, l); });
   const done = document.createElement('button');
   done.type = 'button';
   done.className = 'account-btn primary';
-  done.textContent = 'Done';
+  done.textContent = w.done;
   const close = () => { el.remove(); document.removeEventListener('keydown', onKey); };
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   done.addEventListener('click', close);
@@ -142,5 +175,5 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   foot.append(reset, document.createElement('span'), done);
   el.append(head, body, foot);
   parent.append(el);
-  const tick = setInterval(() => { if (!el.isConnected) clearInterval(tick); else levelHint.textContent = `Rendering at: ${currentLevel()}`; }, 1000);
+  const tick = setInterval(() => { if (!el.isConnected) clearInterval(tick); else levelHint.textContent = `${w.renderingAt} ${currentLevel()}`; }, 1000);
 }

@@ -50,7 +50,7 @@ const MIME: Record<string, string> = {
 export const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
-  'permissions-policy': 'microphone=(self), camera=()',
+  'permissions-policy': 'microphone=(self), camera=(self), display-capture=(self)',
   'content-security-policy':
     "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob:; " +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +

@@ -7,6 +7,11 @@
 // dropped call reconnects a few times with backoff; a blocked microphone
 // leaves you listening, and says so; voices of people who aren't on the
 // island play from where you stand instead of a stale spot.
+//
+// The theater uses the same room: a shared screen (with its sound) is kept
+// for the hall's big screen, a `voice-sfu` channel goes through obelisk's
+// SFU so a full audience fits, and a gate (the host's grants) mutes voices
+// and hides screens it doesn't allow, here, on the receiving side.
 
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import type { RemoteTrack } from '@/services/voice/room-state';
@@ -26,9 +31,28 @@ export interface CallState {
   /** Reconnecting after the call dropped (attempt number), or 0. */
   reconnecting: number;
   error: string | null;
+  /** The screen being shared in the call (allowed by the gate), else a camera, or null. */
+  screen: { pubkey: string; stream: MediaStream; kind: 'screen' | 'camera' } | null;
+  /** People sharing a screen the gate refuses (the theater's host can let them on). */
+  refusedScreens: string[];
+  /** You are sharing your screen. */
+  sharing: boolean;
+  /** Your camera is on. */
+  camOn: boolean;
 }
 
-type JoinOpts = { open: boolean; signer: 'nsec' | 'nip07' | 'bunker' };
+export type JoinOpts = {
+  open: boolean;
+  signer: 'nsec' | 'nip07' | 'bunker';
+  /** A `voice-sfu` channel: through obelisk's SFU (big rooms) instead of the mesh. */
+  sfu?: boolean;
+  /** Turn the microphone on once in (default true; the theater's viewers join quiet). */
+  mic?: boolean;
+};
+
+/** What a gate decides on: someone's voice, or their shared screen (and its sound). */
+export type GateKind = 'mic' | 'screen';
+export type Gate = (pubkey: string, kind: GateKind) => boolean;
 
 /** Out of the call's yard this long (s), you leave the call unless you chose to stay. */
 export const AWAY_LEAVE_S = 25;
@@ -50,12 +74,36 @@ export function micMessage(e: unknown): string {
   return 'Microphone unavailable. You can still listen.';
 }
 
-interface Voice { pubkey: string; el: HTMLAudioElement; panner: PannerNode | null; src: MediaStreamAudioSourceNode | null }
+/** Turn a screen-share error into words. */
+export function screenMessage(e: unknown): string {
+  const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+  if (/screenTaken|taken/i.test(msg)) return 'Someone else is already sharing their screen.';
+  if (/NotAllowed|denied|Permission/i.test(msg)) return 'Screen sharing was cancelled.';
+  if (/NotSupported|getDisplayMedia/i.test(msg)) return 'This browser can’t share its screen.';
+  return 'Could not share the screen.';
+}
+
+/** A remote sound: a voice (placed where the person stands) or a shared screen's sound (unplaced). */
+interface Voice {
+  pubkey: string;
+  kind: 'audio' | 'screen-audio';
+  el: HTMLAudioElement;
+  panner: PannerNode | null;
+  gain: GainNode | null;
+  src: MediaStreamAudioSourceNode | null;
+}
+
+const EMPTY_STATE: Omit<CallState, 'micBlocked' | 'error'> = { channelId: null, joining: false, participants: [], speaking: new Set(), micOn: false, reconnecting: 0, screen: null, sharing: false, camOn: false, refusedScreens: [] };
 
 export class CallRoom {
-  state: CallState = { channelId: null, joining: false, participants: [], speaking: new Set(), micOn: false, micBlocked: false, reconnecting: 0, error: null };
+  state: CallState = { ...EMPTY_STATE, speaking: new Set(), micBlocked: false, error: null };
   private client: VoiceClientT | null = null;
+  /** Keyed `<pubkey>|<kind>`. */
   private voices = new Map<string, Voice>();
+  private tracks: RemoteTrack[] = [];
+  private loggedTracks = new Set<string>();
+  private gate: Gate = () => true;
+  private screenVolume = 1;
   private ctx: AudioContext | null = null;
   private listeners = new Set<() => void>();
   /** Bumped by every join and leave: an older join that wakes up finds it stale and backs out. */
@@ -106,14 +154,14 @@ export class CallRoom {
         members: roles.members,
         admins: roles.admins,
         open: opts.open,
-        expectSfu: false,
+        expectSfu: opts.sfu === true,
         originRelayUrl: this.relay,
         signer: opts.signer,
         uiSink: sink,
         events: {
           onParticipantsChange: (pks) => this.set({ participants: pks }),
           onRemoteTracksChange: (tracks) => this.syncTracks(tracks),
-          onLocalTracksChange: (l) => this.set({ micOn: l.mic }),
+          onLocalTracksChange: (l) => { this.set({ micOn: l.mic, sharing: l.screen, camOn: l.camera }); this.pickScreen(); },
           onError: (code) => { if (!stale()) this.set({ error: String(code) }); },
           // Dropped without asking (the relay, the network): try again.
           onLeft: () => { if (!stale()) this.dropped(); },
@@ -124,11 +172,13 @@ export class CallRoom {
       if (stale()) { await client.leave().catch(() => {}); return; }
       this.ctx ??= newAudioContext();
       void this.ctx?.resume();
-      try {
-        await client.setMicEnabled(true);
-        this.set({ micBlocked: false });
-      } catch (e) {
-        this.set({ micBlocked: true, micOn: false, error: micMessage(e) });
+      if (opts.mic !== false) {
+        try {
+          await client.setMicEnabled(true);
+          this.set({ micBlocked: false });
+        } catch (e) {
+          this.set({ micBlocked: true, micOn: false, error: micMessage(e) });
+        }
       }
       if (stale()) return;
       this.set({ joining: false, reconnecting: 0 });
@@ -148,10 +198,10 @@ export class CallRoom {
     this.releaseVoices();
     if (!w || retry >= RECONNECT_DELAYS.length) {
       this.wanted = null;
-      this.set({ channelId: null, joining: false, participants: [], speaking: new Set(), micOn: false, reconnecting: 0 });
+      this.set({ ...EMPTY_STATE, speaking: new Set() });
       return;
     }
-    this.set({ joining: true, participants: [], speaking: new Set(), reconnecting: retry + 1 });
+    this.set({ joining: true, participants: [], speaking: new Set(), reconnecting: retry + 1, screen: null, sharing: false, refusedScreens: [] });
     const token = this.attempt;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
@@ -177,6 +227,52 @@ export class CallRoom {
     } catch (e) {
       this.set({ micOn: false, micBlocked: true, error: micMessage(e) });
     }
+  }
+
+  /** Your camera on or off (in the theater it shows on the big screen when nobody shares one). */
+  async setCamera(on: boolean): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.setCameraEnabled(on);
+      this.set({ camOn: on, error: null });
+    } catch (e) {
+      const name = e instanceof Error ? e.name : '';
+      this.set({ camOn: false, error: on ? (name === 'NotAllowedError' ? 'Camera blocked: allow it in the browser.' : name === 'NotFoundError' ? 'No camera found.' : 'Camera unavailable.') : null });
+    }
+  }
+
+  /** Share your screen (with its sound, where the browser offers it), or stop. */
+  async setScreenShare(on: boolean): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.setScreenShareEnabled(on);
+      this.set({ sharing: on, error: null });
+    } catch (e) {
+      this.set({ sharing: false, error: on ? screenMessage(e) : null });
+    }
+  }
+
+  /**
+   * Who may be heard and whose screen may be seen (the theater's grants).
+   * Applied at once to every sound and to the shared screen.
+   */
+  setGate(gate: Gate | null): void {
+    this.gate = gate ?? (() => true);
+    for (const v of this.voices.values()) this.applyGain(v);
+    this.pickScreen();
+  }
+
+  /** Is `pubkey`'s voice (or their screen's sound) playing now? False when there's none or the gate mutes it. */
+  audible(pubkey: string, kind: Voice['kind'] = 'audio'): boolean {
+    const v = this.voices.get(`${pubkey}|${kind}`);
+    if (!v) return false;
+    return v.gain ? v.gain.gain.value > 0 : !v.el.muted;
+  }
+
+  /** The shared screen's loudness (0..1). */
+  setScreenVolume(v: number): void {
+    this.screenVolume = Math.min(1, Math.max(0, v));
+    for (const v2 of this.voices.values()) if (v2.kind === 'screen-audio') this.applyGain(v2);
   }
 
   /** Each frame: you are the listener; everyone's voice comes from their character. */
@@ -213,41 +309,99 @@ export class CallRoom {
   }
 
   private syncTracks(tracks: RemoteTrack[]): void {
-    const audio = tracks.filter((t) => t.kind === 'audio' || t.stream.getAudioTracks().length > 0);
-    const keep = new Set(audio.map((t) => t.pubkey));
-    for (const [pk, v] of this.voices) if (!keep.has(pk)) { this.dropVoice(v); this.voices.delete(pk); }
-    for (const t of audio) {
-      if (this.voices.has(t.pubkey)) continue;
+    // Which video arrived, once each: the first thing to look at when a screen doesn't show.
+    for (const t of tracks) {
+      if (t.kind === 'audio' || t.kind === 'screen-audio' || this.loggedTracks.has(t.trackId)) continue;
+      this.loggedTracks.add(t.trackId);
+      console.info('[sky] call video', t.kind, t.pubkey.slice(0, 8), `video tracks: ${t.stream.getVideoTracks().length}`);
+    }
+    this.tracks = tracks;
+    const sounds = new Map<string, { pubkey: string; kind: Voice['kind']; stream: MediaStream }>();
+    for (const t of tracks) {
+      const kind = t.kind === 'audio' ? 'audio' : t.kind === 'screen-audio' ? 'screen-audio' : null;
+      if (kind && t.stream.getAudioTracks().length > 0) sounds.set(`${t.pubkey}|${kind}`, { pubkey: t.pubkey, kind, stream: t.stream });
+    }
+    for (const [key, v] of this.voices) if (!sounds.has(key)) { this.dropVoice(v); this.voices.delete(key); }
+    for (const [key, t] of sounds) {
+      if (this.voices.has(key)) continue;
       // Chrome only feeds a remote WebRTC stream into Web Audio while a media
-      // element is playing it; the element stays muted, the panner speaks.
+      // element is playing it; the element stays muted, the graph speaks.
       const el = new Audio();
       el.srcObject = t.stream;
       el.autoplay = true;
       let panner: PannerNode | null = null;
+      let gain: GainNode | null = null;
       let src: MediaStreamAudioSourceNode | null = null;
       try {
         this.ctx ??= newAudioContext();
         if (!this.ctx) throw new Error('no Web Audio');
         src = this.ctx.createMediaStreamSource(t.stream);
-        panner = new PannerNode(this.ctx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 2, maxDistance: 40, rolloffFactor: 0.8 });
-        src.connect(panner).connect(this.ctx.destination);
+        gain = this.ctx.createGain();
+        if (t.kind === 'audio') {
+          panner = new PannerNode(this.ctx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 2, maxDistance: 40, rolloffFactor: 0.8 });
+          src.connect(gain).connect(panner).connect(this.ctx.destination);
+        } else {
+          // The film's sound: the same everywhere in the hall.
+          src.connect(gain).connect(this.ctx.destination);
+        }
         el.muted = true;
       } catch {
         el.muted = false; // no Web Audio: plain playback
       }
+      const v: Voice = { pubkey: t.pubkey, kind: t.kind, el, panner, gain, src };
+      this.voices.set(key, v);
+      this.applyGain(v);
       void el.play().catch(() => {});
-      this.voices.set(t.pubkey, { pubkey: t.pubkey, el, panner, src });
     }
+    this.pickScreen();
+  }
+
+  /** Mute what the gate refuses; the screen's sound at its volume. */
+  private applyGain(v: Voice): void {
+    const allowed = this.gate(v.pubkey, v.kind === 'audio' ? 'mic' : 'screen');
+    const level = allowed ? (v.kind === 'screen-audio' ? this.screenVolume : 1) : 0;
+    if (v.gain) v.gain.gain.value = level;
+    else v.el.muted = level === 0;
+  }
+
+  /**
+   * What the hall's screen shows: your own screen while you share, else the
+   * first shared screen the gate allows, else an allowed camera. Screens the
+   * gate refuses are listed, so the host can let them on.
+   */
+  private pickScreen(): void {
+    const video = (x: RemoteTrack) => x.stream.getVideoTracks().length > 0;
+    const screens = this.tracks.filter((x) => x.kind === 'screen' && video(x));
+    const own = this.ownScreen();
+    const shown = own
+      ?? screens.find((x) => this.gate(x.pubkey, 'screen'))
+      ?? this.tracks.find((x) => x.kind === 'camera' && video(x) && this.gate(x.pubkey, 'screen'));
+    const pick = shown ? { pubkey: shown.pubkey, stream: shown.stream, kind: shown.kind === 'camera' ? 'camera' as const : 'screen' as const } : null;
+    const refused = [...new Set(screens.filter((x) => !this.gate(x.pubkey, 'screen')).map((x) => x.pubkey))].sort();
+    const cur = this.state.screen;
+    const same = (pick?.stream ?? null) === (cur?.stream ?? null) && (pick?.pubkey ?? null) === (cur?.pubkey ?? null);
+    if (same && refused.join() === this.state.refusedScreens.join()) return;
+    this.set({ screen: pick, refusedScreens: refused });
+  }
+
+  /** Your own shared screen, as a stream for the hall's screen (silent: you hear it already). */
+  private ownStream: MediaStream | null = null;
+  private ownScreen(): { pubkey: string; stream: MediaStream; kind: 'screen' } | null {
+    const track = this.client?.getLocalTracks?.().screen ?? null;
+    if (!track || track.readyState === 'ended' || typeof MediaStream === 'undefined') { this.ownStream = null; return null; }
+    if (this.ownStream?.getVideoTracks()[0] !== track) this.ownStream = new MediaStream([track]);
+    return { pubkey: 'self', stream: this.ownStream, kind: 'screen' };
   }
 
   private dropVoice(v: Voice): void {
-    try { v.src?.disconnect(); v.panner?.disconnect(); } catch { /* already gone */ }
+    try { v.src?.disconnect(); v.gain?.disconnect(); v.panner?.disconnect(); } catch { /* already gone */ }
     v.el.srcObject = null;
   }
 
   private releaseVoices(): void {
     for (const v of this.voices.values()) this.dropVoice(v);
     this.voices.clear();
+    this.tracks = [];
   }
 
   private cleanup(): void {
@@ -255,7 +409,7 @@ export class CallRoom {
     // The audio graph goes with the call; the next join makes a fresh one.
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
-    this.set({ channelId: null, joining: false, participants: [], speaking: new Set(), micOn: false, micBlocked: false, reconnecting: 0 });
+    this.set({ ...EMPTY_STATE, speaking: new Set(), micBlocked: false });
   }
 
   private set(patch: Partial<CallState>): void {
