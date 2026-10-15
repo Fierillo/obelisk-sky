@@ -189,10 +189,15 @@
     <div id="dock" class="dock">
       <div id="callbar" class="callbar" hidden>
         <div class="callbar-info"><span class="callbar-dot"></span><span id="call-title"></span><span id="call-who" class="callbar-who"></span></div>
+        <select id="call-pick" class="call-pick" hidden aria-label="Channel to show" data-i18n-aria="call.pick"></select>
         <button id="call-join" class="account-btn primary" data-i18n="call.join">Join call</button>
         <button id="call-stay" class="account-btn" hidden title="Stay in the call wherever you walk" data-i18n="call.stay" data-i18n-title="call.stay.title">Stay</button>
         <button id="call-mic" class="account-btn call-toggle" hidden title="Microphone" aria-label="Microphone" aria-pressed="false" data-i18n-title="call.mic.title"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path class="slash" d="M4 4l16 16"/></svg><span class="call-toggle-label" data-i18n="call.mic">Mic</span></button>
         <button id="call-cam" class="account-btn call-toggle" hidden title="Camera" aria-label="Camera" aria-pressed="false" data-i18n-title="call.cam"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="m16 11 5-3v8l-5-3"/><path class="slash" d="M4 4l16 16"/></svg><span class="call-toggle-label" data-i18n="call.cam">Camera</span></button>
+        <button id="call-share" class="account-btn call-toggle" hidden aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="call-toggle-label"></span></button>
+        <button id="call-watch" class="account-btn call-toggle" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"/></svg><span class="call-toggle-label"></span></button>
+        <button id="call-chat" class="account-btn call-toggle" hidden aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="call-toggle-label"></span></button>
+        <input id="call-vol" class="call-vol" type="range" min="0" max="1" step="0.05" value="1" hidden aria-label="Film volume" data-i18n-aria="call.vol">
         <button id="call-leave" class="account-btn danger" hidden data-i18n="call.leave">Leave</button>
         <a id="call-app" class="account-btn" target="_blank" rel="noopener" hidden data-i18n="call.app">Open in Obelisk</a>
       </div>
@@ -205,7 +210,6 @@
         <button id="near-call" class="account-btn" title="Private voice call" data-i18n="near.call" data-i18n-title="near.call.title">📞 Call</button>
       </div>
     </div>
-    <div id="theater" class="theater-panel" role="region" aria-label="Theater" data-i18n-aria="theater" hidden></div>
     <div id="pcall" class="callbar pcall" hidden>
       <div class="callbar-info"><span class="callbar-dot"></span><span id="pcall-title"></span><span id="pcall-sub" class="callbar-who"></span></div>
       <button id="pcall-accept" class="account-btn primary" hidden data-i18n="pcall.accept">Accept</button>

@@ -28,8 +28,7 @@ import { ActivityBeacon, ActivityStore, activityTemplate, emoteActivity, emoteOf
 import { MotionBeacon, MotionStore, motionTemplate } from './nostr/motion';
 import { closeCreator, openCreator } from './ui/creator';
 import { CallRoom, RECONNECT_DELAYS, awayCountdown } from './voice/callRoom';
-import { HAND_EVERY_S, ScreeningBeacon, TheaterStore, canShare, canSpeak, handTemplate, screeningTemplate, type HandWant, type Screening, type ScreeningSpec } from './nostr/theater';
-import { TheaterPanel, WatchView, isVoiceKind, openFullscreenVideo, theaterView } from './ui/theaterPanel';
+import { WatchView, isVoiceKind } from './ui/theaterPanel';
 import { LiveCalls, liveForTheater } from './nostr/liveCalls';
 import { openControlsGuide, maybeShowControlsGuide, isTouch } from './ui/controlsGuide';
 import { obeliskNoteUrl, obeliskProfileUrl } from './ui/obeliskLinks';
@@ -889,9 +888,7 @@ function stepPlayer(dt: number): void {
   const inHall = world.inTheater(controller.pos);
   if (inHall !== inTheaterHall) {
     inTheaterHall = inHall;
-    if (inHall) autoJoinTheater();
-    renderTheater();
-    renderCall();
+    syncTheater();
   }
   const here = inHall ? theaterChannel() : placeAt(controller.pos, world.yards());
   if (here !== candidate) { candidate = here; candidateFor = 0; }
@@ -899,7 +896,8 @@ function stepPlayer(dt: number): void {
   const settled = !controller.moving || candidateFor > SETTLE_WALKING;
   if (settled && candidate !== place) {
     place = candidate;
-    const act = onPlaceChange(place, { open: chat.groupId, openedBy: chat.openedBy }, prefs.get().chatOpen);
+    // In the hall the chat opens only from the call bar's 💬, never by itself.
+    const act = onPlaceChange(place, { open: chat.groupId, openedBy: chat.openedBy }, inHall ? 'off' : prefs.get().chatOpen);
     chatHint = act.kind === 'hint' ? act.id : null;
     if (act.kind === 'open') { const g = groups.find((x) => x.id === act.id); if (g) chat.open(g, 'auto'); }
     else if (act.kind === 'close') chat.close();
@@ -2173,15 +2171,19 @@ let stayInCall = false;
 let awayShown: number | null = null;
 function renderCall(): void {
   const s = call.state;
-  const here = place ? groups.find((g) => g.id === place) : null;
-  const voiceHere = here && (here.kind === 'voice' || here.kind === 'voice-sfu') ? here : null;
+  // In the theater the bar is the hall's controls, always there and always in the same place.
+  const hall = inTheaterHall;
+  const hallId = hall ? theaterChannel() : null;
+  const here = hall ? (hallId ? groups.find((g) => g.id === hallId) : null) : place ? groups.find((g) => g.id === place) : null;
+  const voiceHere = here && isVoiceKind(here.kind) ? here : null;
   const inCall = !!s.channelId;
   const bar = $('callbar');
   // No calls on the guest island.
-  bar.hidden = !session.current || isGuest() || (!inCall && !voiceHere);
+  bar.hidden = !session.current || isGuest() || (!inCall && !voiceHere && !hall);
+  renderHallControls(hall && !bar.hidden, hallId);
   if (bar.hidden) return;
   const callGroup = inCall ? groups.find((g) => g.id === s.channelId) : voiceHere;
-  ($('call-title') as HTMLElement).textContent = callGroup?.name ?? vw.voice;
+  ($('call-title') as HTMLElement).textContent = callGroup?.name ?? (hall ? vw.cine : vw.voice);
   const names = s.participants.map((pk) => world.nameOf(pk));
   const left = awayCountdown(inCall, place, s.channelId, awayFor, stayInCall);
   ($('call-who') as HTMLElement).textContent = inCall
@@ -2190,11 +2192,11 @@ function renderCall(): void {
       : left !== null ? vw.walkedAway(left)
       : s.micBlocked && s.error ? s.error
       : names.length ? names.join(', ') : vw.justYou
-    : s.error ? vw.couldntJoin(s.error) : vw.walkInTalk;
+    : s.error ? vw.couldntJoin(s.error) : hall ? (voiceHere ? vw.joinToWatch : vw.pickAndStart) : vw.walkInTalk;
   // voice-sfu channels join through obelisk's SFU (voice/callRoom.ts); the app link stays for when it's down.
   const sfu = !inCall && voiceHere?.kind === 'voice-sfu' && !!s.error;
-  // In the theater you're connected by picking the channel (or walking in on a screening): no Join here.
-  $('call-join').hidden = inCall || inTheaterHall;
+  // In the hall Join is for the channel it shows (a call elsewhere moves there, as in obelisk-dex).
+  $('call-join').hidden = hall ? !voiceHere || s.channelId === voiceHere.id || s.joining : inCall;
   $('call-stay').hidden = left === null;
   // Mic and camera: icons that show on (green) or off (struck through); a blocked mic asks again.
   const toggle = (id: string, on: boolean, label: string, title: string) => {
@@ -2215,42 +2217,25 @@ function renderCall(): void {
 }
 
 call.onChange(() => {
-  renderCall();
   syncTheater();
   world.setSpeaking(call.state.speaking);
   if (call.state.channelId) world.gatherForCall(call.state.channelId, call.state.participants);
 });
 
-/** Join a channel's call: through the SFU for voice-sfu; in the theater, quiet unless the host lets you talk. */
-function joinCall(g: WireGroup, audience = false): void {
+/** Join a channel's call: through the SFU for voice-sfu. In the theater you come in with the mic off (the bar's mic turns it on). */
+function joinCall(g: WireGroup, quiet = false): void {
   const s = session.current;
   if (!s || isGuest()) return;
-  const sc = theater.current();
-  // An audience (joining from the theater's seats) comes in quiet; so does anyone the host hasn't let talk.
-  const quiet = audience || (!!sc && sc.channel === g.id && !canSpeak(sc, s.pubkey));
   void call.join(g.id, { open: g.open !== false, signer: VOICE_SIGNER[s.method], sfu: g.kind === 'voice-sfu', mic: !quiet });
 }
 
 $('call-join').addEventListener('click', () => {
-  const g = place ? groups.find((x) => x.id === place) : null;
-  if (g) joinCall(g);
+  const id = inTheaterHall ? theaterChannel() : place;
+  const g = id ? groups.find((x) => x.id === id) : null;
+  if (g) joinCall(g, inTheaterHall);
 });
-$('call-mic').addEventListener('click', () => {
-  const on = call.state.micBlocked || !call.state.micOn;
-  // In a screening only the host and those it allows may talk.
-  const sc = theater.current();
-  const me = session.current?.pubkey;
-  if (on && me && sc && sc.channel === call.state.channelId && !canSpeak(sc, me)) { toast(vw.raiseToTalk); return; }
-  void call.setMic(on);
-});
-$('call-cam').addEventListener('click', () => {
-  const on = !call.state.camOn;
-  // In a screening the host decides who is on the screen (cameras too).
-  const sc = theater.current();
-  const me = session.current?.pubkey;
-  if (on && me && sc && sc.channel === call.state.channelId && !canShare(sc, me)) { toast(vw.raiseToShare); return; }
-  void call.setCamera(on);
-});
+$('call-mic').addEventListener('click', () => void call.setMic(call.state.micBlocked || !call.state.micOn));
+$('call-cam').addEventListener('click', () => void call.setCamera(!call.state.camOn));
 $('call-leave').addEventListener('click', () => void call.leave());
 $('call-stay').addEventListener('click', () => { stayInCall = true; renderCall(); });
 
@@ -2265,35 +2250,22 @@ function tickCallAway(dt: number): void {
 }
 window.addEventListener('beforeunload', () => { void call.leave(); });
 
-// ── the theater (world/landmarks/theater.ts, nostr/theater.ts) ───────────
-// Inside the hall you pick a channel: the chat and the call follow it. The
-// host's screen plays on the big screen; the host's grants decide who is
-// heard and whose screen shows (CallRoom.setGate), on every screen.
+// ── the theater (world/landmarks/theater.ts) ─────────────────────────────
+// A voice channel's call on the big screen, nothing more: pick the channel in
+// the call bar, Join, and whoever shares their screen is on it. Everyone in
+// the call is equal, as in obelisk-dex's voice channels. Inside the hall the
+// call bar is the only control and stays where it is.
 
-let theater = new TheaterStore(hub);
 /** Calls on right now in any channel (SFU rooms and mesh beacons): a transmission already going. */
 const liveCalls = new LiveCalls(hub);
-const screeningBeacon = new ScreeningBeacon();
-/** The channel picked in the hall while nothing screens. */
+/** The channel picked in the hall's call bar. */
 let theaterPick: string | null = null;
-/** What you host, or null. */
-let hosting: ScreeningSpec | null = null;
-let hostingSend: Promise<void> = Promise.resolve();
-/** Your raised hand, and when it was last sent. */
-let myHand: Exclude<HandWant, 'down'> | null = null;
-let handSentAt = 0;
-/** The last screening that held the hall (for a hand-over, which carries it on). */
-let lastScreening: Screening | null = null;
 let theaterTick = 0;
-let closeFull: (() => void) | null = null;
-let amAdminOf: { channel: string; admin: boolean } | null = null;
-/** You've been in your screening's call: leaving it (or it dropping for good) ends the screening. */
-let hostInCall = false;
+let filmVolume = 1;
 
-/** The channel the hall shows: the screening's, else yours as host, else the one picked here, else the voice call you're in. */
+/** The channel the hall shows: the one picked, else the voice call you're in, else a call already live. */
 const theaterChannel = (): string | null => {
-  const picked = theater.current()?.channel ?? hosting?.channel ?? theaterPick;
-  if (picked) return picked;
+  if (theaterPick && groups.some((g) => g.id === theaterPick)) return theaterPick;
   const inCall = call.state.channelId ? groups.find((g) => g.id === call.state.channelId) : null;
   if (inCall && isVoiceKind(inCall.kind)) return inCall.id;
   // A transmission already on somewhere (a screen shared first): the hall shows it.
@@ -2302,217 +2274,94 @@ const theaterChannel = (): string | null => {
 
 function startTheater(): void {
   liveCalls.start(activeRelay());
-  theater.stop();
-  theater = new TheaterStore(hub);
-  theater.onChange(() => onTheaterChange());
-  theater.start(session.current?.pubkey ?? null);
-  hosting = null;
-  myHand = null;
-  lastScreening = null;
-  screeningBeacon.reset();
   syncTheater();
 }
 
 function stopTheater(): void {
   liveCalls.stop();
-  theater.stop();
-  hosting = null;
-  myHand = null;
   theaterPick = null;
   syncTheater();
 }
 
-function publishScreening(spec: ScreeningSpec | null, next?: string): void {
-  hostingSend = hostingSend.then(async () => {
-    const pk = session.current?.pubkey;
-    if (!pk) return;
-    const out = await publishToGroup(hub, (t) => session.sign(t), screeningTemplate(activeRelay(), spec, { prevCreatedAt: theater.createdAt(pk), next }));
-    if (out.ok) theater.ingest(out.event);
-    else if (spec) toast(vw.screeningRefused);
-  }).catch(() => {});
-}
-
-function onTheaterChange(): void {
-  const me = session.current?.pubkey;
-  const cur = theater.current();
-  // Handed the hall: carry the screening on (same since and grants).
-  const prevHost = lastScreening?.host;
-  const handed = prevHost ? theater.latest(prevHost) : null;
-  if (me && !hosting && lastScreening && handed?.ended && handed.next === me && nowSec() - handed.at < 60 && !cur) {
-    hosting = { channel: lastScreening.channel, since: lastScreening.since, title: lastScreening.title, mic: lastScreening.mic.filter((p) => p !== me), screen: lastScreening.screen.filter((p) => p !== me) };
-    toast(vw.handedYou(world.nameOf(lastScreening.host)));
-    const g = groups.find((x) => x.id === hosting!.channel);
-    if (g && call.state.channelId !== g.id) joinCall(g);
-  }
-  // Someone else holds the hall (an admin took over, or an earlier one): stop hosting.
-  if (me && hosting && cur && cur.host !== me && theater.latest(me) && !theater.latest(me)!.ended && cur.since < hosting.since) {
-    hosting = null;
-    toast(vw.hostingNow(world.nameOf(cur.host)));
-  }
-  if (cur) lastScreening = cur;
-  // The host answered your hand: put it down.
-  if (me && myHand && cur && (myHand === 'mic' ? cur.mic : cur.screen).includes(me)) myHand = null;
-  syncTheater();
-}
-
-/** Grants, the screen, the marquee, the panel: after any change to the hall or the call. */
+/** The screen, the marquee and the call bar: after any change to the hall or the call. */
 function syncTheater(): void {
-  const me = session.current?.pubkey ?? null;
-  if (hosting) {
-    if (call.state.channelId === hosting.channel) hostInCall = true;
-    else if (hostInCall) { hosting = null; hostInCall = false; toast(vw.screeningEnded); }
-  } else hostInCall = false;
-  const sc = theater.current();
   const channel = theaterChannel();
   const inThisCall = !!channel && call.state.channelId === channel;
-  call.setGate(sc && call.state.channelId === sc.channel ? (pk, kind) => (kind === 'mic' ? canSpeak(sc, pk) : canShare(sc, pk)) : null);
-  // Your own mic and screen follow your grants.
-  if (me && sc && call.state.channelId === sc.channel) {
-    if (call.state.micOn && !canSpeak(sc, me)) void call.setMic(false);
-    if (call.state.sharing && !canShare(sc, me)) { void call.setScreenShare(false); toast(vw.screenTakenBack); }
-    if (call.state.camOn && !canShare(sc, me)) void call.setCamera(false);
-  }
   const g = channel ? groups.find((x) => x.id === channel) : null;
   const stream = inThisCall ? call.state.screen?.stream ?? null : null;
   const live = channel ? liveCalls.get(channel) : null;
   const card: [string, string] = !g ? [vw.cine, vw.pickAndStart]
-    : !sc && live && !inThisCall ? [g.name, vw.liveCard(live.screens.length ? world.nameOf(live.screens[0]) : null)]
-    : !sc ? [g.name, vw.startToShare]
-      : !inThisCall ? [g.name, vw.hostingJoin(world.nameOf(sc.host))]
-        : [g.name, vw.waitingShare(world.nameOf(sc.host))];
-  world.setTheater({ channel: sc ? channel : null, marquee: sc?.title || (sc && g ? g.name : vw.nowShowing), stream, card });
+    : inThisCall ? [g.name, vw.nobodySharing]
+      : [g.name, live ? vw.liveCard(live.screens.length ? world.nameOf(live.screens[0]) : null) : vw.joinToWatch];
+  // Your call's people take the hall's seats while you watch it there.
+  world.setTheater({ channel: inTheaterHall && inThisCall ? channel : null, marquee: g?.name ?? vw.nowShowing, stream, card });
   watchView?.show(stream, card);
-  if (!stream && closeFull) { closeFull(); closeFull = null; }
-  renderTheater();
+  renderCall();
 }
 
-function renderTheater(): void {
-  const me = session.current?.pubkey;
-  if (!me || !inTheaterHall || isGuest()) { theaterPanel.hide(); return; }
-  const sc = theater.current();
-  const channel = sc?.channel ?? null;
-  if (channel && !hosting && amAdminOf?.channel !== channel) {
-    amAdminOf = { channel, admin: false };
-    void members.load(channel).then((m) => { if (amAdminOf?.channel === channel) { amAdminOf.admin = m.admins.includes(me); renderTheater(); } }).catch(() => {});
-  }
-  theaterPanel.show(theaterView({
-    me,
-    channels: groups.map((g) => ({ id: g.id, name: g.name, kind: g.kind })),
-    picked: hosting?.channel ?? theaterPick,
-    screening: hosting && (!sc || sc.host === me) ? { ...hosting, host: me, id: '', at: 0, exp: 0, ended: false } : sc,
-    hosting: !!hosting,
-    inCall: call.state.channelId,
-    sharing: call.state.sharing,
-    playing: !!call.state.screen && call.state.channelId === theaterChannel(),
-    admin: !!channel && amAdminOf?.channel === channel && amAdminOf.admin,
-    hands: hosting ? theater.hands().map((h) => ({ pk: h.pk, want: h.want })) : [],
-    refused: call.state.channelId === theaterChannel() ? call.state.refusedScreens : [],
-    myHand,
-    participants: call.state.channelId === theaterChannel() ? call.state.participants : [],
-    live: (() => { const ch = theaterChannel(); const l = ch ? liveCalls.get(ch) : null; return l ? { count: Math.max(0, l.participantCount), screens: l.screens } : null; })(),
-    nameOf: (pk) => world.nameOf(pk),
-  }));
-}
-
-/** Walked into the hall: if something is on (a screening, or a call already live), you're connected to it as audience. */
-function autoJoinTheater(): void {
-  const ch = theaterChannel();
-  if (!ch || !session.current || isGuest() || call.state.channelId === ch) return;
-  const live = theater.current()?.channel === ch || !!liveCalls.get(ch);
-  const g = groups.find((x) => x.id === ch);
-  if (live && g && isVoiceKind(g.kind)) { showTheaterChat(ch); joinCall(g, true); }
-}
-
-/** Open the theater's channel chat as you'd walk into its yard (it replaces what you were reading). */
-function showTheaterChat(id: string): void {
-  const g = groups.find((x) => x.id === id);
-  if (g && chat.groupId !== id) chat.open(g, 'auto');
-}
-
-const theaterPanel = new TheaterPanel($('theater'), {
-  pick(id) {
-    if (hosting) {
-      // The host moves the screening to another channel: everyone follows.
-      if (hosting.channel === id) return;
-      hosting = { ...hosting, channel: id, mic: [], screen: [] };
-      hostInCall = false;
-      const g = groups.find((x) => x.id === id);
-      if (g) joinCall(g);
-    } else {
-      theaterPick = id;
-      // Picking is choosing what to watch: you're connected to its call at once, as audience (mic off).
-      const g = groups.find((x) => x.id === id);
-      if (g && call.state.channelId !== id) joinCall(g, true);
+/** The hall's part of the call bar: the channel picker, Share, Watch, Chat and the film's volume. */
+function renderHallControls(on: boolean, channel: string | null): void {
+  const pick = $('call-pick') as HTMLSelectElement;
+  const share = $('call-share'), watch = $('call-watch'), chatBtn = $('call-chat');
+  const vol = $('call-vol') as HTMLInputElement;
+  const s = call.state;
+  const inThisCall = on && !!channel && s.channelId === channel && !s.joining;
+  pick.hidden = !on;
+  watch.hidden = !on;
+  chatBtn.hidden = !on || !channel;
+  share.hidden = !inThisCall;
+  vol.hidden = !inThisCall || !s.screen;
+  if (!on) return;
+  const voice = groups.filter((g) => isVoiceKind(g.kind));
+  const key = voice.map((g) => `${g.id}:${g.name}`).join('|') + `>${channel ?? ''}`;
+  if (pick.dataset.key !== key) {
+    pick.dataset.key = key;
+    pick.replaceChildren();
+    if (!channel) {
+      const o = new Option(voice.length ? vw.pickChannel : vw.noVoice, '', true, true);
+      o.disabled = true;
+      pick.append(o);
     }
-    showTheaterChat(id);
-    syncTheater();
-  },
-  start() {
-    const me = session.current?.pubkey;
-    const g = theaterPick ? groups.find((x) => x.id === theaterPick) : null;
-    if (!me || !g) return;
-    hosting = { channel: g.id, since: nowSec(), mic: [], screen: [] };
-    showTheaterChat(g.id);
-    if (call.state.channelId !== g.id) joinCall(g);
-    syncTheater();
-  },
-  join() {
-    const id = theaterChannel();
-    const g = id ? groups.find((x) => x.id === id) : null;
-    if (g) { showTheaterChat(g.id); joinCall(g, !hosting); }
-  },
-  end() {
-    hosting = null;
-    void call.setScreenShare(false);
-    syncTheater();
-  },
-  share(on) { void call.setScreenShare(on); },
-  raise(want) {
-    const sc = theater.current();
-    const me = session.current?.pubkey;
-    if (!sc || !me) return;
-    const now = nowSec();
-    if (want !== 'down' && now - handSentAt < HAND_EVERY_S) { toast(vw.handUp); return; }
-    handSentAt = now;
-    myHand = want === 'down' ? null : want;
-    renderTheater();
-    void publishToGroup(hub, (t) => session.sign(t), handTemplate(sc.host, sc.channel, want)).then((out) => { if (!out.ok) toast(vw.handFailed); });
-  },
-  grant(pk, kind, on) {
-    if (!hosting) return;
-    const list = new Set(hosting[kind]);
-    if (on) list.add(pk); else list.delete(pk);
-    hosting = { ...hosting, [kind]: [...list] };
-    theater.lower(pk);
-    syncTheater();
-  },
-  handOver(pk) {
-    if (!hosting) return;
-    const spec = hosting;
-    hosting = null;
-    void call.setScreenShare(false);
-    lastScreening = { ...spec, host: session.current?.pubkey ?? '', id: '', at: nowSec(), exp: 0, ended: false };
-    publishScreening(null, pk);
-    screeningBeacon.update(null, Date.now());
-    toast(vw.handedTo(world.nameOf(pk)));
-    syncTheater();
-  },
-  takeOver() {
-    const sc = theater.current();
-    if (!sc) return;
-    hosting = { channel: sc.channel, since: sc.since - 1, title: sc.title, mic: sc.mic, screen: sc.screen };
-    const g = groups.find((x) => x.id === sc.channel);
-    if (g && call.state.channelId !== g.id) joinCall(g);
-    syncTheater();
-  },
-  watch() { enterWatch(); },
-  fullscreen() {
-    const st = call.state.screen?.stream;
-    if (!st) return;
-    closeFull?.();
-    closeFull = openFullscreenVideo(st);
-  },
-  volume(v) { call.setScreenVolume(v); },
+    for (const g of voice) pick.append(new Option(g.name, g.id, false, g.id === channel));
+  }
+  share.classList.toggle('is-on', s.sharing);
+  share.setAttribute('aria-pressed', String(s.sharing));
+  share.title = s.sharing ? vw.stopShareTitle : vw.shareTitle;
+  (share.querySelector('.call-toggle-label') as HTMLElement).textContent = s.sharing ? vw.stopSharing : vw.shareScreen;
+  watch.title = watchView ? vw.backToVillage : vw.watchModeTitle;
+  (watch.querySelector('.call-toggle-label') as HTMLElement).textContent = watchView ? vw.backShort : vw.watchMode;
+  watch.classList.toggle('is-on', !!watchView);
+  const chatOpen = !!channel && chat.groupId === channel && !chat.minimised;
+  chatBtn.classList.toggle('is-on', chatOpen);
+  chatBtn.setAttribute('aria-pressed', String(chatOpen));
+  chatBtn.title = vw.chatToggleTitle;
+  (chatBtn.querySelector('.call-toggle-label') as HTMLElement).textContent = vw.chatToggle;
+  vol.title = vw.filmVolume;
+  if (document.activeElement !== vol) vol.value = String(filmVolume);
+}
+
+$('call-pick').addEventListener('change', () => {
+  const id = ($('call-pick') as HTMLSelectElement).value;
+  if (!id) return;
+  theaterPick = id;
+  // In a call already: move to the picked channel's, as clicking another voice channel does in obelisk-dex.
+  const g = groups.find((x) => x.id === id);
+  if (g && call.state.channelId && call.state.channelId !== id) joinCall(g, true);
+  syncTheater();
+});
+$('call-share').addEventListener('click', () => void call.setScreenShare(!call.state.sharing));
+$('call-watch').addEventListener('click', () => (watchView ? exitWatch() : enterWatch()));
+$('call-chat').addEventListener('click', () => {
+  const id = theaterChannel();
+  const g = id ? groups.find((x) => x.id === id) : null;
+  if (!g) return;
+  if (chat.groupId === g.id && !chat.minimised) chat.close();
+  else { chat.open(g, 'user'); chat.setMinimised(false); }
+  renderCall();
+});
+$('call-vol').addEventListener('input', () => {
+  filmVolume = Number(($('call-vol') as HTMLInputElement).value);
+  call.setScreenVolume(filmVolume);
 });
 
 /** Watch mode (ui/theaterPanel.ts WatchView): the film, the call and the chat; the village isn't drawn. */
@@ -2520,35 +2369,26 @@ let watchView: WatchView | null = null;
 function enterWatch(): void {
   if (watchView || !inTheaterHall) return;
   watchView = new WatchView(() => exitWatch(), $('app'));
-  // The chat of what's showing comes along, open (not folded).
-  const ch = theaterChannel();
-  if (ch) showTheaterChat(ch);
-  chat.setMinimised(false);
   syncTheater();
 }
 function exitWatch(): void {
-  watchView?.close();
+  if (!watchView) return;
+  watchView.close();
   watchView = null;
   lastFrame = performance.now();
+  renderCall();
 }
 world.hooks.onTheaterScreenClick = () => enterWatch();
 // Registered last: onChange calls back at once, and syncTheater reads the theater's state declared above.
 liveCalls.onChange(() => { if (inTheaterHall) syncTheater(); });
 
-/** Once a second: the host's heartbeat, and the panel's live parts. */
+/** Once a second: the bar's live parts (the channel list changes without telling it). */
 function tickTheater(dt: number): void {
   theaterTick -= dt;
   if (theaterTick > 0) return;
   theaterTick = 1;
-  if (!session.current || isGuest()) return;
-  if (screeningBeacon.update(hosting, Date.now())) publishScreening(hosting);
-  // The channel list and the hands change without telling the panel (it redraws only on a change).
-  if (inTheaterHall) renderTheater();
-  // A screening that expired (its host closed the tab) ends here too.
-  const cur = theater.current();
-  if ((cur?.id ?? '') !== (lastShownScreening ?? '')) { lastShownScreening = cur?.id ?? null; onTheaterChange(); }
+  if (inTheaterHall) renderCall();
 }
-let lastShownScreening: string | null = null;
 
 
 // ── frame loop ───────────────────────────────────────────────────────────

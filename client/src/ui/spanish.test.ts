@@ -9,7 +9,8 @@ const { SidePanel } = await import('./sidePanel');
 const { openRelayModal } = await import('./relayModal');
 const { openZapSheet } = await import('./zapSheet');
 const { EmoteMenu } = await import('./emoteMenu');
-const { theaterView } = await import('./theaterPanel');
+const { WatchView } = await import('./theaterPanel');
+const { vw } = await import('../i18n/village');
 const { GamePanel } = await import('./gamePanel');
 const { SPANS } = await import('./history');
 
@@ -75,13 +76,11 @@ describe('the village in Spanish', () => {
   });
 
   it('explains the theater in Spanish', () => {
-    const v = theaterView({
-      me: 'me', channels: [{ id: 'v', name: 'charla', kind: 'voice' }], picked: null, screening: null,
-      hosting: false, inCall: null, sharing: false, playing: false, admin: false, hands: [], myHand: null,
-      participants: [], nameOf: (pk) => pk,
-    });
-    expect(v.title).toBe('Cine');
-    expect(v.status).toMatch(/^No se está proyectando nada/);
+    const w = new WatchView(() => {});
+    w.show(null, [vw.cine, vw.nobodySharing]);
+    expect(w.el.textContent).toContain('Nadie comparte todavía');
+    expect(w.el.textContent).toContain('Volver a la aldea');
+    w.close();
   });
 
   it('shows a missing game table in Spanish', () => {
