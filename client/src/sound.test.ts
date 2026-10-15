@@ -54,6 +54,23 @@ describe('the soundscape', () => {
     expect(ctx.started.noise).toBe(2);
   });
 
+  it('plays a jump and its landing, under the footsteps switch', () => {
+    const s = new Soundscape();
+    s.setEnabled(true);
+    s.jump();
+    s.land(1);
+    expect(ctx.started.noise).toBe(2);
+    expect(ctx.started.osc).toBe(2);
+    s.footsteps = false;
+    s.jump();
+    s.land(0.5);
+    expect(ctx.started.noise).toBe(2);
+    s.footsteps = true;
+    s.setEnabled(false);
+    s.jump();
+    expect(ctx.started.noise).toBe(2);
+  });
+
   it('crickets follow the ambient switch, not the sound switch alone', () => {
     const s = new Soundscape();
     s.night = true;

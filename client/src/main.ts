@@ -7,7 +7,7 @@ import { hexToNpub } from '@nostr-wot/data';
 import { Feed, type FeedAccess } from './nostr/feed';
 import { deletionTemplate, joinTemplate, messageTemplate, publishToGroup, publishSigned, reactionTemplate } from './nostr/publish';
 import type { WireReaction } from './nostr/wire';
-import { FOOT_SPEEDS, PlayerController, RIDE_SPEEDS, placeAt } from './player/controller';
+import { FOOT_SPEEDS, JUMP_SPEED, PlayerController, RIDE_SPEEDS, placeAt } from './player/controller';
 import { hereCounts, speakerPlace, bubbleShown } from './ui/livePlaces';
 import { InputState, isTyping, mountJoystick } from './player/input';
 import { ChatPanel } from './ui/chatPanel';
@@ -870,7 +870,9 @@ function stepPlayer(dt: number): void {
   }
   if (!Number.isFinite(controller.height) || !Number.isFinite(controller.vy)) { controller.height = 0; controller.vy = 0; }
   // Took off this frame: tell the others (nostr/motion.ts `j`).
-  if (controller.vy > 0 && vyBefore <= 0) pendingJump = performance.now();
+  if (controller.vy > 0 && vyBefore <= 0) { pendingJump = performance.now(); sound.jump(); }
+  // Came down: a thump as hard as the fall (a jump lands at about JUMP_SPEED).
+  if (controller.landed) sound.land(-vyBefore / JUMP_SPEED);
   c.drive(controller.pos.x, controller.pos.z, controller.heading, controller.moving, controller.running, controller.height, controller.airborne);
   world.cam.setFeel({
     speed: dt > 0 ? Math.hypot(controller.pos.x - before.x, controller.pos.z - before.z) / dt : 0,

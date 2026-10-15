@@ -1,5 +1,6 @@
 // Synthesized ambience — no audio files. Crickets by night (`ambience`), your
-// footsteps (`footsteps`: a soft scuff walking, a harder slap running), a soft
+// footsteps (`footsteps`: a soft scuff walking, a harder slap running; a
+// jump's push-off and its landing, under the same switch), a soft
 // voice blip per message (pitch from the speaker's pubkey), a coin shimmer for zaps. Muted until the viewer opts in.
 
 import { hashStr } from './world/layout';
@@ -95,34 +96,54 @@ export class Soundscape {
    *  brighter and firmer with a faint thump. Kept well under everything else. */
   footstep(running: boolean): void {
     if (!this.enabled || !this.footsteps || !this.ctx || this.ctx.state !== 'running') return;
-    const ctx = this.ctx;
+    const vary = 0.88 + Math.random() * 0.24;
+    this.scuff(running ? 0.07 : 0.045, running ? 0.09 : 0.13, (running ? 1600 : 1000) * vary, vary, 180);
+    if (running) this.tone(70 * vary, 0.07, 'sine', 0.04, 45);
+  }
+
+  /** A burst of noise, band-limited like grass under a shoe: the scuff of steps, jumps and landings.
+   *  A soft attack (no click), then a quick fall. */
+  private scuff(vol: number, dur: number, lowHz: number, rate = 1, highHz = 140): void {
+    const ctx = this.ctx!;
     if (!this.noise) {
       this.noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.25), ctx.sampleRate);
       const d = this.noise.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
     const t = ctx.currentTime;
-    const vary = 0.88 + Math.random() * 0.24;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
-    src.playbackRate.value = vary;
+    src.playbackRate.value = rate;
     const low = ctx.createBiquadFilter();
     low.type = 'lowpass';
-    low.frequency.value = (running ? 1600 : 1000) * vary;
+    low.frequency.value = lowHz;
     low.Q.value = 0.3;
     const high = ctx.createBiquadFilter();
     high.type = 'highpass';
-    high.frequency.value = 180;
+    high.frequency.value = highHz;
     const g = ctx.createGain();
-    const vol = running ? 0.07 : 0.045;
-    const dur = running ? 0.09 : 0.13;
-    // A soft attack (no click), then a quick fall.
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vol, t + 0.018);
+    g.gain.linearRampToValueAtTime(vol, t + 0.016);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(high).connect(low).connect(g).connect(this.master!);
     src.start(t, Math.random() * 0.1, dur + 0.02);
-    if (running) this.tone(70 * vary, 0.07, 'sine', 0.04, 45);
+  }
+
+  /** You push off the ground: a quick scuff and a small rising breath of air. */
+  jump(): void {
+    if (!this.enabled || !this.footsteps || !this.ctx || this.ctx.state !== 'running') return;
+    const vary = 0.9 + Math.random() * 0.2;
+    this.scuff(0.06, 0.1, 1400 * vary, vary);
+    this.tone(150 * vary, 0.16, 'sine', 0.035, 260 * vary);
+  }
+
+  /** You land: a thump and a scuff, louder the harder you came down (`impact` 0..1). */
+  land(impact = 1): void {
+    if (!this.enabled || !this.footsteps || !this.ctx || this.ctx.state !== 'running') return;
+    const k = Math.max(0.3, Math.min(1, impact));
+    const vary = 0.9 + Math.random() * 0.2;
+    this.scuff(0.08 * k, 0.14, 900 * vary, vary * 0.85);
+    this.tone(85 * vary, 0.12, 'sine', 0.07 * k, 42);
   }
 
   blip(pk: string): void {
