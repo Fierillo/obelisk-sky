@@ -3,7 +3,10 @@
 // black backing); with nothing shared it shows
 // a card (the channel, or how to start a screening). Unlit, so it glows in
 // the dark hall and costs no light. The video is paused while nobody near
-// is watching, so phones don't decode a film they can't see.
+// is watching, so phones don't decode a film they can't see. While you're in
+// the hall the film plays in its own <video> laid over the screen
+// (world/domScreen.ts, at the film's own frame rate): the screen then draws
+// black (`setOverlaid`), so no frame is copied to the GPU for nothing.
 
 import * as THREE from 'three';
 import { canvasTexture } from './landmarks/signs';
@@ -20,9 +23,12 @@ export class TheaterScreen {
   private tex: THREE.VideoTexture | null = null;
   private stream: MediaStream | null = null;
   private active = true;
+  private overlaid = false;
+  private shownMap: THREE.Texture;
 
   constructor(readonly width: number, readonly height: number) {
     this.card = canvasTexture(CARD_W, CARD_H, () => {});
+    this.shownMap = this.card;
     this.mat = new THREE.MeshBasicMaterial({ map: this.card, toneMapped: false });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.mat);
     this.mesh.name = 'theater-screen';
@@ -79,6 +85,18 @@ export class TheaterScreen {
     if (this.active) void v.play().catch(() => {});
   }
 
+  /** The film's <video> while one plays (for the overlay), else null. */
+  get element(): HTMLVideoElement | null {
+    return this.video;
+  }
+
+  /** The film shows in its overlay: draw the screen black instead of copying its frames. */
+  setOverlaid(on: boolean): void {
+    if (on === this.overlaid) return;
+    this.overlaid = on;
+    this.applyMap();
+  }
+
   /** Someone near is watching: keep the video running (else pause it). */
   setActive(on: boolean): void {
     if (on === this.active) return;
@@ -92,6 +110,7 @@ export class TheaterScreen {
     if (this.video) {
       this.video.pause();
       this.video.srcObject = null;
+      this.video.remove(); // out of the overlay, if it was in it
     }
     this.tex?.dispose();
     this.video = null;
@@ -110,7 +129,16 @@ export class TheaterScreen {
 
   private useMap(t: THREE.Texture): void {
     if (t !== this.tex) this.mesh.scale.set(1, 1, 1);
-    this.mat.map = t;
+    this.shownMap = t;
+    this.applyMap();
+  }
+
+  private applyMap(): void {
+    const off = this.overlaid && !!this.tex && this.shownMap === this.tex;
+    const map = off ? null : this.shownMap;
+    if (this.mat.map === map) return;
+    this.mat.map = map;
+    this.mat.color.set(off ? 0x000000 : 0xffffff);
     this.mat.needsUpdate = true;
   }
 

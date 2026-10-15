@@ -25,7 +25,7 @@ export const THEATER = {
   SCREEN_W: 1.6,
   SCREEN_H: 0.9,
   SCREEN_X: -0.52,
-  SCREEN_Y: 0.88,
+  SCREEN_Y: 1.02,
   /** The floor rises from RAKE_Z0 (at the screen end) to RAKE_Z1 (the back) by RAKE_RISE. */
   RAKE_Z0: -0.85,
   RAKE_Z1: -2.35,
@@ -48,6 +48,8 @@ const flat = (color: number, o: Partial<THREE.MeshStandardMaterialParameters> = 
 /** What World drives on the theater beyond any landmark's hooks. */
 export interface TheaterHall {
   screen: TheaterScreen;
+  /** The screen's black backing (unscaled, unlike the letterboxed screen): what the film's overlay is placed on. */
+  screenBack: THREE.Object3D;
   /** The marquee's words (the channel, or the film's title). */
   setMarquee(text: string): void;
   /** A film is playing: house lights down. */
@@ -236,6 +238,7 @@ export function buildTheater(): LandmarkBuild & { hall: TheaterHall } {
 
   const hall: TheaterHall = {
     screen,
+    screenBack: backing,
     setMarquee(text) {
       const t = text.trim() || 'NOW SHOWING';
       if (t === marqueeText) return;

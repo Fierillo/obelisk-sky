@@ -34,7 +34,7 @@ import { buildObelisk, obeliskShape, plinthSteps, type Obelisk } from './obelisk
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
 import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
-import type { TheaterHall } from './landmarks/theater';
+import { THEATER, type TheaterHall } from './landmarks/theater';
 import { buildMill, type Mill } from './mill';
 import type { Avatar } from '../nostr/avatars';
 import { laneSpotId, parseSpot, seatSpotId, stationSpotId, type Activity, type Claim } from '../nostr/activity';
@@ -49,6 +49,7 @@ import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } fro
 import { parseHaunts, pickIdle, type PlaceId } from './places';
 import { vw } from '../i18n/village';
 import { YoutubeStage } from './youtubeStage';
+import { DomScreen } from './domScreen';
 import { LABITCONF } from './landmarks/labitconf';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
@@ -197,6 +198,8 @@ export class World {
   private needsResize = false;
   /** LABITCONF's video over its LED wall, made the first time you walk in. */
   private stage: YoutubeStage | null = null;
+  /** The theater's film over its screen, made the first time one plays while you're in the hall. */
+  private film: DomScreen | null = null;
   /** LABITCONF's video may sound (main.ts: the Sound switch, after a gesture). */
   stageSound = false;
   /** Furniture the player bumps into but can jump onto (see PlayerController). */
@@ -296,6 +299,7 @@ export class World {
     this.camera.updateProjectionMatrix();
     this.post.setSize(w, h);
     this.stage?.setSize(w, h);
+    this.film?.setSize(w, h);
   }
 
   // ── building the village ──────────────────────────────────────────────
@@ -2197,6 +2201,33 @@ export class World {
     hall.screen.setActive(Math.hypot(from.x - s.pos.x, from.z - s.pos.z) < 14);
   }
 
+  /**
+   * In the hall the film plays in its own <video> over the screen
+   * (world/domScreen.ts), at its own frame rate rather than the world's;
+   * the screen draws black meanwhile. After each frame's draw.
+   */
+  private updateFilm(): void {
+    const hall = this.theaterHall;
+    if (!hall) return;
+    const v = hall.screen.element;
+    const me = this.playerPk ? this.people.get(this.playerPk) : null;
+    const on = !!v && !!me && this.inTheater(me.pos);
+    if (!this.film) {
+      if (!on) return;
+      const parent = this.canvas.parentElement;
+      if (!parent) return;
+      this.film = new DomScreen(parent, this.canvas, hall.screenBack, THEATER.SCREEN_W, THEATER.SCREEN_H, 'film-video', 1024);
+      this.film.setSize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight);
+    }
+    // The film's <video> joins the overlay once and stays (taking it out of the page would pause it).
+    if (v && v.parentElement !== this.film.holder) {
+      this.film.holder.replaceChildren(v);
+      v.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;pointer-events:none';
+      void v.play().catch(() => {});
+    }
+    hall.screen.setOverlaid(this.film.update(this.camera, on));
+  }
+
   /** People in the theater's call take its seats (the hall has no path in: they fade across). */
   private gatherInTheater(pks: string[]): void {
     const chairs = this.seats.filter((s) => s.landmark === 'theater');
@@ -3256,6 +3287,7 @@ export class World {
       this.cam.guard();
       this.post.render(dt);
       this.updateStage(dt);
+      this.updateFilm();
     }
     return dt;
   }

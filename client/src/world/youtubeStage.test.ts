@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { YoutubeStage, embedUrl, stageVisible, LABITCONF_VIDEO } from './youtubeStage';
+import { YoutubeStage, embedUrl, LABITCONF_VIDEO } from './youtubeStage';
+import { screenVisible as stageVisible } from './domScreen';
 
 function setup() {
   const parent = document.createElement('div');

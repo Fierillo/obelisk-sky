@@ -91,6 +91,14 @@ describe('the theater', () => {
   });
 });
 
+describe('the screen hangs over the audience’s heads', () => {
+  it('its bottom clears a seated head in the front row (its film is drawn over the canvas: world/domScreen.ts)', () => {
+    const seatedHead = theaterFloor(THEATER.ROWS[0]) + THEATER.SEAT_TOP + 0.45;
+    expect(THEATER.SCREEN_Y - THEATER.SCREEN_H / 2).toBeGreaterThan(seatedHead - 0.15);
+    expect(THEATER.SCREEN_Y + THEATER.SCREEN_H / 2).toBeLessThan(THEATER.H - 0.1);
+  });
+});
+
 describe('the screen keeps the picture’s shape', () => {
   it('letterboxes wide pictures and pillarboxes tall ones', () => {
     expect(letterbox(16 / 9, 16 / 9)).toEqual([1, 1]);
