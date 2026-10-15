@@ -14,6 +14,25 @@ import { vw } from '../i18n/village';
 
 const CARD_W = 1024, CARD_H = 576;
 
+/** No new frame this long from a live track: the player is stuck, give it its stream again. */
+export const FILM_STALL_MS = 4000;
+/** At most one nudge (play, or a reload) this often. */
+const KICK_EVERY_MS = 1000;
+
+/**
+ * What a film that should be playing needs: `play` when it is paused (a
+ * failed play(), the browser pausing it), `reload` when it plays but no frame
+ * has come for a while although its track is live and sending (a stuck
+ * decoder after a hiccup on the connection), else nothing. A muted or ended
+ * track is the sender's pause: wait for it.
+ */
+export function filmNeeds(s: { paused: boolean; sinceFrameMs: number; trackLive: boolean; sinceKickMs: number }): 'play' | 'reload' | null {
+  if (s.sinceKickMs < KICK_EVERY_MS) return null;
+  if (s.paused) return 'play';
+  if (s.trackLive && s.sinceFrameMs > FILM_STALL_MS && s.sinceKickMs > FILM_STALL_MS) return 'reload';
+  return null;
+}
+
 export class TheaterScreen {
   readonly mesh: THREE.Mesh;
   private mat: THREE.MeshBasicMaterial;
@@ -24,6 +43,10 @@ export class TheaterScreen {
   private stream: MediaStream | null = null;
   private active = true;
   private overlaid = false;
+  /** When the film last showed a new frame, and when it was last nudged (ms, performance.now). */
+  private lastFrame = 0;
+  private lastKick = 0;
+  private frames = 0;
   private shownMap: THREE.Texture;
 
   constructor(readonly width: number, readonly height: number) {
@@ -73,8 +96,11 @@ export class TheaterScreen {
     const v = document.createElement('video');
     v.muted = true; // the sound comes through the call, gated
     v.playsInline = true;
-    v.autoplay = true;
+    // Started with play(), not `autoplay`: browsers pause muted autoplaying
+    // videos that leave the screen (the overlay hiding as you turn away).
     v.srcObject = stream;
+    this.lastFrame = this.lastKick = performance.now();
+    this.watchFrames(v);
     v.addEventListener('resize', () => this.fit());
     v.addEventListener('loadedmetadata', () => this.fit());
     this.video = v;
@@ -95,6 +121,48 @@ export class TheaterScreen {
     if (on === this.overlaid) return;
     this.overlaid = on;
     this.applyMap();
+  }
+
+  /** Count the film's frames as they're shown (where the browser can tell us). */
+  private watchFrames(v: HTMLVideoElement): void {
+    const rvfc = (v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }).requestVideoFrameCallback;
+    if (!rvfc) return;
+    const onFrame = () => {
+      if (this.video !== v) return;
+      this.frames++;
+      this.lastFrame = performance.now();
+      rvfc.call(v, onFrame);
+    };
+    rvfc.call(v, onFrame);
+  }
+
+  /**
+   * Once a frame: keep a film that should be playing playing. Restarts it
+   * when paused, and gives a stuck one its stream again (filmNeeds).
+   */
+  tick(now = performance.now()): void {
+    const v = this.video, stream = this.stream;
+    if (!v || !stream || !this.active) return;
+    // Without frame callbacks (older browsers), the decoded-frame count stands in.
+    if (typeof (v as { requestVideoFrameCallback?: unknown }).requestVideoFrameCallback !== 'function') {
+      const n = v.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+      if (n !== this.frames) { this.frames = n; this.lastFrame = now; }
+    }
+    const track = stream.getVideoTracks?.()[0];
+    const need = filmNeeds({
+      paused: v.paused,
+      sinceFrameMs: now - this.lastFrame,
+      trackLive: !!track && track.readyState === 'live' && !track.muted,
+      sinceKickMs: now - this.lastKick,
+    });
+    if (!need) return;
+    this.lastKick = now;
+    if (need === 'reload') {
+      this.lastFrame = now;
+      v.srcObject = null;
+      v.srcObject = stream;
+    }
+    void v.play().catch(() => {});
   }
 
   /** Someone near is watching: keep the video running (else pause it). */

@@ -2198,7 +2198,10 @@ export class World {
     const s = this.landmarkSlots.get('theater');
     if (!hall || !s) return;
     const from = this.camera.position;
-    hall.screen.setActive(Math.hypot(from.x - s.pos.x, from.z - s.pos.z) < 14);
+    // Near enough to see it, or in the hall (however far the camera is pulled back).
+    const me = this.playerPk ? this.people.get(this.playerPk) : null;
+    hall.screen.setActive(Math.hypot(from.x - s.pos.x, from.z - s.pos.z) < 14 || (!!me && this.inTheater(me.pos)));
+    hall.screen.tick();
   }
 
   /**

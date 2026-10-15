@@ -82,3 +82,36 @@ describe('the theater screen hands its film to the overlay', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('the theater keeps its film playing', () => {
+  it('restarts a paused film, gives a stuck one its stream again, and leaves a sender’s pause alone', async () => {
+    const { filmNeeds, FILM_STALL_MS } = await import('./theaterScreen');
+    const ok = { paused: false, sinceFrameMs: 100, trackLive: true, sinceKickMs: 10_000 };
+    expect(filmNeeds(ok)).toBeNull();
+    expect(filmNeeds({ ...ok, paused: true })).toBe('play');
+    expect(filmNeeds({ ...ok, sinceFrameMs: FILM_STALL_MS + 1 })).toBe('reload');
+    // The sender stopped sending (track muted): not ours to fix.
+    expect(filmNeeds({ ...ok, sinceFrameMs: FILM_STALL_MS + 1, trackLive: false })).toBeNull();
+    // Not more than one nudge a second, and a reload gets time to take.
+    expect(filmNeeds({ ...ok, paused: true, sinceKickMs: 200 })).toBeNull();
+    expect(filmNeeds({ ...ok, sinceFrameMs: FILM_STALL_MS + 1, sinceKickMs: 2000 })).toBeNull();
+  });
+
+  it('plays a paused film again while someone near is watching, not when nobody is', () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const s = new TheaterScreen(1.6, 0.9);
+    s.attach({ getVideoTracks: () => [] } as unknown as MediaStream);
+    const v = s.element!;
+    expect(v.autoplay).toBe(false);
+    Object.defineProperty(v, 'paused', { value: true, configurable: true });
+    play.mockClear();
+    s.tick(performance.now() + 2000);
+    expect(play).toHaveBeenCalledTimes(1);
+    s.setActive(false);
+    play.mockClear();
+    s.tick(performance.now() + 5000);
+    expect(play).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+});
