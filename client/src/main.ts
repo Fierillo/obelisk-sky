@@ -8,6 +8,7 @@ import { Feed, type FeedAccess } from './nostr/feed';
 import { deletionTemplate, joinTemplate, messageTemplate, publishToGroup, publishSigned, reactionTemplate } from './nostr/publish';
 import type { WireReaction } from './nostr/wire';
 import { FOOT_SPEEDS, PlayerController, RIDE_SPEEDS, placeAt } from './player/controller';
+import { hereCounts, speakerPlace, bubbleShown } from './ui/livePlaces';
 import { InputState, isTyping, mountJoystick } from './player/input';
 import { ChatPanel } from './ui/chatPanel';
 import { ReadState, countUnread } from './nostr/readstate';
@@ -54,7 +55,7 @@ import { openRelayModal } from './ui/relayModal';
 import { LoadingScreen, loadAt } from './ui/loading';
 import { FirstState } from './ui/firstState';
 import { installVoiceBridge } from './shims/bridge';
-import { dist, hashStr, ISLAND_R } from './world/layout';
+import { dist, hashStr, ISLAND_R, type Vec2 } from './world/layout';
 import { readBoard } from '@/utils/games/chain-reaction/board-view';
 import { ANONYMOUS_IDENTITY, activeRelay, DEFAULT_GROUP_RELAY, normalizeRelay, profileRelays, setActiveRelay, SUGGESTED_RELAYS } from './nostr/hub';
 import { pageHub } from './nostr/hub';
@@ -241,6 +242,8 @@ world.hooks = {
     addFeed(pk, groupId, text, to);
     sound.blip(pk);
   },
+  // Messages are seen and heard only at the speaker's place (ui/livePlaces.ts).
+  hears: (pk, groupId) => bubbleShown(place, speakerPlace(isLivePk(pk), standingPlace(pk), groupId)),
   onPersonClick: (pk) => showPerson(pk),
   onGroupClick: (id) => {
     // Something for you there (the "@"): open the chat at it and go.
@@ -804,6 +807,8 @@ let rideSpot: string | null = null;
 let place: string | null = null;
 /** You're in the theater's hall (main.ts theater section). */
 let inTheaterHall = false;
+/** You were in LABITCONF's hall last time the sound was set (the "Sound off" toast, once a visit). */
+let wasAtLabitconf = false;
 let candidate: string | null = null;
 let candidateFor = 0;
 
@@ -1190,6 +1195,20 @@ function notePost(pk: string, at: number): void {
   if (at > (lastPost.get(pk) ?? 0)) lastPost.set(pk, at);
   presence.activity(pk, Math.min(Date.now(), at));
 }
+/** Connected to the village right now: you (logged in), or publishing where they are. */
+function isLivePk(pk: string): boolean {
+  if (pk === myPk()) return !isGuest();
+  return !!motion.get(pk) || liveClaimers.has(pk);
+}
+/** The place (channel) a position is in: the theater's hall, else the nearest yard. */
+function placeOfPos(p: Vec2): string | null {
+  return world.inTheater(p) ? theaterChannel() : placeAt(p, world.yards());
+}
+/** Where `pk` stands, if the world draws them. */
+function standingPlace(pk: string): string | null {
+  const c = world.people.get(pk);
+  return c ? placeOfPos(c.pos) : null;
+}
 function presenceOf(pk: string): Presence {
   const now = Date.now();
   const posted = now - (lastPost.get(pk) ?? 0) < POSTED_ONLINE_MS;
@@ -1201,17 +1220,21 @@ function presenceOf(pk: string): Presence {
 
 const members = new MembersStore(hub, () => themes?.operator ?? null);
 const side = new SidePanel($('app'), {
-  channels: () => groups.map((g) => {
+  channels: () => {
+  // Only people connected right now, where they stand (ui/livePlaces.ts).
+  const counts = hereCounts(world.people.values(), isLivePk, placeOfPos);
+  return groups.map((g) => {
     const me = myPk();
     const msgs = msgsOf(g.id);
     const cursor = readState?.cursorFor(g.id) ?? 0;
-    const here = [...world.people.values()].filter((c) => { const s = world.slotFor(g.id); return s && Math.hypot(c.pos.x - s.yard.x, c.pos.z - s.yard.z) < 2.6; }).length;
+    const here = counts.get(g.id) ?? 0;
     return {
       id: g.id, name: g.name, kind: g.kind, here,
       unread: me && readState ? countUnread(msgs, cursor, me) : 0,
       mention: pinged.has(g.id),
     };
-  }),
+  });
+  },
   defaultChannel: () => place ?? chat.groupId ?? groups[0]?.id ?? null,
   // On the guest island the houses aren't the relay's: no members to ask for.
   loadMembers: (id) => (isGuest() ? Promise.resolve({ members: [], admins: [] } as unknown as Awaited<ReturnType<typeof members.load>>) : members.load(id)),
@@ -1886,6 +1909,10 @@ const LANDMARK_CARDS: Record<Exclude<LandmarkId, 'nostrwot' | 'liberture'>, { ti
   },
   theater: {
     ...vw.landmarks.theater,
+  },
+  labitconf: {
+    ...vw.landmarks.labitconf,
+    link: [vw.landmarks.labitconf.linkLabel!, 'https://labitconf.com'],
   },
 };
 
@@ -2585,11 +2612,18 @@ function frame(): void {
     musicTimer = 0.25;
     const t = world.cam.controls.target;
     const at = controller ? controller.pos : { x: t.x, z: t.z };
-    // In the theater the outside doesn't reach you: no music from the village, no crickets.
-    sound.hush = inTheaterHall;
-    emoteMusic.update(inTheaterHall ? [] : world.dancers(), { ...at, yaw: world.cameraYaw() }, world.playerPk);
+    // In the theater and at LABITCONF (its video sounds) the outside doesn't
+    // reach you: no music from the village, no crickets.
+    const atLabitconf = !!controller && world.inLabitconf(controller.pos);
+    const indoors = inTheaterHall || atLabitconf;
+    // Walking into LABITCONF with Sound off: its video plays silent, offer to turn sound on (once a visit).
+    if (atLabitconf && !wasAtLabitconf && !prefs.get().sound) toast(vw.stageSoundOff, () => prefs.set({ sound: true }));
+    wasAtLabitconf = atLabitconf;
+    sound.hush = indoors;
+    world.stageSound = soundUnlocked && prefs.get().sound;
+    emoteMusic.update(indoors ? [] : world.dancers(), { ...at, yaw: world.cameraYaw() }, world.playerPk);
     // Steps back under emote music nearby, and while you're doing an emote yourself.
-    placeMusic.update(inTheaterHall ? [] : world.musicPlaces(), at, world.quietPlaces(), emoteMusic.playing || (!!world.playerPk && world.emoteOf(world.playerPk) !== null));
+    placeMusic.update(indoors ? [] : world.musicPlaces(), at, world.quietPlaces(), emoteMusic.playing || (!!world.playerPk && world.emoteOf(world.playerPk) !== null));
   }
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }

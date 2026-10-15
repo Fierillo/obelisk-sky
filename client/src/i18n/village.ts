@@ -28,6 +28,7 @@ const en = {
   gfxBack: 'Graphics are back, at a lighter quality.',
   gfxStopped: 'The graphics stopped (low on memory). Restarting them…',
   gfxGone: 'The graphics didn’t come back. Tap to reload.',
+  stageSoundOff: 'LABITCONF’s video is playing with Sound off. Tap to turn sound on.',
   signerConnected: 'Connected to your signer. Approve its requests to come in.',
   signerWaiting: 'Still waiting for your signer app… Tap to try again.',
 
@@ -114,6 +115,11 @@ const en = {
     theater: {
       title: 'Cine', sub: 'Screenings and talks in a call',
       about: 'Walk in, pick a channel and start a screening: share a tab or your screen and it plays on the big screen for everyone in the hall. Viewers raise a hand to talk or to share; the host decides. Press E by a seat to sit with popcorn.',
+    },
+    labitconf: {
+      title: 'LABITCONF', sub: 'The Latin American Bitcoin conference',
+      about: 'Walk in: the stage’s LED wall plays LABITCONF’s video while you’re in the hall. La Bitcoineta, the van that tours Latin America teaching Bitcoin, is parked inside as a stand, and a big green obelisk stands by the stage. Press E by a chair to sit for the talk.',
+      linkLabel: 'Visit labitconf.com',
     },
   } as Record<string, { title: string; sub: string; about: string; linkLabel?: string }>,
   liberture: {
@@ -406,6 +412,7 @@ const es: VillageWords = {
   gfxBack: 'Volvieron los gráficos, con una calidad más liviana.',
   gfxStopped: 'Se cortaron los gráficos (poca memoria). Reiniciándolos…',
   gfxGone: 'Los gráficos no volvieron. Tocá para recargar.',
+  stageSoundOff: 'El video de LABITCONF se ve sin sonido: el Sonido está apagado. Tocá para activarlo.',
   signerConnected: 'Conectado a tu firmador. Aprobá sus pedidos para entrar.',
   signerWaiting: 'Seguimos esperando a tu app firmadora… Tocá para reintentar.',
 
@@ -488,6 +495,11 @@ const es: VillageWords = {
     theater: {
       title: 'Cine', sub: 'Proyecciones y charlas en una llamada',
       about: 'Entrá, elegí un canal y empezá una proyección: compartí una pestaña o tu pantalla y se ve en la pantalla grande para todos en la sala. El público levanta la mano para hablar o compartir; decide quien la organiza. Apretá E junto a una butaca para sentarte con pochoclos.',
+    },
+    labitconf: {
+      title: 'LABITCONF', sub: 'La conferencia de Bitcoin de Latinoamérica',
+      about: 'Entrá: la pantalla LED del escenario pasa el video de LABITCONF mientras estás en la sala. La Bitcoineta, la combi que recorre Latinoamérica enseñando Bitcoin, está estacionada adentro como stand, y un obelisco verde gigante está junto al escenario. Apretá E junto a una silla para sentarte a ver la charla.',
+      linkLabel: 'Visitá labitconf.com',
     },
   },
   liberture: {

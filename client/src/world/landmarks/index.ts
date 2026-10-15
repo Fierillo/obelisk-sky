@@ -13,8 +13,9 @@ import { buildParrilla } from './parrilla';
 import { buildNostrWotHq } from './nostrwot';
 import { buildLibertureHouse } from './liberture';
 import { buildTheater, type TheaterHall } from './theater';
+import { buildLabitconf } from './labitconf';
 
-export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla' | 'liberture' | 'theater';
+export type LandmarkId = 'lacrypta' | 'nostrwot' | 'coffee' | 'parrilla' | 'liberture' | 'theater' | 'labitconf';
 
 /** What a seat at a landmark puts in your hand. */
 export type SeatProp = 'mate' | 'coffee' | 'asado' | 'none' | 'marshmallow' | 'popcorn';
@@ -48,6 +49,8 @@ export interface LandmarkBuild {
   interior?: LandmarkInterior;
   /** The theater's screen, marquee and house lights (world.ts `setTheater`). */
   hall?: TheaterHall;
+  /** LABITCONF's LED wall, where its video plays (world/youtubeStage.ts). */
+  screen?: THREE.Mesh;
 }
 
 export interface LocalRect { minX: number; maxX: number; minZ: number; maxZ: number }
@@ -84,6 +87,7 @@ export const LANDMARKS: LandmarkDef[] = [
   { id: 'parrilla', want: { x: -7, z: 5.5 }, minSize: 2, forward: 0.1, footprint: { minX: -1.0, maxX: 1.0, minZ: -1.55, maxZ: -0.95 }, lawn: { along: 2.2, across: 1.6 }, build: buildParrilla },
   { id: 'liberture', want: { x: 11.5, z: -0.5 }, minSize: 2, forward: 0.25, footprint: { minX: -1.35, maxX: 1.35, minZ: -1.85, maxZ: 0.1 }, lawn: { along: 2.4, across: 1.6 }, build: buildLibertureHouse },
   { id: 'theater', want: { x: -4, z: -4.5 }, minSize: 3, forward: 1.15, footprint: { minX: -1.42, maxX: 1.42, minZ: -2.62, maxZ: 0.12 }, lawn: { along: 2.0, across: 1.6 }, build: buildTheater },
+  { id: 'labitconf', want: { x: 2, z: -5.5 }, minSize: 3, forward: 1.5, footprint: { minX: -2.12, maxX: 2.12, minZ: -3.92, maxZ: 0.12 }, lawn: { along: 2.0, across: 2.2 }, build: buildLabitconf },
 ];
 
 /** Pick each landmark's slot: nearest to what it wants, never shared. */

@@ -39,3 +39,17 @@ describe('the plinth', () => {
     expect(toTip).toHaveLength(4);
   });
 });
+
+describe('an indoor obelisk', () => {
+  const lights = (g: THREE.Object3D) => { let n = 0; g.traverse((o) => { if ((o as THREE.Light).isLight) n++; }); return n; };
+  it('the plaza one keeps its uplight and tip light', () => {
+    expect(lights(buildObelisk(8).group)).toBe(2);
+  });
+  it('can leave out its lights and plinth', () => {
+    const g = buildObelisk(1.5, { lights: false, plinth: false }).group;
+    expect(lights(g)).toBe(0);
+    const box = new THREE.Box3().setFromObject(g);
+    expect(box.min.y).toBeCloseTo(0, 1);
+    expect(box.max.y).toBeCloseTo(1.5, 1);
+  });
+});

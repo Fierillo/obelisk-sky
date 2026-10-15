@@ -48,6 +48,8 @@ import { ZAP_STALE_MS, ZapFlights } from './zapFlight';
 import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } from './emotes';
 import { parseHaunts, pickIdle, type PlaceId } from './places';
 import { vw } from '../i18n/village';
+import { YoutubeStage } from './youtubeStage';
+import { LABITCONF } from './landmarks/labitconf';
 
 /** Tops of what's laid on the lawn: the plaza paving, cobbles (their mean), floors indoors. */
 const PAVING_TOP = 0.03, COBBLE_TOP = 0.02, FLOOR_TOP = 0.006;
@@ -84,6 +86,8 @@ export interface Station {
 
 export interface WorldHooks {
   onSay?: (pk: string, groupId: string, text: string, to: string | null, instant: boolean) => void;
+  /** Is `pk`'s message in `groupId` for you to see and hear (same place)? No: no bubble, feed line or sound. */
+  hears?: (pk: string, groupId: string) => boolean;
   onPersonClick?: (pk: string) => void;
   /** Any tap on the world, before it's dispatched; true: don't walk for it. */
   onTap?: () => boolean;
@@ -191,6 +195,10 @@ export class World {
   private readonly armPose = newArmPose();
   private readonly handsEye = new THREE.Vector3();
   private needsResize = false;
+  /** LABITCONF's video over its LED wall, made the first time you walk in. */
+  private stage: YoutubeStage | null = null;
+  /** LABITCONF's video may sound (main.ts: the Sound switch, after a gesture). */
+  stageSound = false;
   /** Furniture the player bumps into but can jump onto (see PlayerController). */
   readonly solids: Solid[] = [];
   private laptops = new Map<string, THREE.Object3D>();
@@ -287,6 +295,7 @@ export class World {
     this.camera.fov = w < h ? 46 : 32;
     this.camera.updateProjectionMatrix();
     this.post.setSize(w, h);
+    this.stage?.setSize(w, h);
   }
 
   // ── building the village ──────────────────────────────────────────────
@@ -511,7 +520,15 @@ export class World {
    *  models, so the loading screen can show it from above while they load. */
   buildGround(): void {
     if (this.island) return;
-    const footprints = this.plan.slots.map((s) => ({ pos: s.pos, r: s.w * 0.8 + 1.0 }));
+    // A landmark bigger than its slot (LABITCONF) sinks the lawn under all of it.
+    const reach = new Map<number, number>();
+    for (const d of LANDMARKS) {
+      const s = this.landmarkSlots.get(d.id);
+      if (!s) continue;
+      const f = d.footprint;
+      reach.set(s.index, Math.hypot(Math.max(-f.minX, f.maxX), Math.max(-(f.minZ + d.forward), f.maxZ + d.forward)) + 0.5);
+    }
+    const footprints = this.plan.slots.map((s) => ({ pos: s.pos, r: Math.max(s.w * 0.8 + 1.0, reach.get(s.index) ?? 0) }));
     this.island = buildIsland(this.plan, footprints);
     this.staticRoot.add(this.island.group);
   }
@@ -661,8 +678,9 @@ export class World {
         b.interior?.setDoor(0);
         b.setNight(0, 1);
       });
-      // The theater's screen changes picture and shape on its own: never merged.
-      this.meshesMerged += mergeStatic(b.group, (m) => moving.has(m) || m.name === 'roof' || m.name === 'theater-screen');
+      // The theater's screen changes picture and shape on its own, LABITCONF's
+      // places its video (youtubeStage.ts): never merged.
+      this.meshesMerged += mergeStatic(b.group, (m) => moving.has(m) || m.name === 'roof' || m.name === 'theater-screen' || m.name === 'labitconf-screen');
       b.group.traverse((o) => { o.userData.landmark = d.id; });
       this.staticRoot.add(b.group);
       this.landmarks.set(d.id, b);
@@ -1262,6 +1280,7 @@ export class World {
       || (!!this.millSite && dist(p, this.millSite.house) < 1.15 + pad)
       || (!!this.marketAt && dist(p, this.marketAt) < 2.4 + pad)
       || plan.slots.some((s) => inFootprint(p, s, 0.6 + pad) || dist(p, s.yard) < 1.2 + pad)
+      || this.underLandmark(p, 0.6 + pad)
       || distToPolyline(p, this.island.riverPts) < plan.riverWidth * 0.7 + pad
       || dist(p, plan.pond.c) < plan.pond.r + 0.3 + pad
       || plan.mountains.some((m) => dist(p, m.pos) < m.r * 0.9 + pad)
@@ -1730,6 +1749,7 @@ export class World {
 
   private say(pk: string, msg: WireMessage, to: string | null, instant: boolean): void {
     const { groupId, text } = msg;
+    if (this.hooks.hears && !this.hooks.hears(pk, groupId)) return;
     this.hooks.onSay?.(pk, groupId, text, to, instant);
     if (instant) return;
     this.pulse = 1;
@@ -2123,6 +2143,30 @@ export class World {
     const l = b?.interior ? this.toLandmarkLocal('theater', p) : null;
     const r = b?.interior?.rooms[0];
     return !!(l && r && l.x > r.minX && l.x < r.maxX && l.z > r.minZ && l.z < r.maxZ);
+  }
+
+  /** Is p in LABITCONF's hall (its room, not the doorway)? */
+  inLabitconf(p: Vec2): boolean {
+    const r = this.landmarks.get('labitconf')?.interior?.rooms[0];
+    const l = r ? this.toLandmarkLocal('labitconf', p) : null;
+    return !!(l && r && l.x > r.minX && l.x < r.maxX && l.z > r.minZ && l.z < r.maxZ);
+  }
+
+  /** LABITCONF's video plays over its LED wall while you're in the hall. */
+  private updateStage(dt: number): void {
+    const screen = this.landmarks.get('labitconf')?.screen;
+    if (!screen) return;
+    const me = this.playerPk ? this.people.get(this.playerPk) : null;
+    const inside = !!me && this.inLabitconf(me.pos);
+    if (!this.stage) {
+      if (!inside) return;
+      const parent = this.canvas.parentElement;
+      if (!parent) return;
+      this.stage = new YoutubeStage(parent, this.canvas, screen, LABITCONF.SCREEN_W, LABITCONF.SCREEN_H);
+      this.stage.setSize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight);
+    }
+    this.stage.setSound(this.stageSound);
+    this.stage.update(this.camera, inside, dt);
   }
 
   /** Is `pk` sitting in the theater? */
@@ -3211,6 +3255,7 @@ export class World {
     } finally {
       this.cam.guard();
       this.post.render(dt);
+      this.updateStage(dt);
     }
     return dt;
   }

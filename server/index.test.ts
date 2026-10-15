@@ -30,6 +30,8 @@ describe('static host', () => {
     expect(SECURITY_HEADERS['content-security-policy']).toMatch(/connect-src[^;]*blob:/);
     expect(SECURITY_HEADERS['content-security-policy']).toMatch(/script-src[^;]*'wasm-unsafe-eval'/);
     expect(SECURITY_HEADERS['content-security-policy']).not.toMatch(/'unsafe-eval'/);
+    // LABITCONF's stage: a YouTube embed, and no other frames.
+    expect(SECURITY_HEADERS['content-security-policy']).toMatch(/frame-src https:\/\/www.youtube-nocookie.com/);
   });
   it('lets the page use the mic, the camera and screen sharing (calls), nothing else of the kind', () => {
     const p = SECURITY_HEADERS['permissions-policy'];

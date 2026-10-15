@@ -52,7 +52,12 @@ export function plinthSteps(height: number): { half: number; top: number }[] {
   return ([[2.9, 0.16], [2.4, 0.16], [1.9, 0.18]] as const).map(([k, h]) => ({ half: (base * k) / 2, top: (y += h) }));
 }
 
-export function buildObelisk(height = 8): Obelisk {
+/** `lights: false` leaves out the uplight and the tip light (an indoor model:
+ *  its emissive faces carry the glow, and the light budget stays free);
+ *  `plinth: false` stands the body on the ground (the plinth's steps are
+ *  sized for people, too tall under a small obelisk). */
+export function buildObelisk(height = 8, opts: { lights?: boolean; plinth?: boolean } = {}): Obelisk {
+  const { lights = true, plinth = true } = opts;
   const { base, top, shaftH, apex } = obeliskShape(height);
   const group = new THREE.Group();
   const body = new THREE.Group();
@@ -98,7 +103,7 @@ export function buildObelisk(height = 8): Obelisk {
   // Stepped plinth; the body sits on top of it.
   const plinthMat = new THREE.MeshStandardMaterial({ color: 0xd9d2c4, roughness: 0.8, flatShading: true });
   let y = 0;
-  for (const st of plinthSteps(height)) {
+  for (const st of plinth ? plinthSteps(height) : []) {
     const s = new THREE.Mesh(new THREE.BoxGeometry(st.half * 2, st.top - y, st.half * 2), plinthMat);
     s.position.y = (y + st.top) / 2;
     s.castShadow = true;
@@ -115,7 +120,7 @@ export function buildObelisk(height = 8): Obelisk {
   up.target.position.set(0, y + apex, 0);
   const tipLight = new THREE.PointLight(LIME, 0, 9, 1.8);
   tipLight.position.set(0, y + apex + 0.3, 0);
-  group.add(up, up.target, tipLight);
+  if (lights) group.add(up, up.target, tipLight);
 
   return {
     group,
