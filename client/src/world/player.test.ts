@@ -133,20 +133,3 @@ describe('a zap reaching the village', () => {
     expect(p.missed).toBe(1);
   });
 });
-
-describe('forum threads in the village', () => {
-  it("hands the director a thread's message at its forum, and counts episodes there", () => {
-    const d = new Director();
-    const seen: string[] = [];
-    const orig = d.message.bind(d);
-    d.message = (msg, ...rest) => { seen.push(msg.groupId); return orig(msg, ...rest); };
-    const p = new Player(d);
-    p.homeOf = (id) => (id === 'thread' ? 'forum' : id);
-    p.autoStory = false;
-    p.push(m('A', 1000, 'thread'), 1000);
-    p.push(m('B', 1001, 'g'), 1001);
-    expect(seen).toEqual(['forum', 'g']);
-    const evs = [m('A', 0, 'thread'), m('B', 10, 'thread'), m('C', 20, 'g')];
-    expect(findEpisodes(evs, 3, p.homeOf)[0].groupId).toBe('forum');
-  });
-});

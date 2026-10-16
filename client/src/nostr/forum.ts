@@ -1,8 +1,9 @@
 // Forums, as obelisk-dex has them (components/chat/forum/ForumView.tsx): a
 // forum channel holds publications ("threads"), each a NIP-29 group of its
-// own pinned to it by a `["parent", forumId]` tag. A thread is never a
-// channel by itself: it has no house, no row in the channel list; its posts
-// count at its forum, and the forum's chat lists its threads. Pure.
+// own pinned to it by a `["parent", forumId]` tag. In the channel list they
+// nest under their forum, and the forum's chat lists them. They keep their
+// own houses: on a real relay a forum's child can be a whole channel
+// (openGym's), not just a thread. Pure.
 
 import type { WireGroup, WireMessage } from './wire';
 
@@ -12,12 +13,12 @@ export function forumOf(g: WireGroup | undefined, byId: ReadonlyMap<string, Wire
   return parent && parent.kind === 'forum' && parent.id !== g!.id ? parent.id : null;
 }
 
-/** Where a group's talk happens in the village: its forum for a thread, else itself. */
+/** The forum a group nests under, else itself. */
 export function homeOf(id: string, byId: ReadonlyMap<string, WireGroup>): string {
   return forumOf(byId.get(id), byId) ?? id;
 }
 
-/** The channels the village draws (every group but forum threads). */
+/** The channel list's top rows (every group but a forum's children). */
 export function channelsOnly(groups: readonly WireGroup[]): WireGroup[] {
   const byId = new Map(groups.map((g) => [g.id, g]));
   return groups.filter((g) => !forumOf(g, byId));

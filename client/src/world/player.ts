@@ -22,7 +22,7 @@ export const ZAP_LIVE_S = 120;
 
 export interface Episode { start: number; end: number; count: number; groupId: string }
 
-export function findEpisodes(events: Ev[], minCount = 3, homeOf: (groupId: string) => string = (id) => id): Episode[] {
+export function findEpisodes(events: Ev[], minCount = 3): Episode[] {
   const msgs = events.filter((e): e is Extract<Ev, { k: 'msg' }> => e.k === 'msg');
   const out: Episode[] = [];
   let cur: { start: number; end: number; count: number; groups: Map<string, number> } | null = null;
@@ -39,8 +39,7 @@ export function findEpisodes(events: Ev[], minCount = 3, homeOf: (groupId: strin
     }
     cur.end = e.at;
     cur.count++;
-    const g = homeOf(e.m.groupId);
-    cur.groups.set(g, (cur.groups.get(g) ?? 0) + 1);
+    cur.groups.set(e.m.groupId, (cur.groups.get(e.m.groupId) ?? 0) + 1);
   }
   flush();
   return out;
@@ -84,8 +83,6 @@ export class Player {
    *  replay that ends stays where it ended. */
   history = false;
   missed = 0;
-  /** Where a group's talk shows in the village (a forum thread's is its forum: nostr/forum.ts). */
-  homeOf: (groupId: string) => string = (id) => id;
 
   constructor(
     private director: Director,
@@ -166,7 +163,7 @@ export class Player {
 
   /** Cycle through recent episodes, newest first. */
   playStory(now: number): void {
-    const eps = findEpisodes(this.events, 3, this.homeOf).reverse().slice(0, 6);
+    const eps = findEpisodes(this.events).reverse().slice(0, 6);
     if (!eps.length) { this.quietFor = 0; return; }
     this.storyIdx = (this.storyIdx + 1) % eps.length;
     const ep = eps[this.storyIdx];
@@ -190,9 +187,9 @@ export class Player {
     const lastSeen = new Map<string, { groupId: string; at: number }>();
     for (const e of this.events) {
       if (e.at > t) break;
-      if (e.k === 'msg') { if (!e.m.zapNote) lastSeen.set(e.m.pubkey, { groupId: this.homeOf(e.m.groupId), at: e.at }); }
+      if (e.k === 'msg') { if (!e.m.zapNote) lastSeen.set(e.m.pubkey, { groupId: e.m.groupId, at: e.at }); }
       else if (e.k === 'react') {
-        if (!lastSeen.has(e.r.pubkey)) lastSeen.set(e.r.pubkey, { groupId: this.homeOf(e.r.groupId), at: e.at });
+        if (!lastSeen.has(e.r.pubkey)) lastSeen.set(e.r.pubkey, { groupId: e.r.groupId, at: e.at });
       }
     }
     const residents = [...lastSeen.entries()].sort((a, b) => a[1].at - b[1].at);
@@ -208,11 +205,9 @@ export class Player {
 
   private apply(e: Ev, instant: boolean, arrival: 'instant' | 'balloon' | 'door'): void {
     // The zap bot doesn't walk over to announce: its zap flies on its own.
-    // The director knows houses only: a forum thread's talk happens at its forum.
-    const home = this.homeOf;
-    if (e.k === 'msg') { if (!e.m.zapNote) this.director.message(home(e.m.groupId) === e.m.groupId ? e.m : { ...e.m, groupId: home(e.m.groupId) }, e.at, { instant, arrival }); }
-    else if (e.k === 'react') this.director.reaction(home(e.r.groupId) === e.r.groupId ? e.r : { ...e.r, groupId: home(e.r.groupId) }, e.at, instant);
-    else this.director.zap(home(e.z.groupId) === e.z.groupId ? e.z : { ...e.z, groupId: home(e.z.groupId) }, e.at, instant);
+    if (e.k === 'msg') { if (!e.m.zapNote) this.director.message(e.m, e.at, { instant, arrival }); }
+    else if (e.k === 'react') this.director.reaction(e.r, e.at, instant);
+    else this.director.zap(e.z, e.at, instant);
   }
 
   /** Tell the UI where things stand (mode, time, missed messages). */

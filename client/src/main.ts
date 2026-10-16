@@ -105,12 +105,13 @@ function groupMap(): Map<string, WireGroup> {
   if (groupsById.of !== groups) groupsById = { of: groups, map: new Map(groups.map((g) => [g.id, g])) };
   return groupsById.map;
 }
-/** Where a group's talk shows in the village: a forum thread's at its forum (nostr/forum.ts). */
+/** The forum a group sits under, if any (nostr/forum.ts); itself otherwise. */
 const homeOfGroup = (id: string): string => homeOf(id, groupMap());
-/** The channels with a house and a row in the list: every group but forum threads. */
-const houses = (): WireGroup[] => channelsOnly(groups);
-/** A house's groups: itself, and a forum's threads. */
-const groupsIn = (house: string): WireGroup[] => groups.filter((g) => g.id === house || homeOfGroup(g.id) === house);
+/** The channel list's rows: every group but a forum's children, which nest under it there. Every group
+ *  keeps its own house: a forum's child may be a real channel (openGym's), not only a thread. */
+const listRows = (): WireGroup[] => channelsOnly(groups);
+/** A row's groups: itself, and a forum's children. */
+const groupsIn = (row: string): WireGroup[] => groups.filter((g) => g.id === row || homeOfGroup(g.id) === row);
 let ready = false;
 let pending: ServerMsg[] = [];
 
@@ -121,7 +122,6 @@ const player = new Player(director, renderStatus, () => {
   requestAnimationFrame(() => requestAnimationFrame(() => w.classList.remove('on')));
   world.overlay.clearBubbles();
 });
-player.homeOf = homeOfGroup;
 
 // ── local preferences ────────────────────────────────────────────────────
 
@@ -236,9 +236,9 @@ $('relay-btn').addEventListener('click', () => openRelayModal($('app'), {
   addRelay: (url) => prefs.set({ customRelays: [...prefs.get().customRelays, url] }),
   removeRelay: (url) => prefs.set({ customRelays: prefs.get().customRelays.filter((r) => r !== url) }),
   switchTo: switchRelay,
-  groups: () => [...houses()].sort((a, b) => a.name.localeCompare(b.name)),
+  groups: () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
   categories: () => ({ names: themes?.categoryNames ?? {}, of: themes?.categoryOf ?? {} }),
-  unread: unreadIn,
+  unread: (id) => (readState && session.current ? countUnread(msgsOf(id), readState.cursorFor(id), session.current.pubkey) : 0),
   goTo: (id) => {
     const slot = world.slotFor(id);
     if (controller && slot) { controller.walkTo(slot.yard); world.cam.played(); }
@@ -723,7 +723,7 @@ function handle(m: ServerMsg): void {
         ...m.zaps.map((x): Ev => ({ k: 'zap', at: x.createdAt, z: x })),
       ];
       applyDistricts();
-      world.setGroups(houses(), activityOf(events));
+      world.setGroups(groups, activityOf(events));
       player.load(events, nowSec());
       drawTimeline();
       enterAsPlayer();
@@ -742,14 +742,14 @@ function handle(m: ServerMsg): void {
       break;
     case 'group': {
       groups = [...groups.filter((g) => g.id !== m.group.id), m.group];
-      world.setGroups(houses(), activityOf(player.events));
+      world.setGroups(groups, activityOf(player.events));
       break;
     }
     case 'group-removed': {
       groups = groups.filter((g) => g.id !== m.id);
       // Forget everything from that channel, then rebuild the present.
       player.events = player.events.filter((e) => groupOfEv(e) !== m.id);
-      world.setGroups(houses(), activityOf(player.events));
+      world.setGroups(groups, activityOf(player.events));
       player.seek(nowSec(), true);
       if (historyOn) drawTimeline(); else player.goLive(nowSec());
       break;
@@ -804,7 +804,7 @@ function groupOfEv(e: Ev): string {
 
 function activityOf(events: Ev[]): Map<string, number> {
   const a = new Map<string, number>();
-  for (const e of events) if (e.k === 'msg') { const h = homeOfGroup(e.m.groupId); a.set(h, (a.get(h) ?? 0) + 1); }
+  for (const e of events) if (e.k === 'msg') a.set(e.m.groupId, (a.get(e.m.groupId) ?? 0) + 1);
   return a;
 }
 
@@ -912,8 +912,7 @@ function stepPlayer(dt: number): void {
   if (settled && candidate !== place) {
     place = candidate;
     // In the hall the chat opens only from the call bar's 💬, never by itself.
-    // A forum thread open counts as its forum's chat.
-    const act = onPlaceChange(place, { open: chat.groupId ? homeOfGroup(chat.groupId) : null, openedBy: chat.openedBy }, inHall ? 'off' : prefs.get().chatOpen);
+    const act = onPlaceChange(place, { open: chat.groupId, openedBy: chat.openedBy }, inHall ? 'off' : prefs.get().chatOpen);
     chatHint = act.kind === 'hint' ? act.id : null;
     if (act.kind === 'open') { const g = groups.find((x) => x.id === act.id); if (g) chat.open(g, 'auto'); }
     else if (act.kind === 'close') chat.close();
@@ -926,7 +925,7 @@ let chatHint: string | null = null;
 let chatHintShown = '';
 function renderChatHint(): void {
   const el = $('chat-hint') as HTMLButtonElement;
-  const g = chatHint && chatHint === place && (chat.groupId ? homeOfGroup(chat.groupId) : null) !== chatHint ? groups.find((x) => x.id === chatHint) : null;
+  const g = chatHint && chatHint === place && chat.groupId !== chatHint ? groups.find((x) => x.id === chatHint) : null;
   const text = g ? vw.chatHint(g.name, isTouch()) : '';
   if (text === chatHintShown) return;
   chatHintShown = text;
@@ -946,9 +945,8 @@ world.hooks.onBubbleClick = (msgId) => {
   const g = groups.find((x) => x.id === m.groupId);
   if (g) chat.open(g);
   chat.setReply(m);
-  const home = homeOfGroup(m.groupId);
-  const slot = world.slotFor(home);
-  if (controller && slot && place !== home) { controller.walkTo(slot.yard); world.cam.played(); }
+  const slot = world.slotFor(m.groupId);
+  if (controller && slot && place !== m.groupId) { controller.walkTo(slot.yard); world.cam.played(); }
 };
 
 // A tap on the world puts an open card away first (on a phone that's all a
@@ -1243,10 +1241,10 @@ const side = new SidePanel($('app'), {
   const me = myPk();
   // A thread with a ping for you shows its own "@" under its forum.
   const pingedThreads = new Set(me ? openPings().map((p) => p.m.groupId) : []);
-  return houses().map((g) => ({
+  return listRows().map((g) => ({
     id: g.id, name: g.name, kind: g.kind, here: counts.get(g.id) ?? 0,
     unread: unreadIn(g.id),
-    mention: pinged.has(g.id),
+    mention: groupsIn(g.id).some((x) => pinged.has(x.id)),
     ...(g.kind === 'forum' ? {
       threads: forumThreads(g.id, groups, msgsOf).map((t) => ({
         id: t.group.id, name: t.group.name, kind: t.group.kind, here: 0,
@@ -1289,8 +1287,7 @@ function openChannel(id: string): void {
   chat.setMinimised(false);
   chatHint = null;
   $('card').hidden = true;
-  // A forum thread lives in its forum's house.
-  world.cam.focus(world.groupAnchor(homeOfGroup(id)), 9);
+  world.cam.focus(world.groupAnchor(id), 9);
 }
 
 // ── private messages and calls (obelisk-dex's NIP-17 DMs and 1:1 calls) ──
@@ -1389,7 +1386,7 @@ $('near-call').addEventListener('click', () => { if (nearPk) void pcall.start(ne
 
 // ── the chat panel and publishing ────────────────────────────────────────
 
-/** Unread messages at a house: the channel's, or every thread's of a forum. */
+/** Unread messages on a channel list row: the channel's, and a forum's children's too. */
 function unreadIn(house: string): number {
   const me = myPk();
   if (!me || !readState) return 0;
@@ -1545,7 +1542,7 @@ const pingIn = new Map<string, { m: WireMessage; reason: PingReason }>();
 function goToMessage(m: WireMessage): void {
   const g = groups.find((x) => x.id === m.groupId);
   if (g) chat.open(g);
-  const slot = world.slotFor(homeOfGroup(m.groupId));
+  const slot = world.slotFor(m.groupId);
   if (controller && slot) { controller.walkTo(slot.yard); world.cam.played(); }
   const sender = world.people.get(m.pubkey);
   if (sender && controller) sender.faceToward(controller.pos);
@@ -2540,24 +2537,23 @@ function refreshSigns(): void {
   const day = new Map<string, number>();
   for (const e of player.events) {
     if (e.k !== 'msg' || e.at > at) continue;
-    const h = homeOfGroup(e.m.groupId);
-    last.set(h, e.at);
-    if (at - e.at < 86400) day.set(h, (day.get(h) ?? 0) + 1);
+    last.set(e.m.groupId, e.at);
+    if (at - e.at < 86400) day.set(e.m.groupId, (day.get(e.m.groupId) ?? 0) + 1);
   }
   const me = isGuest() ? null : session.current?.pubkey ?? null;
   pinged.clear();
   // The newest unread ping in each channel.
   const pings = pingIn;
   pings.clear();
-  if (me) for (const p of openPings()) { const h = homeOfGroup(p.m.groupId); if (!pings.has(h)) pings.set(h, p); }
-  for (const g of houses()) {
+  if (me) for (const p of openPings()) if (!pings.has(p.m.groupId)) pings.set(p.m.groupId, p);
+  for (const g of groups) {
     world.overlay.setSignActivity(g.id, at - (last.get(g.id) ?? 0) < 900, day.get(g.id) ?? 0);
     if (!readState || !me) continue;
     const ping = pings.get(g.id) ?? null;
     if (ping) pinged.add(g.id);
-    world.overlay.setSignUnread(g.id, unreadIn(g.id), !!ping, ping ? pingTitle(world.nameOf(ping.m.pubkey), ping.reason, g.name) : null);
+    world.overlay.setSignUnread(g.id, countUnread(msgsOf(g.id), readState.cursorFor(g.id), me), !!ping, ping ? pingTitle(world.nameOf(ping.m.pubkey), ping.reason, g.name) : null);
   }
-  $('tab-channels-n').textContent = String(houses().length);
+  $('tab-channels-n').textContent = String(groups.length);
   // Online now: live in the village or active in the last minutes (AFK not counted).
   const online = new Set<string>([...motion.livePks(), ...liveClaimers, ...[...lastPost.keys()].filter((pk) => presenceOf(pk) === 'online')]);
   const mine = myPk();
@@ -2649,7 +2645,7 @@ function drawTimeline(): void {
   const from = now - span;
   const times = player.events.filter((e) => e.k === 'msg').map((e) => e.at);
   const counts = binCounts(times, from, now, Math.max(24, Math.floor(w / (3 * devicePixelRatio))));
-  const peaks = topPeaks(findEpisodes(player.events, 3, homeOfGroup), from, now, 5);
+  const peaks = topPeaks(findEpisodes(player.events), from, now, 5);
   // The busiest stretches, shaded behind the bars.
   g.fillStyle = 'rgba(255, 200, 61, 0.16)';
   for (const p of peaks) {
@@ -2899,7 +2895,7 @@ document.querySelectorAll<HTMLButtonElement>('.controls button').forEach((b) => 
           config: () => themes!.config,
           categoryNames: () => themes!.categoryNames,
           categoryOf: () => themes!.categoryOf,
-          groups: houses,
+          groups: () => groups,
           resolved: (g) => resolveTheme(g, { channels: {}, categories: themes!.config.categories, updatedAt: 0 }, themes!.categoryOf),
           save: saveThemes,
         });
