@@ -104,3 +104,37 @@ describe('ChatPanel header and authors', { timeout: 30_000 }, () => {
   });
 });
 
+
+describe('ChatPanel forum', { timeout: 30_000 }, () => {
+  const forum = { id: 'pubs', name: 'Publications', kind: 'forum' } as unknown as WireGroup;
+  const thread = { id: 't1', name: 'Mate recipes', kind: 'text', parent: 'pubs' } as unknown as WireGroup;
+  const post = { ...msg, id: 'f'.repeat(64), groupId: 't1', text: 'cebar bien' } as WireMessage;
+
+  it('lists its publications without a message bar, opens one, and goes back to the forum', async () => {
+    const back = vi.fn();
+    const deps: ChatPanelDeps = {
+      me: () => null, nameOf: () => 'Alice', avatarOf: () => null,
+      messages: (id) => (id === 't1' ? [post] : []), reactions: () => [],
+      send: async () => null, react: () => {}, unreact: () => {}, remove: () => {}, join: async () => null,
+      relay: () => 'wss://relay.test',
+      threads: (id) => (id === 'pubs' ? [{ group: thread, first: post, last: post, count: 1 }] : []),
+      forumOf: (id) => (id === 't1' ? forum : null),
+    };
+    const p = new ChatPanel(document.body, deps);
+    p.onBack = back;
+    p.open(forum);
+    const card = p.el.querySelector<HTMLButtonElement>('.chat-thread')!;
+    expect(card.textContent).toContain('Mate recipes');
+    expect(card.textContent).toContain('cebar bien');
+    expect(p.el.querySelector<HTMLElement>('.chat-bar')!.hidden).toBe(true);
+    card.click();
+    expect(p.groupId).toBe('t1');
+    expect(p.el.querySelector<HTMLElement>('.chat-bar')!.hidden).toBe(false);
+    p.el.querySelector<HTMLButtonElement>('.chat-back')!.click();
+    expect(p.groupId).toBe('pubs');
+    expect(back).not.toHaveBeenCalled();
+    p.el.querySelector<HTMLButtonElement>('.chat-back')!.click();
+    expect(back).toHaveBeenCalledOnce();
+    await bar(p);
+  });
+});

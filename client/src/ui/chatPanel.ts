@@ -15,6 +15,7 @@ import { lang } from '../i18n/lang';
 import type { MentionPerson, ReplyTarget } from '../chat/composer/useSkyComposer';
 import { roleBadge } from './sidePanel';
 import type { Rank } from './memberGroups';
+import type { ThreadSummary } from '../nostr/forum';
 
 export const QUICK_REACTIONS = ['❤️', '👍', '😂', '🔥', '🤙', '⚡', '👀', '🎉'];
 const MAX_SHOWN = 60;
@@ -39,6 +40,12 @@ export interface ChatPanelDeps {
   onProfile?: (pubkey: string) => void;
   /** Their top relay rank, shown by their name as obelisk-dex does. */
   roleOf?: (pubkey: string) => Rank | null;
+  /** A forum's publications (nostr/forum.ts): a forum's chat lists them instead of messages. */
+  threads?: (forumId: string) => ThreadSummary[];
+  /** The forum a group is a publication of: its chat's ‹ goes back there. */
+  forumOf?: (groupId: string) => WireGroup | null;
+  /** Unread messages in a group (a publication's badge). */
+  unread?: (groupId: string) => number;
   newGame?: (groupId: string) => void;
   /** `/zap …` in this channel: open the zap sheet, or say why not. */
   zap?: (groupId: string, command: string, replyTo: { id: string; pubkey: string } | null) => string | null;
@@ -78,7 +85,11 @@ export class ChatPanel {
     const head = div('chat-head');
     this.back = button('chat-min chat-back', vw.backToChannels);
     this.back.textContent = '‹';
-    this.back.addEventListener('click', () => this.onBack?.());
+    this.back.addEventListener('click', () => {
+      const forum = this.group ? this.deps.forumOf?.(this.group.id) : null;
+      if (forum) this.open(forum, 'user');
+      else this.onBack?.();
+    });
     const titles = div('chat-titles');
     this.title = div('chat-title');
     this.sub = div('chat-sub');
@@ -112,9 +123,15 @@ export class ChatPanel {
     if (changed || by === 'user') this.openedBy = by;
     this.el.hidden = false;
     document.body.classList.add('chat-open');
-    this.back.hidden = !this.onBack;
+    const forum = this.deps.forumOf?.(g.id) ?? null;
+    this.back.hidden = !forum && !this.onBack;
+    this.back.title = forum ? vw.backToForum(forum.name) : vw.backToChannels;
+    this.back.setAttribute('aria-label', this.back.title);
     this.title.textContent = g.name;
-    this.sub.textContent = kindLabel(g.kind);
+    this.sub.textContent = forum ? `${kindLabel(forum.kind)} · ${forum.name}` : kindLabel(g.kind);
+    // A forum is read through its publications: no message bar of its own.
+    this.el.classList.toggle('forum', g.kind === 'forum');
+    this.composerSlot.hidden = g.kind === 'forum';
     if (changed) { this.replyTo = null; this.error.hidden = true; this.setMinimised(false); }
     this.renderComposer();
     this.render();
@@ -135,7 +152,7 @@ export class ChatPanel {
   }
 
   focusComposer(): void {
-    if (!this.group || this.el.hidden) return;
+    if (!this.group || this.el.hidden || this.group.kind === 'forum') return;
     this.setMinimised(false);
     if (this.composer) this.composer.focus();
     else this.focusWhenLoaded = true;
@@ -153,7 +170,9 @@ export class ChatPanel {
 
   /** Re-render if the panel shows `groupId` (or always, with no argument). */
   refresh(groupId?: string): void {
-    if (!this.group || (groupId && groupId !== this.group.id)) return;
+    if (!this.group) return;
+    // A forum's list changes with any of its publications.
+    if (groupId && groupId !== this.group.id && !(this.group.kind === 'forum' && this.deps.forumOf?.(groupId)?.id === this.group.id)) return;
     this.render();
   }
 
@@ -250,6 +269,7 @@ export class ChatPanel {
 
   private render(): void {
     if (!this.group) return;
+    if (this.group.kind === 'forum') { this.renderForum(this.group); return; }
     this.loadBodies();
     const atBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 40;
     const msgs = this.deps.messages(this.group.id).slice(-MAX_SHOWN);
@@ -319,6 +339,49 @@ export class ChatPanel {
     row.append(av, body, actions);
     if (this.pickerFor === m.id) row.append(this.picker(m));
     return row;
+  }
+
+  /** A forum: its publications as cards, latest first (obelisk-dex's ForumView list). */
+  private renderForum(forum: WireGroup): void {
+    const threads = this.deps.threads?.(forum.id) ?? [];
+    const scroll = this.list.scrollTop;
+    this.list.replaceChildren();
+    if (!threads.length) {
+      const empty = div('chat-empty');
+      empty.textContent = vw.forumEmpty;
+      this.list.append(empty);
+      return;
+    }
+    for (const t of threads) this.list.append(this.threadCard(t));
+    this.list.scrollTop = scroll;
+  }
+
+  private threadCard(t: ThreadSummary): HTMLElement {
+    const card = document.createElement('button');
+    card.type = 'button';
+    const unread = this.deps.unread?.(t.group.id) ?? 0;
+    card.className = `chat-thread${unread ? ' unread' : ''}`;
+    card.dataset.groupId = t.group.id;
+    const head = div('chat-thread-head');
+    const title = div('chat-thread-title');
+    title.textContent = t.group.name;
+    head.append(title);
+    if (unread) { const b = div('chat-thread-badge'); b.textContent = String(unread); head.append(b); }
+    const op = div('chat-thread-op');
+    op.append(this.avatar(t.first.pubkey));
+    const who = document.createElement('span');
+    who.className = 'chat-thread-who';
+    who.style.color = pubkeyColor(t.first.pubkey);
+    who.textContent = vw.threadBy(this.deps.nameOf(t.first.pubkey));
+    op.append(who);
+    const snippet = div('chat-thread-snippet');
+    snippet.textContent = (t.first.text || '').slice(0, 220);
+    const foot = div('chat-thread-foot');
+    const when = new Date(t.last.createdAt * 1000).toLocaleString(lang, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    foot.textContent = `💬 ${vw.threadReplies(t.count)} · ${vw.threadLast(this.deps.nameOf(t.last.pubkey))} · ${when}`;
+    card.append(head, op, snippet, foot);
+    card.addEventListener('click', () => this.open(t.group, 'user'));
+    return card;
   }
 
   private reactionsRow(m: WireMessage, me: string | null): HTMLElement {

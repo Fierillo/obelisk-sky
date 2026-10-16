@@ -250,7 +250,7 @@ export class SkyState {
   private wireGroup(id: string): WireGroup | null {
     const g = this.meta.get(id);
     if (!g) return null;
-    return { id: g.id, name: g.name, about: g.about, kind: g.kind, open: g.isOpen };
+    return { id: g.id, name: g.name, about: g.about, kind: g.kind, open: g.isOpen, ...(g.parent ? { parent: g.parent } : {}) };
   }
 
   // ── messages ───────────────────────────────────────────────────────────

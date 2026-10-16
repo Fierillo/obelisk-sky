@@ -111,3 +111,36 @@ describe('the channel list', () => {
   });
 });
 
+
+describe('a forum in the channel list', () => {
+  const rows = () => [
+    { id: 'pubs', name: 'Publications', kind: 'forum', unread: 3, mention: false, here: 0, threads: [
+      { id: 't1', name: 'Mate recipes', kind: 'text', unread: 2, mention: false, here: 0 },
+      { id: 't2', name: 'Asado tips', kind: 'text', unread: 0, mention: true, here: 0 },
+    ] },
+    { id: 'a', name: 'general', kind: 'chat', unread: 0, mention: false, here: 0 },
+  ];
+
+  it('nests its publications under it and opens one on a click', () => {
+    localStorage.clear();
+    const onChannel = vi.fn();
+    const { side, host } = panel({ channels: rows, onChannel });
+    side.toggle('channels');
+    const threads = [...host.querySelectorAll<HTMLButtonElement>('.side-thread')];
+    expect(threads.map((t) => t.querySelector('.side-name')!.textContent)).toEqual(['Mate recipes', 'Asado tips']);
+    expect(threads[1].querySelector('.side-badge.ping')).not.toBeNull();
+    threads[0].click();
+    expect(onChannel).toHaveBeenCalledWith('t1');
+  });
+
+  it('folds them away, and remembers it', () => {
+    localStorage.clear();
+    const { side, host } = panel({ channels: rows });
+    side.toggle('channels');
+    host.querySelector<HTMLButtonElement>('.side-fold')!.click();
+    expect(host.querySelectorAll('.side-thread')).toHaveLength(0);
+    const again = panel({ channels: rows });
+    again.side.toggle('channels');
+    expect(again.host.querySelectorAll('.side-thread')).toHaveLength(0);
+  });
+});

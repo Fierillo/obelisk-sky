@@ -334,6 +334,15 @@ body.sky-login .nui-modal .nui-qr { border-color: #d3e6f6; }
 /* obelisk-dex's renderer lays out its own paragraphs, lists and code. */
 .chat-text.dex-body { white-space: normal; }
 .chat-text.dex-body img { max-width: 100%; }
+/* obelisk-dex's voice note is 24rem wide, more than the chat column: fit it and make it smaller. */
+.chat-list { overflow-x: hidden; }
+.chat .dex-body [data-testid="voice-message"] { width: 100%; max-width: 280px; min-height: 0; gap: 8px; padding: 4px 8px; border-radius: 14px; }
+.chat .dex-body [data-testid="voice-message"] > button { height: 40px; width: 28px; }
+.chat .dex-body [data-testid="voice-message"] > span:nth-of-type(1) { height: 44px; }
+.chat .dex-body [data-testid="voice-waveform"] { height: 26px; }
+.chat .dex-body [data-testid="voice-avatar"], .chat .dex-body [data-testid="voice-avatar"] img, .chat .dex-body [data-testid="voice-avatar"] > span:first-child { width: 36px; height: 36px; }
+.chat .dex-body [data-testid="voice-mic-badge"] { width: 18px; height: 18px; bottom: -2px; }
+.chat .dex-body [data-testid="voice-mic-badge"] svg { width: 13px; height: 13px; }
 .chat-text.dex-body pre { white-space: pre; }
 .chat-text a, .bubble-t a { color: var(--green); text-decoration: none; }
 .chat-text a:hover { text-decoration: underline; }
@@ -373,6 +382,19 @@ img.emoji { height: 1.3em; width: auto; vertical-align: -0.3em; }
 .chat-send:hover { filter: brightness(1.08); }
 .chat-composer.chat-bar { display: block; padding: 8px 10px 10px; }
 .chat-bar:empty { min-height: 58px; }
+.chat-bar[hidden] { display: none; }
+/* A forum's publications (obelisk-dex's ForumView cards). */
+.chat-thread { display: flex; flex-direction: column; gap: 5px; width: 100%; text-align: left; border: 1px solid var(--border); background: rgba(23, 23, 23, 0.55); color: var(--white); border-radius: 12px; padding: 10px 12px; margin: 3px 0; cursor: pointer; font: 13px var(--sans); }
+.chat-thread:hover { background: rgba(38, 38, 38, 0.75); border-color: rgba(255, 255, 255, 0.22); }
+.chat-thread-head { display: flex; align-items: center; gap: 8px; }
+.chat-thread-title { flex: 1; min-width: 0; font: 700 14px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-thread.unread .chat-thread-title::before { content: '● '; color: var(--green); }
+.chat-thread-badge { min-width: 18px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); font: 700 10.5px var(--mono); text-align: center; }
+.chat-thread-op { display: flex; align-items: center; gap: 7px; }
+.chat-thread-op .chat-av { width: 20px; height: 20px; font-size: 10px; }
+.chat-thread-who { font: 600 12px var(--sans); }
+.chat-thread-snippet { color: rgba(250, 250, 250, 0.82); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.chat-thread-foot { font: 500 11px var(--sans); color: var(--muted); }
 .sky-composer { display: flex; flex-direction: column; font-family: var(--sans); }
 .sky-composer-bar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03); }
 .sky-composer-input { max-height: 132px; min-height: 20px; line-height: 20px; font-size: 14px; }
@@ -663,6 +685,13 @@ body.channels-open .chat { display: none; }
 .side-chev { width: 12px; text-align: center; }
 .side-cat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-cat-n { font-weight: 400; opacity: 0.6; }
+.side-fold { opacity: 0.8; font-size: 11px; width: 22px; }
+/* A forum's publications on an L-rail, as obelisk-dex's sidebar draws them. */
+.side-threads { display: flex; flex-direction: column; gap: 1px; }
+.side-thread { position: relative; padding-left: 34px; font-size: 12.5px; color: rgba(250, 250, 250, 0.85); }
+.side-thread::before { content: ''; position: absolute; left: 17px; top: 0; bottom: 0; border-left: 1.5px solid #3a3a3a; pointer-events: none; }
+.side-thread:last-child::before { display: none; }
+.side-thread::after { content: ''; position: absolute; left: 17px; top: 0; width: 10px; height: 50%; border-left: 1.5px solid #3a3a3a; border-bottom: 1.5px solid #3a3a3a; border-bottom-left-radius: 6px; pointer-events: none; }
 .chat-person { cursor: pointer; }
 span.chat-person:hover { text-decoration: underline; }
 .chat-av.chat-person:hover { filter: brightness(1.12); }

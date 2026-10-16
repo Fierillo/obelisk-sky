@@ -9,6 +9,8 @@ export interface WireGroup {
   about: string;
   kind: ChannelKind;
   open?: boolean;
+  /** The group it hangs under (`parent` tag): a forum's thread when that is a forum (nostr/forum.ts). */
+  parent?: string | null;
 }
 
 export interface WireProfile {

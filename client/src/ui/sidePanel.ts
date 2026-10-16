@@ -12,7 +12,20 @@ import type { ChannelLayout } from '@/services/relay/channel-layout';
 
 export type SideTab = 'channels' | 'members';
 
-export interface ChannelRow { id: string; name: string; kind: string; unread: number; mention: boolean; here: number }
+export interface ChannelRow {
+  id: string; name: string; kind: string; unread: number; mention: boolean; here: number;
+  /** A forum's publications with messages, nested under it as obelisk-dex's sidebar shows them. */
+  threads?: ChannelRow[];
+}
+
+const FOLD_KEY = 'obelisk-sky/forum-folded';
+/** Forums folded shut in the list (remembered in this browser, as dex does; open by default). */
+function readFolded(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]') as string[]); } catch { return new Set(); }
+}
+function writeFolded(ids: Set<string>): void {
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify([...ids])); } catch { /* not remembered */ }
+}
 
 export interface SidePanelDeps {
   channels(): ChannelRow[];
@@ -44,6 +57,8 @@ export class SidePanel {
   private offlineOpen = false;
   /** Categories folded shut (by id; '' is the uncategorized list). */
   private folded = new Set<string>();
+  /** Forums whose publications are folded away. */
+  private forumsFolded = readFolded();
   /** Opened or closed: the host hides the chat while the list stands in its place. */
   onToggle?: () => void;
   private ranks: Record<string, readonly Rank[]> = {};
@@ -130,7 +145,7 @@ export class SidePanel {
     const sections = channelSections(rows, this.deps.layout());
     this.title.textContent = vw.channelsN(rows.length);
     this.pick.hidden = true;
-    this.show(`c|${[...this.folded].join(',')}|${JSON.stringify(sections)}`, () => {
+    this.show(`c|${[...this.folded].join(',')}|${[...this.forumsFolded].join(',')}|${JSON.stringify(sections)}`, () => {
       if (!rows.length) return [div('side-empty', vw.noChannelsRelay)];
       const out: HTMLElement[] = [];
       for (const s of sections) {
@@ -144,10 +159,42 @@ export class SidePanel {
           h.addEventListener('click', () => { if (shut) this.folded.delete(key); else this.folded.add(key); this.renderChannels(); });
           out.push(h);
         }
-        if (!shut) for (const c of s.rows) out.push(this.channelRow(c));
+        if (!shut) for (const c of s.rows) out.push(...this.channelRows(c));
       }
       return out;
     });
+  }
+
+  /** A channel's row, and for a forum its publications on an L-rail under it. */
+  private channelRows(c: ChannelRow): HTMLElement[] {
+    const threads = c.threads ?? [];
+    const row = this.channelRow(c);
+    if (!threads.length) return [row];
+    const shut = this.forumsFolded.has(c.id);
+    const fold = document.createElement('button');
+    fold.className = 'side-mini side-fold';
+    fold.textContent = shut ? '▸' : '▾';
+    fold.title = shut ? vw.showPublications : vw.hidePublications;
+    fold.setAttribute('aria-expanded', String(!shut));
+    fold.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (shut) this.forumsFolded.delete(c.id); else this.forumsFolded.add(c.id);
+      writeFolded(this.forumsFolded);
+      this.renderChannels();
+    });
+    row.append(fold);
+    if (shut) return [row];
+    const rail = div('side-threads');
+    for (const t of threads) {
+      const b = document.createElement('button');
+      b.className = `side-row side-thread${t.unread ? ' unread' : ''}`;
+      b.dataset.groupId = t.id;
+      b.append(span('side-name', t.name));
+      if (t.unread || t.mention) b.append(span(`side-badge${t.mention ? ' ping' : ''}`, t.mention ? '@' : String(t.unread)));
+      b.addEventListener('click', () => this.deps.onChannel(t.id));
+      rail.append(b);
+    }
+    return [row, rail];
   }
 
   private channelRow(c: ChannelRow): HTMLElement {
