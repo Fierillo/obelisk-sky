@@ -40,7 +40,7 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   group.add(buildRiver(riverPts, plan.riverWidth, wmat));
   const pond = new THREE.Mesh(new THREE.CircleGeometry(plan.pond.r + POND_EDGE + 0.15, 64), pmat);
   pond.rotation.x = -Math.PI / 2;
-  pond.position.set(plan.pond.c.x, -0.13, plan.pond.c.z);
+  pond.position.set(plan.pond.c.x, WATER_Y, plan.pond.c.z);
   pond.receiveShadow = true;
   group.add(pond);
 
@@ -49,7 +49,7 @@ export function buildIsland(plan: IslandPlan, footprints: { pos: Vec2; r: number
   const dir = new THREE.Vector3(end.x - prev.x, 0, end.z - prev.z).normalize();
   const th = Math.atan2(end.z, end.x);
   const edgeR = plan.radiusAt(th);
-  const fallTop = new THREE.Vector3(Math.cos(th) * edgeR, -0.13, Math.sin(th) * edgeR);
+  const fallTop = new THREE.Vector3(Math.cos(th) * edgeR, WATER_Y, Math.sin(th) * edgeR);
   const fmat = waterfallMaterial();
   water.push(fmat);
   group.add(buildWaterfall(fallTop, dir, plan.riverWidth, fmat));
@@ -163,9 +163,9 @@ export function terrainHeight(plan: IslandPlan, river: Vec2[], footprints: { pos
     if (sink > 0) y = y + (Math.min(y, 0) - BUILDING_SINK - y) * sink;
     const dr = distToPolyline(p, river);
     const w = plan.riverWidth * 0.62;
-    if (dr < w + 0.3) y = Math.min(y, -0.34 * smooth(w + 0.3, w * 0.3, dr));
+    if (dr < w + 0.3) y = Math.min(y, RIVER_BED * smooth(w + 0.3, w * 0.3, dr));
     const dp = dist(p, plan.pond.c);
-    if (dp < plan.pond.r + 0.5) y = Math.min(y, -0.45 * smooth(plan.pond.r + 0.5, plan.pond.r * 0.4, dp));
+    if (dp < plan.pond.r + 0.5) y = Math.min(y, POND_BED * smooth(plan.pond.r + 0.5, plan.pond.r * 0.4, dp));
     const fr = f ?? Math.hypot(p.x, p.z) / plan.radiusAt(Math.atan2(p.z, p.x));
     if (fr > 0.965) y -= (fr - 0.965) * 3.2;
     return y;
@@ -189,6 +189,12 @@ export function heightGrid(plan: IslandPlan, height: (p: Vec2) => number, cell =
     return a + (b - a) * tz;
   };
 }
+
+/** The water's surface (the river, the pond and the top of the waterfall). */
+export const WATER_Y = -0.13;
+/** How deep the river's and the pond's beds go: deep enough to swim (world.ts). */
+export const RIVER_BED = -0.6;
+export const POND_BED = -0.7;
 
 /** How far the lawn sits below 0 under a building (floors are drawn at ~0). */
 export const BUILDING_SINK = 0.008;
@@ -482,7 +488,7 @@ function buildRiver(pts: Vec2[], width: number, mat: THREE.Material): THREE.Mesh
     const nrm = new THREE.Vector2(-t.y, t.x);
     const w = width * 0.62 + (i === 0 ? -0.3 : 0);
     if (i > 0) along += dist(pts[i], pts[i - 1]);
-    pos.push(pts[i].x + nrm.x * w, -0.13, pts[i].z + nrm.y * w, pts[i].x - nrm.x * w, -0.13, pts[i].z - nrm.y * w);
+    pos.push(pts[i].x + nrm.x * w, WATER_Y, pts[i].z + nrm.y * w, pts[i].x - nrm.x * w, WATER_Y, pts[i].z - nrm.y * w);
     uv.push(0, along, 1, along);
     if (i > 0) { const k = i * 2; idx.push(k - 2, k - 1, k, k - 1, k + 1, k); }
   }

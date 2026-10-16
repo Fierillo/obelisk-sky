@@ -163,8 +163,31 @@ export const SANGRE: { keys: Key[]; grip: 'stand' } = {
   ],
 };
 
-/** Clips built like the exercises that are emotes, not training. */
-export const EMOTE_CLIPS = { lotus: LOTUS, jacks: JACKS, groove: GROOVE, sangre: SANGRE } as const;
+// Swimming (world.ts, in deep water): a breaststroke, the body leaning far
+// forward on the water with the head up. In the body's frame +y runs up the
+// spine (ahead, in the water) and +z out of the chest (down). Glide with the
+// arms out front, sweep them wide, pull the hands in under the chin while the
+// knees draw up (frog), then shoot the arms forward as the legs kick back.
+const PADDLE = { dir: [0.1, 1, 0.15] as Dir, palm: [0, 0, 1] as Dir, curl: 0.12 };
+const HEAD_UP = { neck_01: [0, 1, -0.75] as Dir };
+const LONG_LEGS = merge(both('thigh', [0.06, -1, -0.05]), both('calf', [0, -1, -0.1]));
+const SWIM_GLIDE: PoseSpec = { pitch: 1.2, hands: PADDLE, aim: merge(both('upperarm', [0.18, 1, 0.12]), both('lowerarm', [0.08, 1, 0.1]), HEAD_UP, LONG_LEGS) };
+const SWIM_SWEEP: PoseSpec = { pitch: 1.18, hands: { dir: [1, 0.5, 0.2], palm: [-0.3, 0.4, 1], curl: 0.12 }, aim: merge(both('upperarm', [1, 0.55, 0.2]), both('lowerarm', [0.8, 0.6, 0.35]), HEAD_UP, LONG_LEGS) };
+const SWIM_PULL: PoseSpec = {
+  pitch: 1.1, hands: { dir: [-0.4, 0.8, 0.4], palm: [-0.6, 0, 1], curl: 0.15 },
+  aim: merge(both('upperarm', [0.75, -0.15, 0.9]), both('lowerarm', [-0.55, 0.75, 0.3]), HEAD_UP, both('thigh', [0.45, -0.75, 0.35]), both('calf', [0.15, -0.35, -1])),
+};
+const SWIM_KICK: PoseSpec = { pitch: 1.16, hands: PADDLE, aim: merge(both('upperarm', [0.25, 1, 0.3]), both('lowerarm', [0.1, 1, 0.15]), HEAD_UP, both('thigh', [0.3, -1, -0.05]), both('calf', [0.12, -1, -0.15])) };
+export const SWIM: { keys: Key[]; grip: 'float' } = {
+  grip: 'float',
+  keys: [
+    { t: 0, pose: SWIM_GLIDE }, { t: 0.4, pose: SWIM_SWEEP }, { t: 0.72, pose: SWIM_PULL },
+    { t: 0.98, pose: SWIM_KICK }, { t: 1.4, pose: SWIM_GLIDE },
+  ],
+};
+
+/** Clips built like the exercises that aren't training: the emotes, and swimming. */
+export const EMOTE_CLIPS = { lotus: LOTUS, jacks: JACKS, groove: GROOVE, sangre: SANGRE, swim: SWIM } as const;
 export type EmoteClipKind = keyof typeof EMOTE_CLIPS;
 
 /**
@@ -221,7 +244,7 @@ export function buildExerciseClip(
 
   const alignForward = kind === 'pullup' || kind === 'muscleup';
   const onFloor = kind === 'pushup';
-  const spec: { keys: Key[]; grip: 'bar' | 'floor' | 'stand' | 'lie' | 'ground' } = kind in EMOTE_CLIPS ? EMOTE_CLIPS[kind as EmoteClipKind] : EXERCISES[kind as ExerciseKind];
+  const spec: { keys: Key[]; grip: 'bar' | 'floor' | 'stand' | 'lie' | 'ground' | 'float' } = kind in EMOTE_CLIPS ? EMOTE_CLIPS[kind as EmoteClipKind] : EXERCISES[kind as ExerciseKind];
   const grip = spec.grip;
   // Standing lifts keep the feet where they stand; lying ones put the back
   // on the bench. Measured at rest: the soles, and the back's depth below
@@ -354,6 +377,11 @@ export function buildExerciseClip(
         root.position.y += (pose.rise ?? 0) * tall;
         root.position.x += (pose.sway ?? 0) * tall * sx;
       }
+      model.updateMatrixWorld(true);
+      return;
+    }
+    if (grip === 'float') {
+      // In the water: the hips stay where they are (the pitch turns about them); world.ts floats the body.
       model.updateMatrixWorld(true);
       return;
     }

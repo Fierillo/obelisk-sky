@@ -59,3 +59,11 @@ describe('place music keeps to its place', () => {
     expect(nearestPlaces([fire], { x: 2.5, z: 0 }, [house])).toEqual([]); // in the house's yard
   });
 });
+
+describe('the swim song', () => {
+  it('plays round a swimmer even when a house or a landmark is nearer', () => {
+    const swim: Place = { kind: 'swim', x: 0, z: 0 };
+    expect(nearestPlaces([swim], { x: 1, z: 0 }, [{ x: 1.2, z: 0 }])).toEqual([swim]);
+    expect(nearestPlaces([swim], { x: PLACE_TRACKS.swim.reach + 0.1, z: 0 })).toEqual([]);
+  });
+});

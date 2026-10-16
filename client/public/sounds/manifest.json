@@ -1,8 +1,9 @@
 {
-  "about": "Music files (docs/sounds.md has the Suno prompts). `places`: tracks that play at a place (audio/placeMusic.ts); `tracks`: emote music (audio/emoteMusic.ts), null plays the built-in synth loop. Put a seamless loop file in this folder and name it here.",
+  "about": "Music files (docs/sounds.md has the Suno prompts). `places`: tracks that play at a place (audio/placeMusic.ts; `swim` plays round anyone in the water, silent until its file is here); `tracks`: emote music (audio/emoteMusic.ts), null plays the built-in synth loop. Put a seamless loop file in this folder and name it here.",
   "places": {
     "parrilla": "parrilla.mp3",
-    "campfire": "campfire.mp3"
+    "campfire": "campfire.mp3",
+    "swim": "swim.mp3"
   },
   "tracks": {
     "dance": null,

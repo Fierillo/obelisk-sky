@@ -10,8 +10,7 @@
 import * as THREE from 'three';
 import { MILL, type MillSite } from './layout';
 import { model } from './assets';
-
-const WATER_Y = -0.13;
+import { WATER_Y } from './island';
 
 export interface Mill {
   group: THREE.Group;

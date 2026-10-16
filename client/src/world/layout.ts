@@ -359,6 +359,12 @@ class MinHeap {
   }
 }
 
+/** In the river or the pond (the band the walk grid blocks), and not past the rim where it falls off. */
+export function inWater(plan: IslandPlan, p: Vec2): boolean {
+  if (Math.hypot(p.x, p.z) > plan.radiusAt(Math.atan2(p.z, p.x)) - 0.9) return false;
+  return distToPolyline(p, plan.river) < plan.riverWidth * 0.75 + 0.15 || dist(p, plan.pond.c) < plan.pond.r + 0.25;
+}
+
 /** Build the walk grid for a plan: island top minus water, mountains and
  *  building footprints; plaza and paths cheaper; bridges walkable. */
 export function buildNavGrid(plan: IslandPlan, usedSlots: Slot[], bridges: Vec2[] = []): NavGrid {

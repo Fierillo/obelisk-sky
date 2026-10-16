@@ -25,7 +25,7 @@ Settings → Sound. Every switch is a pref in `client/src/prefs.ts`, applied in 
 | Ambient sounds | `ambience` | Crickets at night. | `sound.ts` `ambient` |
 | Footsteps | `footsteps` | Your own steps. | `sound.ts` `footstep` |
 | Emote music | `emoteMusic` | Music near people dancing or in the lotus pose, and the workout track while you train at the park or the gym (only you hear that one). | `audio/emoteMusic.ts` |
-| Music at places | `placeMusic` | The parrilla's cumbia, the campfires' guitar. | `audio/placeMusic.ts` |
+| Music at places | `placeMusic` | The parrilla's cumbia, the campfires' guitar, the swim song round anyone in the water. | `audio/placeMusic.ts` |
 
 Emote clips (Sangreee) follow the Sound switch only: they aren't music. Chat blips, zap coins and the arrival whoosh follow Sound too.
 
@@ -40,7 +40,7 @@ Emote clips (Sangreee) follow the Sound switch only: they aren't music. Chat bli
    Every file at the same loudness is what lets the code set relative levels.
 3. **Name it in `client/public/sounds/manifest.json`:**
    - under `tracks` for emote music (keys `dance`, `dance2`, `workout`, `zen`; `null` plays the synth loop);
-   - under `places` for music at a place (keys `parrilla`, `campfire`).
+   - under `places` for music at a place (keys `parrilla`, `campfire`, `swim`).
 4. **Replacing a file? Give it a new name** (`parrilla-2.mp3`) and point the manifest at it. Cloudflare keeps an `.mp3` for 4 hours, so a file replaced under the same name keeps playing the old one; `manifest.json` is never cached, so a new name is live at once. Delete the old file in the same change.
 5. **Emote music must match its BPM** (the table below) **and start on the beat:** a track loops on whole bars (`emoteMusic.ts` `loopBars`) of the shared wall-clock grid, so the dancers stay on its beat. Place music has no BPM rule.
 6. Run `npm test`, then deploy. Check the file answers: `curl -I https://sky.obelisk.ar/sounds/<file>`.
@@ -112,6 +112,7 @@ The BPM matters for the dance: the groove animation is two bars at 120 BPM.
 | `workout.mp3` | `workout` ✅ | 128 | 2:54 | Push-ups and jumping jacks emotes, and you while you train at the park or the gym (for you alone, not for people passing; not running laps) | `Instrumental high-energy workout electro loop, 128 BPM, punchy kick on every beat, claps on 2 and 4, driving pumping bassline, sixteenth-note hi-hats, motivating gym vibe, seamless loop, no vocals, no build-up, no drop` |
 | `zen.mp3` | `zen` ✅ | 60 | 3:44 | Lotus pose emote | `Instrumental calm meditation ambient loop, 60 BPM, warm evolving synth pad, soft singing bowl hits, gentle airy texture, peaceful and spacious, seamless loop, no drums, no vocals` |
 | `campfire.mp3` | `places.campfire` ✅ | 90 | 30 s | Every campfire (the logs by the pond, each voice tree's), heard within 5.5 m | `Instrumental acoustic campfire guitar loop, 90 BPM, fingerpicked nylon guitar, soft and warm, a little folk, evening by the fire, seamless loop, no vocals` |
+| `swim.mp3` | `places.swim` ✅ | ~95 | 4:04 | Round anyone swimming in the river or the pond, heard within 7 m, even by a house or a landmark (`open`); plays whole, looped, from the wall clock's point | Not Suno: Supermerk2, "Que Calor" (cumbia villera), master in `_dl/sounds/swim.mp3` |
 | `cafe.mp3` | (future) | 80 | 60 s | Inside the café | `Instrumental lo-fi café jazz hop loop, 80 BPM, mellow Rhodes chords, brushed drums, warm upright bass, vinyl crackle, cozy coffee shop, seamless loop, no vocals` |
 | `parrilla.mp3` | `places.parrilla` ✅ | 96 | 2:52 | The parrilla, heard within 5 m (not at the café or the HQ next door) | `Instrumental Argentine cumbia loop, 96 BPM, güira and congas, accordion melody, bouncy bass, festive Sunday asado mood, seamless loop, no vocals` |
 | `lacrypta.mp3` | (future) | 100 | 60 s | Inside La Crypta | `Instrumental retro synthwave loop, 100 BPM, analog arpeggios, gated reverb snare, warm bass, hacker lounge at night, seamless loop, no vocals` |

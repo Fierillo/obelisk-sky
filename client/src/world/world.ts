@@ -14,11 +14,11 @@ import { buildExerciseClip, repsDone, type ExerciseKind } from './anim/exercises
 import { buildPerson, skinTone } from '../people/people';
 import { FpHands, newArmPose } from './fpHands';
 import type { Command } from './director';
-import { buildIsland, type IslandMeshes } from './island';
+import { buildIsland, WATER_Y, type IslandMeshes } from './island';
 import { carrierOf, reachOf, stepRound, type Round } from './mateRound';
 import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bridge';
 import {
-  assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, onTrack, planIsland, rng, trackSite, TRACK,
+  assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, inWater, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
   millBlocked, type MillSite, turnedHalf, waterworks, parkSite, PLINTH_HALF, CELL as NAV_CELL,
 } from './layout';
@@ -118,6 +118,10 @@ const MOVER_STALE_S = 75;
 const MOVER_LEAD_S = 2.5;
 /** Farther than this from where they really are: fade across. */
 const MOVER_BLINK_M = 4;
+/** Water deeper than this (m, below the surface) is swum, shallower waded (World.swimmingAt). */
+const SWIM_DEPTH = 0.2;
+/** How far below the surface a swimmer's root (their feet's level when standing) floats: the shoulders stay just out. */
+export const SWIM_SINK = 0.47;
 
 const TREE_MODELS = ['nature/tree_default', 'nature/tree_oak', 'nature/tree_fat', 'nature/tree_detailed', 'nature/tree_cone',
   'nature/tree_pineDefaultA', 'nature/tree_pineRoundA', 'nature/tree_pineTallA', 'nature/tree_default', 'nature/tree_oak',
@@ -797,6 +801,39 @@ export class World {
   /** Inside a building you can enter (its room or doorway): walkable for the player. */
   /** On the obelisk's plinth, round its shaft: the grid blocks it (villagers
    *  walk round), people walk up its steps (stair solids). */
+  /** Water you can swim into: the river and the pond, not past the rim (where it falls off). */
+  swimmable(p: Vec2): boolean {
+    return inWater(this.plan, p);
+  }
+
+  /** Deep enough here to swim (not on a bridge, not wading at the bank). */
+  swimmingAt(p: Vec2): boolean {
+    return this.swimmable(p) && this.groundAt(p) < WATER_Y - SWIM_DEPTH;
+  }
+
+  /** Is `pk` swimming now? */
+  isSwimming(pk: string): boolean {
+    return !!this.people.get(pk)?.swimming;
+  }
+
+  /** Float `c` if they're in deep water (their stroke built for their body once), else put them back on their feet. */
+  private updateSwim(c: Character): void {
+    const swim = !c.riding && !this.seatOf.has(c.pk) && !this.trainingAt.has(c.pk) && this.swimmingAt(c.pos);
+    if (swim && !c.swimClip) {
+      const name = builtClipName('swim', c.look.body);
+      if (!this.builtClips.has(name)) {
+        const model = buildPerson(c.look)?.root;
+        if (!model) return;
+        registerClip(buildExerciseClip('swim', model, 0, name));
+        this.builtClips.add(name);
+      }
+      c.swimClip = name;
+    }
+    if (swim && c.emote) c.setEmote(null);
+    c.swimming = swim;
+    c.swimY = WATER_Y - SWIM_SINK;
+  }
+
   onPlinth(p: Vec2): boolean {
     const c = this.plan.plaza.c;
     const d = Math.max(Math.abs(p.x - c.x), Math.abs(p.z - c.z));
@@ -2479,7 +2516,7 @@ export class World {
     const c = this.people.get(pk);
     if (!c) return false;
     const e = emoteOf(kind);
-    if (!e || this.seatOf.has(pk) || this.trainingAt.has(pk) || c.exercise || c.riding) { c.setEmote(null); return false; }
+    if (!e || this.seatOf.has(pk) || this.trainingAt.has(pk) || c.exercise || c.riding || c.swimming) { c.setEmote(null); return false; }
     let { lower, upper } = e;
     if (e.built) {
       // Built for this body's skeleton, once (push-ups on the floor: grip 0).
@@ -2519,9 +2556,11 @@ export class World {
     return out;
   }
 
-  /** Where places with music are (audio/placeMusic.ts): the parrilla, and every campfire (the logs by the pond, each voice tree's). */
-  musicPlaces(): { kind: 'parrilla' | 'campfire'; x: number; z: number }[] {
-    const out: { kind: 'parrilla' | 'campfire'; x: number; z: number }[] = [{ kind: 'campfire', x: this.plan.campfire.x, z: this.plan.campfire.z }];
+  /** Where places with music are (audio/placeMusic.ts): the parrilla, every campfire (the logs by the pond, each voice tree's) and everyone swimming. */
+  musicPlaces(): { kind: 'parrilla' | 'campfire' | 'swim'; x: number; z: number }[] {
+    const out: { kind: 'parrilla' | 'campfire' | 'swim'; x: number; z: number }[] = [{ kind: 'campfire', x: this.plan.campfire.x, z: this.plan.campfire.z }];
+    // Whoever is swimming carries the swim song with them.
+    for (const c of this.people.values()) if (c.swimming && c.opacity > 0.5) out.push({ kind: 'swim', x: c.pos.x, z: c.pos.z });
     const grill = this.landmarkSlots.get('parrilla');
     if (grill) out.push({ kind: 'parrilla', x: grill.pos.x, z: grill.pos.z });
     const p = new THREE.Vector3();
@@ -2943,6 +2982,9 @@ export class World {
       // cell it knows): walk the rest straight in, or straight out of the room.
       if (far && this.insideWalkable(target) && !this.grid.isWalkable(target)) path = [...(path ?? []), target];
       else if (far && !path && this.insideWalkable(ch.pos)) path = [target];
+      // In the water too (the grid has none): swim the rest straight there, or straight out to the bank.
+      else if (far && this.swimmable(target) && !this.grid.isWalkable(target)) path = [...(path ?? []), target];
+      else if (far && !path && this.swimmable(ch.pos)) path = [target];
       // Standing still with an emote: play it once they're there.
       const emote = m.moving ? null : m.emote ?? null;
       // Standing, they face where they face over there (and look up or down).
@@ -3345,6 +3387,7 @@ export class World {
     for (const c of this.people.values()) {
       // The viewer's own height comes with drive(); seats carry their own height.
       c.groundY = c.external || this.seatOf.has(c.pk) ? 0 : this.standHeight(c.pos);
+      this.updateSwim(c);
       // Off screen (with a margin for their shadow): not drawn, not posed.
       this.cullSphere.center.set(c.root.position.x, c.root.position.y + 0.4, c.root.position.z);
       const seen = c.pk === this.playerPk || this.frustum.intersectsSphere(this.cullSphere);

@@ -8,7 +8,7 @@ import { hexToNpub } from '@nostr-wot/data';
 import { Feed, type FeedAccess } from './nostr/feed';
 import { deletionTemplate, joinTemplate, messageTemplate, publishToGroup, publishSigned, reactionTemplate } from './nostr/publish';
 import type { WireReaction } from './nostr/wire';
-import { FOOT_SPEEDS, JUMP_SPEED, PlayerController, RIDE_SPEEDS, placeAt } from './player/controller';
+import { FOOT_SPEEDS, JUMP_SPEED, PlayerController, RIDE_SPEEDS, SWIM_SPEEDS, placeAt } from './player/controller';
 import { hereCounts, speakerPlace, bubbleShown } from './ui/livePlaces';
 import { InputState, isTyping, mountJoystick } from './player/input';
 import { ChatPanel } from './ui/chatPanel';
@@ -830,7 +830,9 @@ function enterAsPlayer(): void {
   const pk = myPk();
   if (!pk) return;
   world.setPlayer(pk);
-  controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids, (p) => world.playerWalkable(p), (p) => world.groundAt(p));
+  // The river and the pond are swum (not on a nostrich: it stays on the bank).
+  controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids,
+    (p) => world.playerWalkable(p) || (world.ridingOf(pk) === null && world.swimmable(p)), (p) => world.groundAt(p));
   world.cam.followPlayer(world.personAnchor(pk));
 }
 
@@ -845,7 +847,11 @@ function stepPlayer(dt: number): void {
   world.setSelfView((world.isTraining(pk!) && world.laneOf(pk!) === null) || (world.isSeated(pk!) && !world.inTheaterSeat(pk!)) || world.emoteOf(pk!) === 'sangre');
   // Sitting down or training gets you off the bird (World.sit / train): back to foot speeds.
   if (world.ridingOf(pk!) === null && rideSpot !== null) { rideSpot = null; controller.speeds = FOOT_SPEEDS; }
-  const mv = input.read();
+  // In deep water you swim: slower, and no jumping off the water.
+  const swimming = world.swimmingAt(controller.pos) && world.ridingOf(pk!) === null;
+  if (rideSpot === null) controller.speeds = swimming ? SWIM_SPEEDS : FOOT_SPEEDS;
+  const read = input.read();
+  const mv = swimming && read.jump ? { ...read, jump: false } : read;
   // A jump ends an emote (walking does in Character.drive).
   if (mv.jump && world.emoteOf(pk!)) world.setEmote(pk!, null);
   // Walking off gets you up from your seat.

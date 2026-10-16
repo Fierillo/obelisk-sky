@@ -11,7 +11,7 @@
 // feet don't slide.
 
 import * as THREE from 'three';
-import { GRAVITY, JUMP_SPEED } from '../player/controller';
+import { GRAVITY, JUMP_SPEED, SWIM_SPEEDS } from '../player/controller';
 import { buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, type PersonLook } from '../people/people';
 import { hashStr, type Vec2 } from './layout';
 import { SangreFx } from './sangre';
@@ -224,6 +224,11 @@ export class Character {
   seatY = 0;
   /** On a nostrich's back (world.ts riders): seated at SADDLE_HEIGHT, carried along. */
   riding = false;
+  /** In deep water (world.ts): the body floats with its root at `swimY` and
+   *  plays `swimClip` (a breaststroke built for this body), slower when idle. */
+  swimming = false;
+  swimY = 0;
+  swimClip: string | null = null;
   /** The mate (or cup) in hand while sitting, if any (kept in the left hand). */
   mate: THREE.Object3D | null = null;
   /** Passing the mate along a bench: the left hand reaches toward `reach`
@@ -242,6 +247,8 @@ export class Character {
   private lookKey = '';
   /** Height of your feet (viewer-driven only): a jump, or standing on a bench. */
   jumpY = 0;
+  /** How far the body floats (0 on land, 1 afloat), eased. */
+  private floatK = 0;
   /** A remote person's jump (from their motion event): its vertical speed. */
   private hopVy = 0;
   /** Raised ground under someone the world walks (stairs, a floor up a
@@ -601,7 +608,7 @@ export class Character {
       const p = this.root.position;
       const dx = target.x - p.x, dz = target.z - p.z;
       const d = Math.hypot(dx, dz);
-      const speed = this.running ? (this.pace?.run ?? RUN_SPEED) : (this.pace?.walk ?? WALK_SPEED);
+      const speed = this.swimming ? (this.running ? SWIM_SPEEDS.run : SWIM_SPEEDS.walk) : this.running ? (this.pace?.run ?? RUN_SPEED) : (this.pace?.walk ?? WALK_SPEED);
       if (d < 0.04) {
         this.path.shift();
         if (!this.path.length) {
@@ -634,10 +641,13 @@ export class Character {
     }
     // Lift (balloon arrivals) eases down.
     if (this.lift > 0) this.lift = Math.max(0, this.lift - dt * 1.6);
-    if (this.emote && (moving || this.riding || this.exercise || this.activity === 'sit' || (this.emoteLeft -= dt) <= 0)) this.emote = null;
+    if (this.emote && (moving || this.riding || this.swimming || this.exercise || this.activity === 'sit' || (this.emoteLeft -= dt) <= 0)) this.emote = null;
     const standing = this.activity !== 'sit' && !this.exercise && !this.emote?.grounded && !this.riding;
     const saddle = this.riding ? SADDLE_HEIGHT - SIT_SEAT_HEIGHT : 0;
-    this.root.position.y = this.lift + this.seatY + saddle + this.jumpY + this.groundY + (standing ? this.soleLift : 0);
+    // Afloat, the water holds the body up (eased, so wading in from the bank doesn't jump).
+    const onLand = this.lift + this.seatY + saddle + this.jumpY + this.groundY + (standing ? this.soleLift : 0);
+    this.floatK = THREE.MathUtils.damp(this.floatK, this.swimming ? 1 : 0, 5, dt);
+    this.root.position.y = this.floatK > 0.001 ? THREE.MathUtils.lerp(onLand, this.swimY, this.floatK) : onLand;
 
     // Ground speed, measured (works for paths and for the viewer's controller).
     const flat = this.tmp.set(this.root.position.x - this.lastPos.x, 0, this.root.position.z - this.lastPos.z);
@@ -650,12 +660,16 @@ export class Character {
     this.landFor = Math.max(0, this.landFor - dt);
     if (this.external?.moving) { moving = true; this.running = this.external.running; }
 
-    const inAir = this.external ? this.driveAirborne : this.jumpY > 0.015;
+    const inAir = !this.swimming && (this.external ? this.driveAirborne : this.jumpY > 0.015);
     if (this.airborne && !inAir) this.landFor = 0.28;
     this.airborne = inAir;
 
-    this.striding = !inAir && moving && !this.riding;
-    if (this.riding) {
+    this.striding = !inAir && moving && !this.riding && !this.swimming;
+    if (this.swimming && this.swimClip) {
+      // A stroke a second and a half while swimming; treading water slower, in place.
+      this.pose(this.swimClip, this.swimClip, 0.3, moving ? (this.running ? 1.35 : 1) : 0.45);
+      if (moving) this.idleFor = 0;
+    } else if (this.riding) {
       // In the saddle, moving or not (the bird does the running).
       this.pose('Sitting_Idle_Loop', this.talkingFor > 0 ? 'Sitting_Talking_Loop' : 'Sitting_Idle_Loop', 0.25);
     } else if (inAir) {

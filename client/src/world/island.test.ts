@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planIsland, dist, distToPolyline } from './layout';
-import { terrainHeight, heightGrid, smoothRiver, BUILDING_SINK } from './island';
+import { planIsland, dist, distToPolyline, inWater } from './layout';
+import { terrainHeight, heightGrid, smoothRiver, BUILDING_SINK, WATER_Y } from './island';
 
 describe('the lawn people walk on', () => {
   const plan = planIsland();
@@ -36,5 +36,23 @@ describe('the lawn people walk on', () => {
       worst = Math.max(worst, Math.abs(grid(p) - height(p)));
     }
     expect(worst).toBeLessThan(0.006);
+  });
+});
+
+describe('the water you swim in', () => {
+  const plan = planIsland();
+  const river = smoothRiver(plan);
+  const height = terrainHeight(plan, river, []);
+  it('is deeper than a body needs to float in the middle of the river and the pond', () => {
+    const mid = river[Math.floor(river.length * 0.3)];
+    expect(height(mid)).toBeLessThan(WATER_Y - 0.3);
+    expect(height(plan.pond.c)).toBeLessThan(WATER_Y - 0.4);
+  });
+  it('is the water the walk grid keeps people out of (and only that)', () => {
+    expect(inWater(plan, river[Math.floor(river.length * 0.3)])).toBe(true);
+    expect(inWater(plan, plan.pond.c)).toBe(true);
+    expect(inWater(plan, plan.plaza.c)).toBe(false);
+    // Off the rim where the waterfall goes over: not swum.
+    expect(inWater(plan, river[river.length - 1])).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 // Your character's movement: keyboard (camera-relative), click-to-walk and a
 // touch joystick, all resolved against the island's NavGrid so you can't
-// walk through buildings, water or off the edge. Pure: no three.js, no DOM;
+// walk through buildings or off the edge (water you swim: main.ts lets the
+// river and pond in through `extraWalkable`). Pure: no three.js, no DOM;
 // input.ts feeds it, world.ts reads the position.
 
 import { dist, type NavGrid, type Vec2 } from '../world/layout';
@@ -13,6 +14,8 @@ export const RIDE_WALK = 4.5;
 export const RIDE_RUN = 10;
 export const FOOT_SPEEDS = { walk: WALK_SPEED, run: RUN_SPEED } as const;
 export const RIDE_SPEEDS = { walk: RIDE_WALK, run: RIDE_RUN } as const;
+/** In deep water (world.ts swimming): a steady breaststroke, a faster one when you "run". */
+export const SWIM_SPEEDS = { walk: 0.55, run: 1.05 } as const;
 /** The longest single move: longer ones (a gallop on a slow frame) go in steps, so walls stay walls. */
 const MAX_SUBSTEP = 0.2;
 /** Take-off speed and gravity: a jump about 0.43 high, 0.53 s in the air. */

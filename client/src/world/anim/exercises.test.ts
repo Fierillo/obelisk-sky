@@ -251,3 +251,21 @@ describe('Sangreee...', () => {
     expect(pos(poseAt(clip, 2.05), 'hand_l').distanceTo(pos(poseAt(clip, 2.3), 'hand_l'))).toBeGreaterThan(0.01);
   });
 });
+
+describe('swimming (a breaststroke built like the exercises)', () => {
+  it('leans the body out over the water, hips where they were, and loops', () => {
+    const clip = buildExerciseClip('swim', figure(), 0, 'swim-test');
+    expect(clip.duration).toBeCloseTo(1.4);
+    const wp = (f: THREE.Object3D, n: string) => f.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+    for (const t of [0, 0.4, 0.72, 0.98]) {
+      const f = poseAt(clip, t);
+      // The hips stay put (World floats the body), the head is well ahead of them and above the feet.
+      expect(wp(f, 'pelvis').distanceTo(new THREE.Vector3(0, 0.95, 0))).toBeLessThan(0.02);
+      expect(wp(f, 'Head').z).toBeGreaterThan(0.4);
+      expect(wp(f, 'Head').y).toBeGreaterThan(Math.min(wp(f, 'foot_l').y, wp(f, 'foot_r').y));
+    }
+    // Glide: hands out ahead of the head; pull: drawn back in under it.
+    expect(wp(poseAt(clip, 0), 'hand_l').z).toBeGreaterThan(wp(poseAt(clip, 0), 'Head').z);
+    expect(wp(poseAt(clip, 0.72), 'hand_l').z).toBeLessThan(wp(poseAt(clip, 0), 'hand_l').z);
+  });
+});

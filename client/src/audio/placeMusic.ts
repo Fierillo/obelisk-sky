@@ -1,5 +1,6 @@
 // Music that belongs to a place: cumbia at the parrilla, a guitar by the
-// campfires. Only the nearest place in reach plays (an HRTF panner fading to
+// campfires, and the swim song round anyone in the water (World.musicPlaces
+// puts a `swim` place on every swimmer). Only the nearest place in reach plays (an HRTF panner fading to
 // silence at its reach), crossfading as you walk from one to another, so
 // the parrilla and a campfire never mix and two campfires never play two
 // guitars over each other. Where
@@ -9,16 +10,18 @@
 // Files are named in public/sounds/manifest.json under `places`; a place
 // whose file is missing is silent.
 
-export type PlaceKind = 'parrilla' | 'campfire';
+export type PlaceKind = 'parrilla' | 'campfire' | 'swim';
 
 export interface Place { kind: PlaceKind; x: number; z: number }
 
 /** How far each is heard (m) and how loud, under the music bus. */
-export const PLACE_TRACKS: Record<PlaceKind, { reach: number; gain: number }> = {
+/** `open`: heard wherever it is, even nearer a house or a landmark (a swimmer by the café). */
+export const PLACE_TRACKS: Record<PlaceKind, { reach: number; gain: number; open?: boolean }> = {
   // Its neighbours (the café, the nostr-wot HQ, about 5 m off) keep their
   // own ground: see `quiet` in nearestPlaces.
   parrilla: { reach: 5, gain: 0.6 },
   campfire: { reach: 5.5, gain: 0.45 },
+  swim: { reach: 7, gain: 0.75, open: true },
 };
 
 type Vec2 = { x: number; z: number };
@@ -45,7 +48,7 @@ export function nearestPlaces(places: readonly Place[], at: Vec2, quiet: readonl
     const d = Math.hypot(p.x - at.x, p.z - at.z);
     const k = d / PLACE_TRACKS[p.kind].reach;
     if (k >= 1) continue;
-    if (quiet.some((q) => Math.hypot(q.x - at.x, q.z - at.z) < d)) continue;
+    if (!PLACE_TRACKS[p.kind].open && quiet.some((q) => Math.hypot(q.x - at.x, q.z - at.z) < d)) continue;
     if (!best || k < best.k) best = { p, k };
   }
   return best ? [best.p] : [];
