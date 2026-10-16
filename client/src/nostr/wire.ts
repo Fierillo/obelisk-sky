@@ -42,6 +42,8 @@ export interface WireMessage {
   zapNote?: boolean;
   /** Everyone it names: `nostr:` mentions in the content and `p` tags (a ping, like obelisk-dex). */
   mentions?: string[];
+  /** obelisk-dex's voice note (its `voice` tag): drawn as its voice player with the length. */
+  voiceNote?: { url: string; durationSeconds: number };
 }
 
 export interface WireReaction {

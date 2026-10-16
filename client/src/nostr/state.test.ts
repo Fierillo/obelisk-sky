@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event as NostrEvent } from 'nostr-tools';
-import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement, parseZapMarker, ANNOUNCE_GRACE_S, zapTotal } from './state';
+import { SkyState, reactionEmoji, HISTORY_SECONDS, parseZapAnnouncement, parseZapMarker, ANNOUNCE_GRACE_S, zapTotal, voiceNoteOf } from './state';
 import type { ServerMsg } from './wire';
 
 const NOW = 1_800_000_000;
@@ -339,5 +339,17 @@ describe('zaps sent from Obelisk (the ⚡ marker)', () => {
     s.ingestDeletion(ev(alice, 5, [['e', marker.id]]));
     expect(out.find((x) => x.t === 'zap-removed')).toMatchObject({ id: `marker:${marker.id}` });
     expect((s.snapshot('r') as Extract<ServerMsg, { t: 'snapshot' }>).zaps).toHaveLength(0);
+  });
+});
+
+describe('voice notes (obelisk-dex: a `voice` tag on a message that is just its URL)', () => {
+  const url = 'https://blossom.test/abc.webm';
+  it('reads the url and length', () => {
+    expect(voiceNoteOf(url, [['voice', url, '12.4']])).toEqual({ voiceNote: { url, durationSeconds: 12 } });
+  });
+  it('ignores a tag that does not match the content, plain http, or no tag', () => {
+    expect(voiceNoteOf(`${url} hi`, [['voice', url, '3']])).toEqual({});
+    expect(voiceNoteOf('http://x.test/a.webm', [['voice', 'http://x.test/a.webm', '3']])).toEqual({});
+    expect(voiceNoteOf(url, [])).toEqual({});
   });
 });

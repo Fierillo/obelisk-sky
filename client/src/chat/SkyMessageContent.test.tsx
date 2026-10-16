@@ -38,4 +38,13 @@ describe('SkyMessageContent (obelisk-dex message renderer)', { timeout: 20_000 }
     render(<SkyMessageContent content={`yo nostr:npub1${pk}`} channelId="g" />);
     await waitFor(() => expect(screen.getByTestId('mention-highlight').textContent).toBe('@Bob'));
   });
+
+  it("draws a voice note as obelisk-dex's voice player, not a link or a video", async () => {
+    const url = 'https://blossom.test/abc.webm';
+    render(<SkyMessageContent content={url} channelId="g" voiceNote={{ url, durationSeconds: 7 }} voiceTimestamp={1} />);
+    expect(screen.getAllByTestId('voice-message')).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.querySelector('video')).toBeNull();
+    expect(document.querySelector(`a[href="${url}"]`)).toBeNull();
+  });
 });

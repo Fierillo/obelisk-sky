@@ -9,6 +9,7 @@
 // rule (no `private` / `hidden`, parent chain included) for any view that
 // might be shown to someone other than the signed-in user.
 
+import { voiceNoteFromTags, type MessageVoiceNote } from '@/utils/media/tags/voice-note-tags';
 import type { Event as NostrEvent } from 'nostr-tools';
 import { getSatoshisAmountFromBolt11 } from 'nostr-tools/nip57';
 import { validateZapReceipt } from '@nostr-wot/wallet';
@@ -35,6 +36,7 @@ interface StoredMessage {
   createdAt: number;
   /** A zap bot's announcement (the chat shows it, the world flies it as a zap). */
   zapNote?: boolean;
+  voiceNote?: MessageVoiceNote;
 }
 
 const HTTPS = /^https:\/\/[^\s"'<>]+$/i;
@@ -53,6 +55,12 @@ export function mediaFromTags(tags: string[][]): { images: string[]; emojis: Rec
     }
   }
   return { images, emojis };
+}
+
+/** obelisk-dex's voice note: a `["voice", url, seconds]` tag on a message that is just that URL (https only, as all media here). */
+export function voiceNoteOf(content: string, tags: string[][]): { voiceNote?: MessageVoiceNote } {
+  const v = voiceNoteFromTags(content, tags);
+  return v && HTTPS.test(v.url) ? { voiceNote: v } : {};
 }
 
 interface Profile {
@@ -267,6 +275,7 @@ export class SkyState {
       mentions: mentionedPubkeys(ev.content, ev.tags).slice(0, 20),
       createdAt: ev.created_at,
       ...(ann ? { zapNote: true } : {}),
+      ...voiceNoteOf(ev.content, ev.tags),
     };
     this.messages.set(ev.id, m);
     this.notePerson(ev.pubkey);
@@ -301,6 +310,7 @@ export class SkyState {
       createdAt: m.createdAt,
     };
     if (m.zapNote) out.zapNote = true;
+    if (m.voiceNote) out.voiceNote = m.voiceNote;
     if (m.mentions.length) out.mentions = m.mentions;
     return out;
   }

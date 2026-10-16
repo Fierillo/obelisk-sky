@@ -107,7 +107,7 @@ button { font: inherit; color: inherit; }
    card docks to its left (or sits above it where both don't fit). */
 .card { z-index: 7; }
 @media (min-width: 780px) {
-  body.chat-open .card { right: calc(16px + min(380px, calc(100vw - 32px)) + 12px); }
+  body.chat-open .card, body.channels-open .card { right: calc(16px + min(380px, calc(100vw - 32px)) + 12px); }
 }
 .card-close { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 999px; border: 1px solid var(--border); background: rgba(38, 38, 38, 0.6); cursor: pointer; display: grid; place-items: center; }
 .card-close:hover { background: rgba(60, 60, 60, 0.8); }
@@ -245,9 +245,9 @@ button { font: inherit; color: inherit; }
 @media (max-width: 720px) { .gate { top: 56px; } .gate-text { font-size: 11.5px; } .gate-mark { display: none; } .gate-card { border-radius: 16px; padding-left: 12px; } }
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 540px) { .gate { top: 50px; } }
 /* The chat panel open on the right: the banner keeps to the left of it. */
-@media (min-width: 721px) { body.chat-open .gate { left: 16px; transform: none; max-width: calc(100vw - 440px); } }
+@media (min-width: 721px) { body.chat-open .gate, body.channels-open .gate { left: 16px; transform: none; max-width: calc(100vw - 440px); } }
 /* On a phone the chat takes the screen's side or bottom: the banner steps aside until it closes. */
-@media (max-width: 720px), (pointer: coarse) and (orientation: landscape) and (max-height: 540px) { body.chat-open .gate { display: none; } }
+@media (max-width: 720px), (pointer: coarse) and (orientation: landscape) and (max-height: 540px) { body.chat-open .gate, body.channels-open .gate { display: none; } }
 .login-host { position: relative; z-index: 20; }
 
 /* The login modal (@nostr-wot/ui, re-hosted from obelisk-dex) in sky's
@@ -393,6 +393,7 @@ img.emoji { height: 1.3em; width: auto; vertical-align: -0.3em; }
 
 @media (max-width: 720px) {
   .chat { top: auto; bottom: 0; right: 0; left: 0; width: auto; height: 52%; border-radius: 16px 16px 0 0; }
+  .side.at-chat { top: auto; bottom: 0; right: 0; left: 0; width: auto; height: 52%; border-radius: 16px 16px 0 0; z-index: 7; }
   .chat.min { height: auto; }
   .chat-composer.chat-bar { padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px)); }
   /* The sheet grows while the picker is open, so the emoji get the room. */
@@ -652,7 +653,21 @@ button.side-section:has(+ *) { cursor: pointer; }
 .side-row.offline .side-avatar, .side-row.offline .side-names { opacity: 0.55; }
 .side-names { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .side-nip { font: 500 10.5px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-rank { max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid; border-radius: 999px; padding: 1px 7px; font: 600 10px var(--sans); }
+.side-rank { flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid; border-radius: 999px; padding: 1px 6px; font: 600 10px/1.5 var(--sans); text-transform: uppercase; letter-spacing: 0.04em; }
+.chat-meta .side-rank { max-width: 50%; align-self: center; text-shadow: none; }
+/* The channel list stands where the chat panel sits (and the chat steps aside meanwhile). */
+.side.at-chat { left: auto; right: 16px; top: 64px; bottom: 112px; width: min(380px, calc(100vw - 32px)); }
+body.channels-open .chat { display: none; }
+.side-cat { display: flex; align-items: center; gap: 6px; width: 100%; cursor: pointer; margin-top: 4px; }
+.side-cat:hover { color: var(--white); }
+.side-chev { width: 12px; text-align: center; }
+.side-cat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-cat-n { font-weight: 400; opacity: 0.6; }
+.chat-person { cursor: pointer; }
+span.chat-person:hover { text-decoration: underline; }
+.chat-av.chat-person:hover { filter: brightness(1.12); }
+.chat-back { flex: none; font-size: 20px; }
+.chat-back[hidden] { display: none; }
 .side-afk { font: 700 9.5px var(--mono); color: #ffc83d; border: 1px solid rgba(255, 200, 61, 0.5); border-radius: 999px; padding: 1px 6px; }
 .side-empty { color: var(--muted); font-size: 12.5px; padding: 12px 8px; }
 body.side-open .feed { opacity: 0; pointer-events: none; }
@@ -893,6 +908,7 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
 
   /* Channels and members: the same left column. */
   .side { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); }
+  .side.at-chat { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); left: max(8px, env(safe-area-inset-left)); right: auto; width: min(400px, 46vw); height: auto; border-radius: 16px; }
 
   /* The menu: a sheet on the right that scrolls when it's taller than the screen. */
   body.menu-open .controls { top: var(--land-top); bottom: auto; max-height: calc(100% - var(--land-top) - 8px); left: auto; right: var(--land-edge); width: min(520px, 72vw); grid-template-columns: repeat(5, minmax(0, 1fr)); align-content: start; overflow-y: auto; overscroll-behavior: contain; }

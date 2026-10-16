@@ -22,6 +22,9 @@ export interface ChannelMembers {
   at: number;
 }
 
+/** No ranks came (the relay may not have let us in yet): ask again after this. */
+const ROLES_RETRY_MS = 30_000;
+
 const PK = /^[0-9a-f]{64}$/;
 
 /** The newest 39001/39002 for a channel, as pubkey lists (admins also count as members). */
@@ -40,7 +43,9 @@ export class MembersStore {
   private pending = new Map<string, Promise<ChannelMembers>>();
   roles: RelayRoles = EMPTY_RELAY_ROLES;
   rolesOf: Record<string, RelayRole[]> = {};
-  private rolesLoaded = false;
+  /** The relay the ranks were read for, and when: re-read on a switch, or after a while when none came. */
+  private rolesFor: string | null = null;
+  private rolesAt = 0;
 
   constructor(private hub: RelayHub, private operator: () => string | null) {}
 
@@ -65,27 +70,37 @@ export class MembersStore {
   /** The relay's ranks, from its operator (once per relay). */
   async loadRoles(): Promise<Record<string, RelayRole[]>> {
     const op = this.operator();
-    if (this.rolesLoaded || !op) return this.rolesOf;
-    this.rolesLoaded = true;
     const relay = activeRelay();
+    if (!op) return this.rolesOf;
+    if (this.rolesFor === relay && (this.roles.roles.length || Date.now() - this.rolesAt < ROLES_RETRY_MS)) return this.rolesOf;
+    if (this.rolesFor !== relay) { this.roles = EMPTY_RELAY_ROLES; this.rolesOf = {}; }
+    this.rolesFor = relay;
+    this.rolesAt = Date.now();
+    // The operator's tags name the relay as their client spelled it: with or without the trailing slash.
+    const key = relay.replace(/\/+$/, '');
+    const spellings = [key, `${key}/`];
     try {
-      const cat = await this.hub.query({ relays: [relay], filters: [{ kinds: [30078], authors: [op], '#d': [roleCatalogDTag(relay)] }], maxWaitMs: 4000, label: 'sky-roles' });
+      const cat = await this.hub.query({ relays: [relay], filters: [{ kinds: [30078], authors: [op], '#d': spellings.map(roleCatalogDTag) }], maxWaitMs: 4000, label: 'sky-roles' });
       const ev = cat.events.filter((e) => e.pubkey === op).sort((a, b) => b.created_at - a.created_at)[0];
       if (!ev) return this.rolesOf;
+      const spelled = spellings.find((r) => ev.tags.some((t) => t[0] === 'd' && t[1] === roleCatalogDTag(r))) ?? key;
       let state: RelayRoles = parseRoleCatalog(ev);
       if (state.roles.length) {
-        const h = await this.hub.query({ relays: [relay], filters: [{ kinds: [30078], authors: [op], '#d': state.roles.map((r) => roleHoldersDTag(relay, r.id)) }], maxWaitMs: 4000, label: 'sky-role-holders' });
+        const h = await this.hub.query({ relays: [relay], filters: [{ kinds: [30078], authors: [op], '#d': state.roles.map((r) => roleHoldersDTag(spelled, r.id)) }], maxWaitMs: 4000, label: 'sky-role-holders' });
         const newest = new Map<string, { at: number; pubkeys: readonly string[] }>();
         for (const e of h.events) {
           if (e.pubkey !== op) continue;
-          const parsed = parseRoleHolders(e, relay);
+          const parsed = parseRoleHolders(e, spelled);
           if (parsed && parsed.updatedAt > (newest.get(parsed.roleId)?.at ?? 0)) newest.set(parsed.roleId, { at: parsed.updatedAt, pubkeys: parsed.pubkeys });
         }
         state = { ...state, holders: Object.fromEntries([...newest].map(([id, v]) => [id, v.pubkeys])) };
       }
       this.roles = state;
       this.rolesOf = rolesByPubkey(state);
-    } catch { /* no ranks */ }
+    } catch {
+      // Ask again next time rather than showing no ranks for good.
+      this.rolesAt = 0;
+    }
     return this.rolesOf;
   }
 }

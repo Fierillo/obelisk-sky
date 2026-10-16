@@ -22,7 +22,7 @@ beforeAll(() => {
 const group = { id: 'g1', name: 'plaza', kind: 'chat' } as unknown as WireGroup;
 const msg = { id: 'e'.repeat(64), pubkey: ALICE, groupId: 'g1', text: 'asado?', content: 'asado?', createdAt: 1 } as unknown as WireMessage;
 
-function panel(send: ChatPanelDeps['send']) {
+function panel(send: ChatPanelDeps['send'], over: Partial<ChatPanelDeps> = {}, onBack?: () => void) {
   const deps: ChatPanelDeps = {
     me: () => 'f'.repeat(64),
     nameOf: () => 'Alice',
@@ -36,8 +36,10 @@ function panel(send: ChatPanelDeps['send']) {
     join: async () => null,
     people: () => [{ pubkey: ALICE, name: 'Alice' }],
     relay: () => 'wss://relay.test',
+    ...over,
   };
   const p = new ChatPanel(document.body, deps);
+  p.onBack = onBack;
   p.open(group);
   return p;
 }
@@ -74,3 +76,31 @@ describe('ChatPanel message bar', { timeout: 30_000 }, () => {
     p.close();
   });
 });
+
+describe('ChatPanel header and authors', { timeout: 30_000 }, () => {
+  it('goes back to the channel list from the header, when a list is there to go to', async () => {
+    const back = vi.fn();
+    const p = panel(async () => null, {}, back);
+    const btn = p.el.querySelector<HTMLButtonElement>('.chat-back')!;
+    expect(btn.hidden).toBe(false);
+    btn.click();
+    expect(back).toHaveBeenCalledOnce();
+    const plain = panel(async () => null);
+    expect(plain.el.querySelector<HTMLButtonElement>('.chat-back')!.hidden).toBe(true);
+    // Let the message bars finish mounting before the page goes away.
+    await bar(p);
+    await bar(plain);
+  });
+
+  it("opens the author's profile from their avatar or name, and shows their rank", async () => {
+    const onProfile = vi.fn();
+    const p = panel(async () => null, { onProfile, roleOf: () => ({ id: 'mod', name: 'Mod', tier: 5, color: '#00ff00', emoji: '🛡' }) });
+    (p.el.querySelector('.chat-av') as HTMLElement).click();
+    (p.el.querySelector('.chat-who') as HTMLElement).click();
+    expect(onProfile).toHaveBeenCalledTimes(2);
+    expect(onProfile).toHaveBeenCalledWith(ALICE);
+    expect(p.el.querySelector('.chat-meta .side-rank')!.textContent).toBe('🛡 Mod');
+    await bar(p);
+  });
+});
+

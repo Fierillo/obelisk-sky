@@ -261,6 +261,10 @@ const en = {
   // The side panel (channels and members)
   channelsN: (n: number) => `Channels · ${n}`,
   noChannelsRelay: 'No channels on this relay yet.',
+  uncategorized: 'Uncategorized',
+  backToChannels: 'Back to channels',
+  roleBadge: (name: string) => `Role: ${name}`,
+  openProfile: 'Open profile',
   hereN: (n: number) => `${n} here`,
   members: 'Members',
   membersN: (n: number) => `Members · ${n}`,
@@ -586,6 +590,10 @@ const es: VillageWords = {
 
   channelsN: (n) => `Canales · ${n}`,
   noChannelsRelay: 'Todavía no hay canales en este relay.',
+  uncategorized: 'Sin categoría',
+  backToChannels: 'Volver a los canales',
+  roleBadge: (name) => `Rol: ${name}`,
+  openProfile: 'Ver perfil',
   hereN: (n) => `${n} acá`,
   members: 'Miembros',
   membersN: (n) => `Miembros · ${n}`,

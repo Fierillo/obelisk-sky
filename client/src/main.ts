@@ -15,6 +15,7 @@ import { ReadState, countUnread } from './nostr/readstate';
 import { mentionedPubkeys } from './nostr/sanitize';
 import { putProfile, setProfileRequester, clearProfiles } from './nostr/profileStore';
 import { setRoofPing } from './world/buildings';
+import { EMPTY_LAYOUT } from '@/constants/relay/channel-layout';
 import { EMPTY_THEMES, ThemeStore, resolveTheme, themesTemplate, type ThemeConfig } from './nostr/themes';
 import { guardHub, guestAuthor, guestPubkey, guestReason, isGuest, setGuest, type GuestReason } from './nostr/guest';
 import { GuestFeed } from './guest/feed';
@@ -1235,6 +1236,7 @@ const side = new SidePanel($('app'), {
     };
   });
   },
+  layout: () => (isGuest() ? EMPTY_LAYOUT : themes?.layout ?? EMPTY_LAYOUT),
   defaultChannel: () => place ?? chat.groupId ?? groups[0]?.id ?? null,
   // On the guest island the houses aren't the relay's: no members to ask for.
   loadMembers: (id) => (isGuest() ? Promise.resolve({ members: [], admins: [] } as unknown as Awaited<ReturnType<typeof members.load>>) : members.load(id)),
@@ -1244,8 +1246,8 @@ const side = new SidePanel($('app'), {
   profile: (pk) => { const p = world.profiles.get(pk); return { name: p?.name ?? world.nameOf(pk), avatar: p?.avatar ?? null, nip05: p?.nip05 ?? null }; },
   colorOf: (pk) => pubkeyColor(pk),
   me: () => myPk(),
-  // Show its house and open its chat right here: no need to walk over.
-  onChannel: (id) => openChannel(id),
+  // Show its house and open its chat in the list's place: no need to walk over.
+  onChannel: (id) => { side.close(); renderTabs(); openChannel(id); },
   onMember: (pk) => showPerson(pk),
 });
 const renderTabs = (): void => {
@@ -1254,7 +1256,7 @@ const renderTabs = (): void => {
 };
 $('tab-channels').addEventListener('click', () => { side.toggle('channels'); renderTabs(); });
 $('tab-members').addEventListener('click', () => { side.toggle('members'); renderTabs(); });
-side.el.querySelector('.chat-min')?.addEventListener('click', renderTabs);
+side.onToggle = renderTabs;
 
 /** Open a channel from a list: the camera goes to its house and its chat
  *  opens on the right, fully usable, wherever your character is. */
@@ -1387,8 +1389,16 @@ async function publish(template: Parameters<typeof publishToGroup>[2]): Promise<
   return null;
 }
 
+/** The ranks the chat last drew with (MembersStore.rolesOf). */
+let rolesShown: unknown = null;
 const chat = new ChatPanel($('app'), {
   onProfile: (pk) => showPerson(pk),
+  // The ranks are read once per relay; the first ask redraws the chat when they come.
+  roleOf: (pk) => {
+    if (isGuest()) return null;
+    void members.loadRoles().then((had) => { if (had !== rolesShown) { rolesShown = had; chat.refresh(); } });
+    return members.rolesOf[pk]?.[0] ?? null;
+  },
   me: () => myPk(),
   nameOf: (pk) => world.nameOf(pk),
   avatarOf: (pk) => world.profiles.get(pk)?.avatar ?? null,
@@ -1425,6 +1435,8 @@ const chat = new ChatPanel($('app'), {
     if (controller && other && m.pubkey !== myPk()) controller.walkTo(other.pos);
   },
 });
+// The chat's ‹ goes back to the channel list, which stands in its place.
+chat.onBack = () => { if (side.tab !== 'channels') side.toggle('channels'); renderTabs(); };
 /** Everyone the @-picker (and /zap @name) may mean: anyone on the relay, plus whoever walks the village. */
 function chatPeople(g: string): { pubkey: string; name: string; picture: string | null }[] {
   if (!isGuest()) void members.load(g);

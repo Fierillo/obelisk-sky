@@ -10,6 +10,7 @@ function panel(over: Partial<SidePanelDeps> = {}) {
       { id: 'a', name: 'general', kind: 'chat', unread: 0, mention: false, here: 0 },
       { id: 'b', name: 'gym', kind: 'chat', unread: 0, mention: false, here: 0 },
     ],
+    layout: () => ({ categories: [], channels: [], updatedAt: 0 }),
     defaultChannel: () => 'a',
     loadMembers: vi.fn(async (id: string) => ({ admins: [], members: id === 'a' ? ['p1'] : ['p2', 'p3'] })),
     posters: () => [],
@@ -65,3 +66,48 @@ describe('the members panel', () => {
     expect(pick.value).toBe('b');
   });
 });
+
+describe('the channel list', () => {
+  const layout = {
+    categories: [{ id: 'c1', name: 'Fitness', position: 0 }, { id: 'c2', name: '', position: 1 }],
+    channels: [{ id: 'b', categoryId: 'c1', position: 0 }],
+    updatedAt: 1,
+  };
+
+  it('groups channels under the operator\'s categories, the rest under Uncategorized', () => {
+    const { side, host } = panel({ layout: () => layout });
+    side.toggle('channels');
+    const cats = [...host.querySelectorAll('.side-cat-name')].map((e) => e.textContent);
+    expect(cats).toEqual(['Fitness', 'Untitled category', 'Uncategorized']);
+    const names = [...host.querySelectorAll('.side-list > *')].map((e) => e.querySelector('.side-cat-name, .side-name')!.textContent);
+    expect(names).toEqual(['Fitness', 'gym', 'Untitled category', 'Uncategorized', 'general']);
+  });
+
+  it('folds a category on a click', () => {
+    const { side, host } = panel({ layout: () => layout });
+    side.toggle('channels');
+    (host.querySelector('.side-cat') as HTMLButtonElement).click();
+    expect([...host.querySelectorAll('.side-name')].map((e) => e.textContent)).toEqual(['general']);
+  });
+
+  it('leaves the list unheaded when there are no categories, and stands where the chat sits', () => {
+    const { side, host } = panel();
+    side.toggle('channels');
+    expect(host.querySelector('.side-cat')).toBeNull();
+    expect(side.el.classList.contains('at-chat')).toBe(true);
+    expect(document.body.classList.contains('channels-open')).toBe(true);
+    side.close();
+    expect(document.body.classList.contains('channels-open')).toBe(false);
+  });
+
+  it('draws a rank as obelisk-dex does: its colour on a tint of itself', async () => {
+    const { side, host } = panel({ loadRanks: async () => ({ p1: [{ id: 'mod', name: 'Mod', tier: 5, color: '#ff0000', emoji: '' }] }) });
+    side.toggle('members');
+    await flush(); await flush();
+    const badge = host.querySelector('.side-rank') as HTMLElement;
+    expect(badge.textContent).toBe('Mod');
+    expect(badge.style.color).toBe('rgb(255, 0, 0)');
+    expect(badge.style.backgroundColor).toBe('rgba(255, 0, 0, 0.12)');
+  });
+});
+

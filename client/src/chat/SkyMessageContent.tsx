@@ -15,21 +15,27 @@ import { VideoMedia } from '@/components/chat/message/VideoMedia';
 import { WelcomeBanner } from '@/components/chat/message/WelcomeBanner';
 import { useMessageContent } from '@/hooks/chat/message/useMessageContent';
 import type { CustomEmojiMap } from '@/utils/media/tags/custom-emoji-tags';
+import type { MessageVoiceNote } from '@/utils/media/tags/voice-note-tags';
 
 export interface SkyMessageProps {
   content: string;
   channelId: string;
   customEmojis?: CustomEmojiMap;
+  /** A voice note (its `voice` tag): the player with its length, the body's URL hoisted into it. */
+  voiceNote?: MessageVoiceNote;
+  voiceAuthorPicture?: string | null;
+  voiceTimestamp?: number;
   onGame?: (gameId: string) => void;
 }
 
-export default function SkyMessageContent({ content, channelId, customEmojis, onGame }: SkyMessageProps) {
+export default function SkyMessageContent({ content, channelId, customEmojis, voiceNote, voiceAuthorPicture, voiceTimestamp, onGame }: SkyMessageProps) {
   const {
     imageUrls, videoUrls, audioUrls, youtube, linkUrls,
     welcomeBanner, invoices, gameIds, text, media, components, renderMarkdown,
-  } = useMessageContent({ content, channelId, customEmojis });
+  } = useMessageContent({ content, channelId, customEmojis, voiceNote });
   return (
     <span data-testid="message-content">
+      {voiceNote && <VoiceMessage note={voiceNote} authorPicture={voiceAuthorPicture} timestamp={voiceTimestamp} autoLoad={media.show} />}
       {text && (renderMarkdown
         ? renderMarkdown(text, components)
         : <span data-testid="message-text-loading">{text}</span>)}

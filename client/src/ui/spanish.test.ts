@@ -21,6 +21,7 @@ describe('the village in Spanish', () => {
     const host = document.createElement('div');
     const side = new SidePanel(host, {
       channels: () => [{ id: 'a', name: 'general', kind: 'chat', unread: 0, mention: false, here: 2 }],
+      layout: () => ({ categories: [], channels: [], updatedAt: 0 }),
       defaultChannel: () => 'a',
       loadMembers: async () => ({ admins: [], members: ['p1', 'p2'] }),
       posters: () => [],

@@ -1,10 +1,14 @@
-// The left drawer, the chat panel's twin on the other side: the relay's
-// channels (go there, see who's around) or a channel's members grouped by
-// standing and presence (memberGroups.ts), as obelisk-dex lists them.
+// The drawer of the relay's channels (go there, see who's around), in the
+// operator's categories as obelisk-dex's sidebar shows them (channelTree.ts),
+// drawn where the chat panel sits: picking one opens its chat in its place,
+// and the chat's Back comes here again. Or, on the left, a channel's members
+// grouped by standing and presence (memberGroups.ts), as obelisk-dex lists them.
 
 import type { Presence } from '../nostr/presence';
 import { groupMembers, type Rank } from './memberGroups';
 import { vw } from '../i18n/village';
+import { channelSections } from './channelTree';
+import type { ChannelLayout } from '@/services/relay/channel-layout';
 
 export type SideTab = 'channels' | 'members';
 
@@ -12,6 +16,8 @@ export interface ChannelRow { id: string; name: string; kind: string; unread: nu
 
 export interface SidePanelDeps {
   channels(): ChannelRow[];
+  /** The operator's categories and channel order (obelisk:layout). */
+  layout(): ChannelLayout;
   /** The channel the members list starts on (where you stand), else the first. */
   defaultChannel(): string | null;
   loadMembers(groupId: string): Promise<{ admins: string[]; members: string[] }>;
@@ -36,6 +42,10 @@ export class SidePanel {
   tab: SideTab | null = null;
   private channel: string | null = null;
   private offlineOpen = false;
+  /** Categories folded shut (by id; '' is the uncategorized list). */
+  private folded = new Set<string>();
+  /** Opened or closed: the host hides the chat while the list stands in its place. */
+  onToggle?: () => void;
   private ranks: Record<string, readonly Rank[]> = {};
   private token = 0;
   /** What the list and picker last showed: a redraw with nothing new is skipped. */
@@ -51,7 +61,7 @@ export class SidePanel {
     x.className = 'chat-min';
     x.title = vw.close;
     x.textContent = '×';
-    x.addEventListener('click', () => this.close());
+    x.addEventListener('click', () => { this.close(); this.onToggle?.(); });
     head.append(this.title, x);
     this.body = div('side-body');
     this.pick = document.createElement('select');
@@ -69,7 +79,9 @@ export class SidePanel {
     this.tab = tab;
     this.el.hidden = false;
     this.shown = '';
-    document.body.classList.add('side-open');
+    this.el.classList.toggle('at-chat', tab === 'channels');
+    document.body.classList.toggle('side-open', tab === 'members');
+    document.body.classList.toggle('channels-open', tab === 'channels');
     if (tab === 'members') this.channel = this.channel && this.deps.channels().some((c) => c.id === this.channel) ? this.channel : this.deps.defaultChannel();
     this.render();
   }
@@ -77,7 +89,7 @@ export class SidePanel {
   close(): void {
     this.tab = null;
     this.el.hidden = true;
-    document.body.classList.remove('side-open');
+    document.body.classList.remove('side-open', 'channels-open');
   }
 
   /** Show `groupId`'s members. */
@@ -115,28 +127,45 @@ export class SidePanel {
 
   private renderChannels(): void {
     const rows = this.deps.channels();
+    const sections = channelSections(rows, this.deps.layout());
     this.title.textContent = vw.channelsN(rows.length);
     this.pick.hidden = true;
-    this.show(`c|${JSON.stringify(rows)}`, () => {
+    this.show(`c|${[...this.folded].join(',')}|${JSON.stringify(sections)}`, () => {
       if (!rows.length) return [div('side-empty', vw.noChannelsRelay)];
-      return rows.map((c) => {
-        const b = document.createElement('button');
-        b.className = `side-row${c.unread ? ' unread' : ''}`;
-        const icon = span('side-ico', c.kind.startsWith('voice') ? '🔊' : c.kind === 'forum' ? '📰' : '#');
-        const name = span('side-name', c.name);
-        b.append(icon, name);
-        if (c.here) b.append(span('side-here', vw.hereN(c.here)));
-        if (c.unread || c.mention) b.append(span(`side-badge${c.mention ? ' ping' : ''}`, c.mention ? '@' : String(c.unread)));
-        b.addEventListener('click', () => this.deps.onChannel(c.id));
-        const members = document.createElement('button');
-        members.className = 'side-mini';
-        members.title = vw.members;
-        members.textContent = '👥';
-        members.addEventListener('click', (e) => { e.stopPropagation(); this.showMembers(c.id); });
-        b.append(members);
-        return b;
-      });
+      const out: HTMLElement[] = [];
+      for (const s of sections) {
+        const key = s.id ?? '';
+        const shut = this.folded.has(key);
+        if (s.headed) {
+          const h = document.createElement('button');
+          h.className = 'side-section side-cat';
+          h.setAttribute('aria-expanded', String(!shut));
+          h.append(span('side-chev', shut ? '▸' : '▾'), span('side-cat-name', s.id === null ? vw.uncategorized : s.name.trim() || vw.untitledCategory), span('side-cat-n', String(s.rows.length)));
+          h.addEventListener('click', () => { if (shut) this.folded.delete(key); else this.folded.add(key); this.renderChannels(); });
+          out.push(h);
+        }
+        if (!shut) for (const c of s.rows) out.push(this.channelRow(c));
+      }
+      return out;
     });
+  }
+
+  private channelRow(c: ChannelRow): HTMLElement {
+    const b = document.createElement('button');
+    b.className = `side-row${c.unread ? ' unread' : ''}`;
+    const icon = span('side-ico', c.kind.startsWith('voice') ? '🔊' : c.kind === 'forum' ? '📰' : '#');
+    const name = span('side-name', c.name);
+    b.append(icon, name);
+    if (c.here) b.append(span('side-here', vw.hereN(c.here)));
+    if (c.unread || c.mention) b.append(span(`side-badge${c.mention ? ' ping' : ''}`, c.mention ? '@' : String(c.unread)));
+    b.addEventListener('click', () => this.deps.onChannel(c.id));
+    const members = document.createElement('button');
+    members.className = 'side-mini';
+    members.title = vw.members;
+    members.textContent = '👥';
+    members.addEventListener('click', (e) => { e.stopPropagation(); this.showMembers(c.id); this.onToggle?.(); });
+    b.append(members);
+    return b;
   }
 
   /** The picker's options, rebuilt only when the channels themselves change. */
@@ -207,16 +236,22 @@ export class SidePanel {
     names.append(span('side-name', `${admin ? '🛡️ ' : ''}${p.name}${pk === this.deps.me() ? vw.you : ''}`));
     if (p.nip05) names.append(span('side-nip', p.nip05.replace(/^_@/, '')));
     b.append(av, names);
-    if (rank) {
-      const badge = span('side-rank', rank.emoji ? `${rank.emoji} ${rank.name}` : rank.name);
-      badge.style.borderColor = rank.color;
-      badge.style.color = rank.color;
-      b.append(badge);
-    }
+    if (rank) b.append(roleBadge(rank));
     if (presence === 'afk') b.append(span('side-afk', vw.afk));
     b.addEventListener('click', () => this.deps.onMember(pk));
     return b;
   }
+}
+
+/** A relay rank as obelisk-dex's RoleBadge draws it: its colour on a tint of itself. */
+export function roleBadge(rank: Pick<Rank, 'name' | 'color' | 'emoji'>): HTMLSpanElement {
+  const label = rank.emoji ? `${rank.emoji} ${rank.name}` : rank.name;
+  const badge = span('side-rank', label);
+  badge.title = vw.roleBadge(label);
+  badge.style.color = rank.color;
+  badge.style.borderColor = `${rank.color}59`;
+  badge.style.backgroundColor = `${rank.color}1f`;
+  return badge;
 }
 
 function div(cls: string, text?: string): HTMLDivElement {

@@ -19,6 +19,10 @@ export interface BodyInput {
   groupId: string;
   images: string[];
   emojis: Record<string, string>;
+  voiceNote?: { url: string; durationSeconds: number };
+  /** The author's picture and the time, shown on a voice note's player. */
+  picture?: string | null;
+  createdAt?: number;
 }
 
 let onGame: ((gameId: string) => void) | undefined;
@@ -48,7 +52,7 @@ export function bodyContent(m: BodyInput): string {
 /** The element showing message `m`'s body (created once, then reused). */
 export function messageBodyEl(m: BodyInput): HTMLElement {
   const content = bodyContent(m);
-  const key = `${content}\u0000${JSON.stringify(m.emojis)}`;
+  const key = `${content}\u0000${JSON.stringify(m.emojis)}\u0000${m.voiceNote ? `${m.voiceNote.durationSeconds}|${m.picture ?? ''}` : ''}`;
   let cur = mounted.get(m.id);
   if (!cur) {
     const el = document.createElement('div');
@@ -58,7 +62,7 @@ export function messageBodyEl(m: BodyInput): HTMLElement {
   }
   if (cur.key !== key) {
     cur.key = key;
-    cur.root.render(<SkyMessageContent content={content} channelId={m.groupId} customEmojis={m.emojis} onGame={(id) => onGame?.(id)} />);
+    cur.root.render(<SkyMessageContent content={content} channelId={m.groupId} customEmojis={m.emojis} voiceNote={m.voiceNote} voiceAuthorPicture={m.picture} voiceTimestamp={m.createdAt} onGame={(id) => onGame?.(id)} />);
   }
   return cur.el;
 }

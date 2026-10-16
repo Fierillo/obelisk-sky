@@ -15,6 +15,8 @@
 import type { Event as NostrEvent, EventTemplate } from 'nostr-tools';
 import type { RelayHub } from '@nostr-wot/relay/hub';
 import { fetchRelayInfo, operatorPubkeyFromRelayInfo } from '@/services/relay/relay-info';
+import type { ChannelLayout, ChannelLayoutCategory, ChannelLayoutChannel } from '@/services/relay/channel-layout';
+import { EMPTY_LAYOUT } from '@/constants/relay/channel-layout';
 import type { ChannelKind } from './groups';
 import { vw } from '../i18n/village';
 
@@ -69,6 +71,19 @@ export function layoutCategoryNames(ev: NostrEvent): Record<string, string> {
   return out;
 }
 
+/** The whole layout (categories and channel order), as obelisk-dex's channel-layout parses it. */
+export function parseChannelLayout(ev: NostrEvent): ChannelLayout {
+  const categories: ChannelLayoutCategory[] = [];
+  const channels: ChannelLayoutChannel[] = [];
+  for (const t of ev.tags) {
+    if (t[0] === 'category' && t[1] && t[2] !== undefined) categories.push({ id: t[1], name: t[2], position: parseInt(t[3] ?? '0', 10) || 0 });
+    else if (t[0] === 'channel' && t[1]) channels.push({ id: t[1], categoryId: t[2] || null, position: parseInt(t[3] ?? '0', 10) || 0 });
+  }
+  categories.sort((a, b) => a.position - b.position);
+  channels.sort((a, b) => a.position - b.position);
+  return { categories, channels, updatedAt: ev.created_at };
+}
+
 const SPORTS = /run|gym|fit|sport|calist|train|workout|deporte|futbol|fútbol|soccer|bike|bici|yoga|crossfit|runstr/i;
 const GAMING = /game|gaming|play|arcade|juego|chess|ajedrez|esport/i;
 
@@ -98,6 +113,8 @@ export class ThemeStore {
   config: ThemeConfig = EMPTY_THEMES;
   categoryOf: Record<string, string> = {};
   categoryNames: Record<string, string> = {};
+  /** The channel list's categories and order. */
+  layout: ChannelLayout = EMPTY_LAYOUT;
   operator: string | null = null;
   private layoutAt = 0;
   private release: (() => void) | null = null;
@@ -140,6 +157,7 @@ export class ThemeStore {
         this.layoutAt = ev.created_at;
         this.categoryOf = parseLayoutCategories(ev, r);
         this.categoryNames = layoutCategoryNames(ev);
+        this.layout = parseChannelLayout(ev);
         this.emit();
         return;
       }

@@ -13,6 +13,8 @@ import { renderContent } from './content';
 import { kindLabel, vw } from '../i18n/village';
 import { lang } from '../i18n/lang';
 import type { MentionPerson, ReplyTarget } from '../chat/composer/useSkyComposer';
+import { roleBadge } from './sidePanel';
+import type { Rank } from './memberGroups';
 
 export const QUICK_REACTIONS = ['❤️', '👍', '😂', '🔥', '🤙', '⚡', '👀', '🎉'];
 const MAX_SHOWN = 60;
@@ -33,8 +35,10 @@ export interface ChatPanelDeps {
   join: (groupId: string) => Promise<string | null>;
   onReplyPick?: (msg: WireMessage) => void;
   onGame?: (gameId: string) => void;
-  /** A mention chip in a message was clicked. */
+  /** A mention chip, an author's avatar or name was clicked. */
   onProfile?: (pubkey: string) => void;
+  /** Their top relay rank, shown by their name as obelisk-dex does. */
+  roleOf?: (pubkey: string) => Rank | null;
   newGame?: (groupId: string) => void;
   /** `/zap …` in this channel: open the zap sheet, or say why not. */
   zap?: (groupId: string, command: string, replyTo: { id: string; pubkey: string } | null) => string | null;
@@ -64,11 +68,17 @@ export class ChatPanel {
   openedBy: 'auto' | 'user' | null = null;
   /** The viewer closed the panel with ×. */
   onClose?: () => void;
+  /** The header's ‹ (back to the channel list); hidden while unset. */
+  onBack?: () => void;
+  private back: HTMLButtonElement;
 
   constructor(parent: HTMLElement, private deps: ChatPanelDeps) {
     this.el = div('chat');
     this.el.hidden = true;
     const head = div('chat-head');
+    this.back = button('chat-min chat-back', vw.backToChannels);
+    this.back.textContent = '‹';
+    this.back.addEventListener('click', () => this.onBack?.());
     const titles = div('chat-titles');
     this.title = div('chat-title');
     this.sub = div('chat-sub');
@@ -82,7 +92,7 @@ export class ChatPanel {
     const x = button('chat-min chat-close', vw.close);
     x.textContent = '×';
     x.addEventListener('click', () => { this.close(); this.onClose?.(); });
-    head.append(titles, games, min, x);
+    head.append(this.back, titles, games, min, x);
     head.addEventListener('dblclick', () => this.setMinimised(!this.minimised));
     this.list = div('chat-list');
     this.error = div('chat-error');
@@ -102,6 +112,7 @@ export class ChatPanel {
     if (changed || by === 'user') this.openedBy = by;
     this.el.hidden = false;
     document.body.classList.add('chat-open');
+    this.back.hidden = !this.onBack;
     this.title.textContent = g.name;
     this.sub.textContent = kindLabel(g.kind);
     if (changed) { this.replyTo = null; this.error.hidden = true; this.setMinimised(false); }
@@ -257,26 +268,32 @@ export class ChatPanel {
   private row(m: WireMessage, me: string | null): HTMLElement {
     const row = div('chat-msg');
     row.dataset.msgId = m.id;
-    const av = this.avatar(m.pubkey);
+    const av = this.profileLink(this.avatar(m.pubkey), m.pubkey);
     const body = div('chat-body');
     const meta = div('chat-meta');
-    const who = document.createElement('span');
-    who.className = 'chat-who';
+    const who = this.profileLink(document.createElement('span'), m.pubkey);
+    who.classList.add('chat-who');
     who.style.color = pubkeyColor(m.pubkey);
     who.textContent = this.deps.nameOf(m.pubkey);
     const when = document.createElement('span');
     when.className = 'chat-when';
     when.textContent = new Date(m.createdAt * 1000).toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-    meta.append(who, when);
+    meta.append(who);
+    const rank = this.deps.roleOf?.(m.pubkey);
+    if (rank) meta.append(roleBadge(rank));
+    meta.append(when);
     if (m.replyTo) {
-      const r = document.createElement('span');
-      r.className = 'chat-to';
+      const r = this.profileLink(document.createElement('span'), m.replyTo);
+      r.classList.add('chat-to');
       r.textContent = `↪ ${this.deps.nameOf(m.replyTo)}`;
       meta.append(r);
     }
     let content: HTMLElement;
     if (this.bodies) {
-      content = this.bodies.messageBodyEl({ id: m.id, content: m.content ?? m.text, groupId: m.groupId, images: m.images ?? [], emojis: m.emojis ?? {} });
+      content = this.bodies.messageBodyEl({
+        id: m.id, content: m.content ?? m.text, groupId: m.groupId, images: m.images ?? [], emojis: m.emojis ?? {},
+        voiceNote: m.voiceNote, picture: this.deps.avatarOf(m.pubkey), createdAt: m.createdAt,
+      });
     } else {
       content = div('chat-text');
       renderContent(content, m.content ?? m.text, { nameOf: this.deps.nameOf, images: m.images ?? [], emojis: m.emojis, onGame: this.deps.onGame });
@@ -342,6 +359,19 @@ export class ChatPanel {
     return p;
   }
 
+  /** Make `el` open `pk`'s card on a click or Enter, like a mention chip. */
+  private profileLink<T extends HTMLElement>(el: T, pk: string): T {
+    if (!this.deps.onProfile) return el;
+    el.classList.add('chat-person');
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.title = vw.openProfile;
+    const open = () => this.deps.onProfile?.(pk);
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+    return el;
+  }
+
   private avatar(pk: string): HTMLElement {
     const url = this.deps.avatarOf(pk);
     if (url) {
@@ -351,7 +381,7 @@ export class ChatPanel {
       img.referrerPolicy = 'no-referrer';
       img.loading = 'lazy';
       img.src = url;
-      img.onerror = () => img.replaceWith(this.initial(pk));
+      img.onerror = () => img.replaceWith(this.profileLink(this.initial(pk), pk));
       return img;
     }
     return this.initial(pk);
