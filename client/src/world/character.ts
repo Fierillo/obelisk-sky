@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { GRAVITY, JUMP_SPEED, SWIM_SPEEDS } from '../player/controller';
-import { buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, type PersonLook } from '../people/people';
+import { BARE_TORSO, buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, TOP_GARMENT, type PersonLook } from '../people/people';
 import { hashStr, type Vec2 } from './layout';
 import { SangreFx } from './sangre';
 import { clipPhase } from './emotes';
@@ -229,6 +229,8 @@ export class Character {
   swimming = false;
   swimY = 0;
   swimClip: string | null = null;
+  /** Shirt off (setShirtless). */
+  private shirtless = false;
   /** The mate (or cup) in hand while sitting, if any (kept in the left hand). */
   mate: THREE.Object3D | null = null;
   /** Passing the mate along a bench: the left hand reaches toward `reach`
@@ -323,6 +325,21 @@ export class Character {
     this.setOpacity(this.opacity);
     this.pose('Idle_Loop', 'Idle_Loop', 0);
     this.soleLift = this.measureSoles(model);
+    if (this.shirtless) this.applyShirtless();
+  }
+
+  /** Shirt off (a man swimming, world.ts): the outfit's top hides and his bare chest and arms show. */
+  setShirtless(on: boolean): void {
+    if (on === this.shirtless) return;
+    this.shirtless = on;
+    this.applyShirtless();
+  }
+
+  private applyShirtless(): void {
+    this.model?.traverse((o) => {
+      if (o.name === BARE_TORSO) o.visible = this.shirtless;
+      else if (o.userData[TOP_GARMENT]) o.visible = !this.shirtless;
+    });
   }
 
   /** How far this body's shoes reach below its origin standing idle (the

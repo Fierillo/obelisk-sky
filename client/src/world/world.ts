@@ -806,9 +806,10 @@ export class World {
     return inWater(this.plan, p);
   }
 
-  /** Deep enough here to swim (not on a bridge, not wading at the bank). */
-  swimmingAt(p: Vec2): boolean {
-    return this.swimmable(p) && this.groundAt(p) < WATER_Y - SWIM_DEPTH;
+  /** Deep enough here to swim (not wading at the bank). On a bridge you aren't,
+   *  unless you're `afloat` already: then you swim on under it. */
+  swimmingAt(p: Vec2, afloat = false): boolean {
+    return this.swimmable(p) && this.groundAt(p, afloat) < WATER_Y - SWIM_DEPTH;
   }
 
   /** Is `pk` swimming now? */
@@ -818,7 +819,7 @@ export class World {
 
   /** Float `c` if they're in deep water (their stroke built for their body once), else put them back on their feet. */
   private updateSwim(c: Character): void {
-    const swim = !c.riding && !this.seatOf.has(c.pk) && !this.trainingAt.has(c.pk) && this.swimmingAt(c.pos);
+    const swim = !c.riding && !this.seatOf.has(c.pk) && !this.trainingAt.has(c.pk) && this.swimmingAt(c.pos, c.swimming);
     if (swim && !c.swimClip) {
       const name = builtClipName('swim', c.look.body);
       if (!this.builtClips.has(name)) {
@@ -831,6 +832,8 @@ export class World {
     }
     if (swim && c.emote) c.setEmote(null);
     c.swimming = swim;
+    // Men swim shirtless.
+    c.setShirtless(swim && c.look.body === 'm');
     c.swimY = WATER_Y - SWIM_SINK;
   }
 
@@ -866,8 +869,9 @@ export class World {
    *  terrainHeight), the plaza's paving and the cobbled paths over it, a
    *  building's floor inside, raised where a landmark has stairs or a floor
    *  up a storey (La Crypta's steps and living room) or on the arch of a
-   *  bridge. */
-  groundAt(p: Vec2): number {
+   *  bridge. `underBridges`: a swimmer's ground, the riverbed under a bridge
+   *  rather than its deck (you swim under it). */
+  groundAt(p: Vec2, underBridges = false): number {
     let h = this.island ? this.island.heightAt(p) : 0;
     const plaza = this.plan?.plaza;
     if (plaza && dist(p, plaza.c) < plaza.r) h = Math.max(h, PAVING_TOP);
@@ -883,7 +887,7 @@ export class World {
     // landmark's steps these say 0, which isn't "the lawn is at 0" (the lawn
     // dips below 0 in places, and under every building).
     const raise = (r: number) => { if (r > 1e-4) h = Math.max(h, r); };
-    raise(bridgeHeightAt(this.bridgeSpecs, p));
+    if (!underBridges) raise(bridgeHeightAt(this.bridgeSpecs, p));
     for (const [id, b] of this.landmarks) {
       if (!b.groundAt) continue;
       const l = this.toLandmarkLocal(id, p);

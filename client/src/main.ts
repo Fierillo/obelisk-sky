@@ -832,7 +832,9 @@ function enterAsPlayer(): void {
   world.setPlayer(pk);
   // The river and the pond are swum (not on a nostrich: it stays on the bank).
   controller = new PlayerController(() => world.navGrid(), world.playerSpawnPoint(), () => world.solids,
-    (p) => world.playerWalkable(p) || (world.ridingOf(pk) === null && world.swimmable(p)), (p) => world.groundAt(p));
+    (p) => world.playerWalkable(p) || (world.ridingOf(pk) === null && world.swimmable(p)),
+    // Afloat, a bridge's deck is overhead: you swim under it on the riverbed's ground.
+    (p) => world.groundAt(p, world.isSwimming(pk) && world.swimmable(p)));
   world.cam.followPlayer(world.personAnchor(pk));
 }
 
@@ -848,7 +850,7 @@ function stepPlayer(dt: number): void {
   // Sitting down or training gets you off the bird (World.sit / train): back to foot speeds.
   if (world.ridingOf(pk!) === null && rideSpot !== null) { rideSpot = null; controller.speeds = FOOT_SPEEDS; }
   // In deep water you swim: slower, and no jumping off the water.
-  const swimming = world.swimmingAt(controller.pos) && world.ridingOf(pk!) === null;
+  const swimming = world.swimmingAt(controller.pos, world.isSwimming(pk!)) && world.ridingOf(pk!) === null;
   if (rideSpot === null) controller.speeds = swimming ? SWIM_SPEEDS : FOOT_SPEEDS;
   const read = input.read();
   const mv = swimming && read.jump ? { ...read, jump: false } : read;

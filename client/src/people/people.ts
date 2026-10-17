@@ -227,7 +227,12 @@ function tintable(base: THREE.MeshStandardMaterial, tint: string, amount: number
 
 /** Bones whose skin shows above a collar. */
 const BARE = new Set(['Head', 'neck_01']);
-const headOnly = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+/** A man's chest, back and arms (not the hands: the outfit brings those): shown bare while swimming. */
+export const TORSO = new Set(['spine_01', 'spine_02', 'spine_03', 'clavicle_l', 'clavicle_r', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r']);
+const cuts = new Map<Set<string>, WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>>();
+/** The name of a man's bare torso mesh, and the flag on the garments it stands in for. */
+export const BARE_TORSO = 'bare-torso';
+export const TOP_GARMENT = 'topGarment';
 
 /**
  * The body mesh cut down to head and neck. Every outfit covers the rest
@@ -236,7 +241,14 @@ const headOnly = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
  * triangle stays if any corner is mostly moved by a bare bone.
  */
 export function headAndNeck(geo: THREE.BufferGeometry, boneNames: string[]): THREE.BufferGeometry {
-  const hit = headOnly.get(geo);
+  return bodyPart(geo, boneNames, BARE);
+}
+
+/** The body mesh cut down to the triangles moved mostly by `bare` bones (cached per geometry and set). */
+export function bodyPart(geo: THREE.BufferGeometry, boneNames: string[], BARE: Set<string>): THREE.BufferGeometry {
+  let cache = cuts.get(BARE);
+  if (!cache) cuts.set(BARE, (cache = new WeakMap()));
+  const hit = cache.get(geo);
   if (hit) return hit;
   const si = geo.getAttribute('skinIndex'), sw = geo.getAttribute('skinWeight');
   const bare = new Uint8Array(si.count);
@@ -257,7 +269,7 @@ export function headAndNeck(geo: THREE.BufferGeometry, boneNames: string[]): THR
   }
   const out = geo.clone();
   out.setIndex(keep);
-  headOnly.set(geo, out);
+  cache.set(geo, out);
   return out;
 }
 
@@ -318,6 +330,7 @@ export function buildPerson(look: PersonLook): Person | null {
   const materials: THREE.Material[] = [];
 
   // Body: skin tone texture + tint; eyes as they are.
+  const torsos: [THREE.SkinnedMesh, THREE.Object3D][] = [];
   root.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
@@ -327,18 +340,30 @@ export function buildPerson(look: PersonLook): Person | null {
     if (/Superhero/i.test(mat.name)) {
       mat.map = skinTexture(look.body, look.skin);
       const sk = (m as THREE.SkinnedMesh).skeleton;
-      if (sk) m.geometry = headAndNeck(m.geometry, sk.bones.map((b) => b.name));
+      const full = m.geometry;
+      if (sk) m.geometry = headAndNeck(full, sk.bones.map((b) => b.name));
       // The face dyed to the same tone as the hands (outfit "Regular" parts),
       // at the texture's own average brightness: the painted skin alone is
       // half as bright as dyed clothes and read as a dark face next to them.
       // A little of the painting stays for lips and cheeks.
       mat = tintable(mat, skinTone(look), SKIN_DYE, garmentLuma(m, mat, `skin-${look.body}-${look.skin}`));
+      if (sk && look.body === 'm') {
+        // A man's bare chest and arms, for swimming (Character.setShirtless): off until then.
+        const torso = new THREE.SkinnedMesh(bodyPart(full, sk.bones.map((b) => b.name), TORSO), mat);
+        torso.name = BARE_TORSO;
+        torso.bind(sk, (m as THREE.SkinnedMesh).bindMatrix);
+        torso.castShadow = true;
+        torso.frustumCulled = false;
+        torso.visible = false;
+        if (m.parent) torsos.push([torso, m.parent]);
+      }
     } else if (/Hair/i.test(mat.name)) {
       mat.color.set(look.hairColor);
     }
     m.material = mat;
     materials.push(mat);
   });
+  for (const [torso, parent] of torsos) parent.add(torso);
 
   const dress = (file: string, style: (m: THREE.Mesh) => void) => {
     const g = done.get(file);
@@ -361,6 +386,8 @@ export function buildPerson(look: PersonLook): Person | null {
       return;
     }
     if (n.includes('hood') && !look.hood) { m.visible = false; return; }
+    // What a man takes off to swim: shirt, sleeves and what's worn over them.
+    if (/body|arms|belt|pauldron|bracer|hood/.test(n)) m.userData[TOP_GARMENT] = true;
     const colour = n.includes('legs') ? look.bottom : n.includes('feet') ? look.shoes : look.top;
     const amount = n.includes('belt') || n.includes('bracer') || n.includes('pauldron') ? 0.35 : 0.85;
     m.material = tintable(base, colour, amount, garmentLuma(m, base, `${look.body}-${look.outfit}:${m.name}`));
