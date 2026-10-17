@@ -18,6 +18,7 @@ const DESKTOP_EN: { title: string; rows: Row[] }[] = [
       { keys: ['Click'], text: 'Click the ground to walk there' },
       { keys: ['Drag'], text: 'Turn the camera; scroll to zoom' },
       { keys: ['V'], text: 'First-person view: click to look with the mouse; V or Esc to leave' },
+      { keys: ['N'], text: 'Show or hide the minimap; click it to open it big and pick a house to walk to' },
     ],
   },
   {
@@ -84,6 +85,7 @@ const DESKTOP_ES: { title: string; rows: Row[] }[] = [
       { keys: ['Clic'], text: 'Hacé clic en el suelo para caminar hasta ahí' },
       { keys: ['Arrastrar'], text: 'Girar la cámara; la rueda hace zoom' },
       { keys: ['V'], text: 'Primera persona: hacé clic para mirar con el mouse; V o Esc para salir' },
+      { keys: ['N'], text: 'Mostrar u ocultar el minimapa; hacé clic para agrandarlo y elegir una casa adonde ir' },
     ],
   },
   {

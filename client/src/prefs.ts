@@ -24,6 +24,9 @@ export interface Prefs {
   signs: boolean;
   bubbles: boolean;
   feed: boolean;
+  /** The minimap in the corner (ui/minimap.ts; N toggles it), and whether it turns with the camera. */
+  minimap: boolean;
+  minimapRotate: boolean;
   /** Publish where you walk so others see you move live (nostr/motion.ts). */
   shareMotion: boolean;
   // Camera and controls
@@ -64,6 +67,8 @@ export const DEFAULT_PREFS: Prefs = {
   signs: true,
   bubbles: true,
   feed: true,
+  minimap: true,
+  minimapRotate: false,
   shareMotion: true,
   autoDirector: true,
   fov: 70,
@@ -105,6 +110,8 @@ export function normalizePrefs(raw: unknown): Prefs {
     signs: bool(r.signs, d.signs),
     bubbles: bool(r.bubbles, d.bubbles),
     feed: bool(r.feed, d.feed),
+    minimap: bool(r.minimap, d.minimap),
+    minimapRotate: bool(r.minimapRotate, d.minimapRotate),
     shareMotion: bool(r.shareMotion, d.shareMotion),
     autoDirector: bool(r.autoDirector, d.autoDirector),
     fov: num(r.fov, d.fov, 50, 100),

@@ -12,6 +12,7 @@ const EN = {
   ao: 'Ambient occlusion', aoHint: '(soft contact shadows)', bloom: 'Glow (bloom)', tilt: 'Toy-town view',
   tiltHint: '(blurs the top and bottom so the island looks like a tiny model)', grass: 'Grass',
   world: 'World', time: 'Time of day', signs: 'Channel signs', bubbles: 'Speech bubbles', feed: 'Message feed', feedHint: '(bottom left)',
+  minimap: 'Minimap', minimapHint: '(top left; N shows or hides it)', minimapRotate: 'Turn the minimap with the camera',
   share: 'Share my movement live', shareHint: '(others see you walk)',
   camera: 'Camera and controls', director: 'Auto camera', directorHint: '(follows conversations)', fov: 'First-person field of view',
   mouse: 'Mouse sensitivity', invert: 'Invert vertical look',
@@ -32,6 +33,7 @@ const ES: typeof EN = {
   ao: 'Oclusión ambiental', aoHint: '(sombras suaves de contacto)', bloom: 'Brillo (bloom)', tilt: 'Vista maqueta',
   tiltHint: '(desenfoca arriba y abajo para que la isla parezca una miniatura)', grass: 'Pasto',
   world: 'Mundo', time: 'Hora del día', signs: 'Carteles de los canales', bubbles: 'Globos de diálogo', feed: 'Mensajes', feedHint: '(abajo a la izquierda)',
+  minimap: 'Minimapa', minimapHint: '(arriba a la izquierda; N lo muestra u oculta)', minimapRotate: 'Girar el minimapa con la cámara',
   share: 'Compartir mis movimientos en vivo', shareHint: '(los demás te ven caminar)',
   camera: 'Cámara y controles', director: 'Cámara automática', directorHint: '(sigue las conversaciones)', fov: 'Campo de visión en primera persona',
   mouse: 'Sensibilidad del mouse', invert: 'Invertir la mirada vertical',
@@ -157,6 +159,8 @@ export function openSettings(parent: HTMLElement, store: PrefsStore, currentLeve
   row(w.signs, toggle('signs'));
   row(w.bubbles, toggle('bubbles'));
   row(w.feed, toggle('feed'), w.feedHint);
+  row(w.minimap, toggle('minimap'), w.minimapHint);
+  row(w.minimapRotate, toggle('minimapRotate'));
   row(w.share, toggle('shareMotion'), w.shareHint);
 
   section(w.camera);

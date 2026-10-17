@@ -124,7 +124,7 @@ export function mapFeatures(plan: IslandPlan): MapFeatures {
 }
 
 /** Each landmark's mark on the map: its colour and a letter. */
-const LANDMARK_MARK: Record<LandmarkId, { color: string; letter: string }> = {
+export const LANDMARK_MARK: Record<LandmarkId, { color: string; letter: string }> = {
   lacrypta: { color: '#f7931a', letter: '₿' },
   nostrwot: { color: '#7c5cff', letter: 'W' },
   coffee: { color: '#8a5a3b', letter: 'C' },

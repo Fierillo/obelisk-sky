@@ -17,6 +17,16 @@ import { watchSdk } from './sdkSpanish';
 const SKY_MARK = <img src="/brand/sky-mark.svg" className="login-mark sky-login-mark" alt="Obelisk Sky" />;
 
 let root: Root | null = null;
+
+/** A field focused in the modal stays in view while a phone's keyboard opens (it takes about a third of a second). */
+export function keepFieldInView(e: FocusEvent): void {
+  const t = e.target as HTMLElement | null;
+  if (!t || !t.closest('.nui-modal') || !t.matches('input, textarea, select')) return;
+  const show = () => t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  show();
+  setTimeout(show, 350);
+}
+let watchingFocus = false;
 /** Stops translating the SDK's words (Spanish only). */
 let unwatch: (() => void) | null = null;
 
@@ -26,6 +36,7 @@ export function openLogin(onDone?: () => void): void {
   document.body.setAttribute('data-nui-theme', 'la-crypta');
   // Sky's colours over the La Crypta theme (styles.css `body.sky-login`).
   document.body.classList.add('sky-login');
+  if (!watchingFocus) { watchingFocus = true; document.addEventListener('focusin', keepFieldInView); }
   if (!root) {
     const host = document.createElement('div');
     host.className = 'login-host';

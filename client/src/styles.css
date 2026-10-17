@@ -211,6 +211,7 @@ button { font: inherit; color: inherit; }
 
 @media (max-width: 720px) {
   .hud-tab-label, .relay-txt small { display: none; }
+  .minimap:not(.big) { width: 110px; height: 110px; top: 60px; }
   .hud-tab { padding: 7px 10px; }
   .side { top: 60px; bottom: 150px; }
   .controls button { width: 38px; height: 38px; }
@@ -618,6 +619,31 @@ body.watching .controls, body.watching .feed, body.watching #dock > :not(#callba
 .settings-slider output { font: 600 12px var(--sans); color: var(--white); min-width: 42px; text-align: right; }
 .feed[hidden] { display: none; }
 
+/* The minimap (ui/minimap.ts): the island in a round window, top left; big in the middle on a click. */
+.minimap { position: absolute; left: 16px; top: 66px; width: 150px; height: 150px; z-index: 5; border-radius: 50%; overflow: hidden; cursor: pointer; background: radial-gradient(circle at 50% 40%, #d8f0ff 0%, #a9dcff 100%); border: 2px solid rgba(255, 255, 255, 0.85); box-shadow: 0 10px 28px rgba(15, 42, 68, 0.28); }
+.minimap[hidden] { display: none; }
+.minimap:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+.minimap-svg { width: 100%; height: 100%; display: block; }
+.minimap .lm-icons > * { opacity: 1; }
+.minimap .lm-trees { opacity: 0.55; }
+.minimap-close { display: none; position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border-radius: 999px; border: 1px solid rgba(15, 42, 68, 0.2); background: rgba(255, 255, 255, 0.9); color: var(--ink); font-size: 18px; line-height: 1; cursor: pointer; }
+.minimap.big { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(80vh, calc(100vw - 32px)); height: min(80vh, calc(100vw - 32px)); border-radius: 28px; z-index: 30; cursor: default; }
+.minimap.big .minimap-close { display: block; }
+.mm-house path { fill: #f6efe2; stroke: #b5543c; stroke-width: 0.22; }
+.mm-house.unread path { stroke: #2f7d1a; }
+.mm-house .mm-dot { fill: var(--green); stroke: #1d3a10; stroke-width: 0.12; }
+.mm-house .mm-ping { font: 800 1.2px var(--sans); fill: #1d3a10; stroke: var(--green); stroke-width: 0.35; paint-order: stroke; }
+.mm-house .mm-name { font: 700 0.8px var(--sans); fill: var(--ink); stroke: rgba(255, 255, 255, 0.9); stroke-width: 0.22; paint-order: stroke; pointer-events: none; }
+.minimap.big .mm-house { cursor: pointer; }
+.minimap.big .mm-house:hover path { fill: #ffffff; stroke-width: 0.35; }
+.mm-landmark path { fill: var(--lm); stroke: #fff; stroke-width: 0.2; }
+.mm-landmark text { font: 700 1px var(--sans); fill: #fff; }
+.mm-person { fill: #1e6fb8; stroke: #fff; stroke-width: 0.12; }
+.mm-me path { fill: #ff4d2e; stroke: #fff; stroke-width: 0.22; stroke-linejoin: round; }
+/* Out of the way: under the guest banner, and while the members drawer has the corner. */
+body:has(.gate:not([hidden])) .minimap:not(.big) { top: 124px; }
+body.side-open .minimap:not(.big), body.watching .minimap { display: none; }
+
 /* ── relays modal ──────────────────────────────────────────── */
 .relay-btn { display: flex; align-items: center; gap: 9px; border: 1px solid rgba(255, 255, 255, 0.14); background: var(--glass); backdrop-filter: blur(10px); color: var(--white); border-radius: 14px; padding: 5px 10px 5px 6px; cursor: pointer; max-width: 250px; text-align: left; transition: border-color 0.15s, background 0.15s; }
 .relay-btn:hover { background: rgba(60, 60, 60, 0.8); border-color: rgba(180, 249, 83, 0.55); }
@@ -937,6 +963,8 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
 
   /* Channels and members: the same left column. */
   .side { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); }
+  .minimap:not(.big) { top: var(--land-top); left: max(8px, env(safe-area-inset-left)); width: 92px; height: 92px; }
+  body:has(.gate:not([hidden])) .minimap:not(.big), body.chat-open .minimap:not(.big), body.channels-open .minimap:not(.big), body.menu-open .minimap:not(.big) { display: none; }
   .side.at-chat { top: var(--land-top); bottom: max(8px, env(safe-area-inset-bottom)); left: max(8px, env(safe-area-inset-left)); right: auto; width: min(400px, 46vw); height: auto; border-radius: 16px; }
 
   /* The menu: a sheet on the right that scrolls when it's taller than the screen. */
@@ -968,15 +996,38 @@ body.chat-open .pcall { left: calc((100% - 400px) / 2); }
   /* Settings and other centred sheets: never taller than the screen. */
   .themes { max-height: calc(100% - 16px); }
 
-  /* The login modal (@nostr-wot/ui): wide and short, two columns of methods. */
-  .nui-modal-overlay { padding: 8px; }
-  .nui-modal { max-width: min(720px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); padding: 16px 18px; }
-  .nui-widget { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
-  .nui-widget > :not(.nui-method-button) { grid-column: 1 / -1; }
-  .nui-widget-subtitle { margin-bottom: 2px; }
+  /* The login modal (@nostr-wot/ui) on a phone held sideways: wide and short.
+     Choosing a method: the mark, title and the "no extension" link on the left,
+     the four methods two by two on the right, all on one screen. Every other
+     step scrolls inside the card, its field kept in view (LoginMount.tsx).
+     `body.sky-login` outranks the widget's stylesheet, which loads later. */
+  body.sky-login .nui-modal-overlay { padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  body.sky-login .nui-modal { width: min(780px, 100%); max-width: none; max-height: calc(100dvh - 12px); padding: 12px 14px; overflow-y: auto; overscroll-behavior: contain; }
+  body.sky-login .nui-modal .nui-modal-close { width: 44px; height: 44px; top: 8px; right: 8px; }
+  body.sky-login .nui-modal .nui-widget:has(> .nui-widget-methods) { display: grid; grid-template-columns: minmax(170px, 0.8fr) 2fr; grid-template-rows: auto auto 1fr; column-gap: 16px; row-gap: 6px; align-items: start; }
+  body.sky-login .nui-widget:has(> .nui-widget-methods) > .sky-login-mark { grid-column: 1; grid-row: 1; justify-self: center; margin: 4px auto 0; }
+  body.sky-login .nui-widget:has(> .nui-widget-methods) > div:not(.nui-widget-methods) { grid-column: 1; grid-row: 2; }
+  body.sky-login .nui-widget:has(> .nui-widget-methods) > .nui-no-extension-cta { grid-column: 1; grid-row: 3; margin: 4px 0 0; padding: 8px 10px; }
+  body.sky-login .nui-widget:has(> .nui-widget-methods) > .nui-widget-methods { grid-column: 2; grid-row: 1 / span 3; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 46px 0 0; }
+  /* A step (signer, new key, pasted key): the mark and title in a slim column, the step beside them. */
+  body.sky-login .nui-modal .nui-widget:not(:has(> .nui-widget-methods)) { display: grid; grid-template-columns: 140px 1fr; grid-template-rows: auto 1fr; column-gap: 16px; align-items: start; }
+  body.sky-login .nui-widget:not(:has(> .nui-widget-methods)) > .sky-login-mark { display: none; }
+  body.sky-login .nui-widget:not(:has(> .nui-widget-methods)) > div:nth-child(2) { grid-column: 1; grid-row: 1; margin-top: 56px; }
+  body.sky-login .nui-widget:not(:has(> .nui-widget-methods)) > div:nth-child(2) .nui-widget-subtitle { display: none; }
+  body.sky-login .nui-widget:not(:has(> .nui-widget-methods)) > :nth-child(n + 3) { grid-column: 2; grid-row: 1 / span 2; min-width: 0; padding-right: 44px; }
+  /* Pairing a signer app: the code beside its buttons and hints, big enough to scan. */
+  body.sky-login .nui-modal .nui-qr-wrap { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 6px; align-items: start; }
+  body.sky-login .nui-modal .nui-qr-wrap > .nui-qr { grid-column: 1; grid-row: 1 / span 5; margin: 0; }
+  body.sky-login .nui-modal .nui-qr-wrap > :not(.nui-qr) { grid-column: 2; }
+  body.sky-login .nui-modal .nui-widget-title { font-size: 18px; margin: 0; }
+  body.sky-login .nui-modal .nui-widget-subtitle { font-size: 12.5px; margin: 2px 0 0; }
   body.sky-login .nui-modal .sky-login-mark { width: 44px; height: 44px; padding: 4px; margin-bottom: 4px; }
-  .nui-method-button { padding: 8px 10px; }
-  .nui-qr svg { width: min(200px, 52vh); height: min(200px, 52vh); }
+  body.sky-login .nui-modal .nui-method-button { min-height: 56px; padding: 10px 12px; gap: 10px; align-items: center; }
+  body.sky-login .nui-modal .nui-method-button > :last-child { min-width: 0; }
+  body.sky-login .nui-modal .nui-method-icon { width: 36px; height: 36px; flex: none; }
+  body.sky-login .nui-modal .nui-no-extension-hint { font-size: 11.5px; }
+  body.sky-login .nui-modal .nui-qr svg { width: min(200px, 56dvh); height: min(200px, 56dvh); }
+  body.sky-login .nui-modal input, body.sky-login .nui-modal textarea { font-size: 16px; } /* iOS zooms into smaller fields */
 }
 /* History open: the timeline sits over the controls, the prompts go above it. */
 body:has(#timeline-panel:not([hidden])) .dock { bottom: 190px; }

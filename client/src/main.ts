@@ -72,6 +72,7 @@ import { zapTotal } from './nostr/state';
 import { parseZapCommand, zapCommandMessage } from './wallet/zapCommand';
 import { EmoteMusic } from './audio/emoteMusic';
 import { PlaceMusic } from './audio/placeMusic';
+import { Minimap } from './ui/minimap';
 import { ALL_MODELS, preload } from './world/assets';
 import { defaultLook, preloadPeople } from './people/people';
 import type { LandmarkId } from './world/landmarks';
@@ -90,6 +91,9 @@ let historySpan: SpanId = '7d';
 const OBELISK_APP = 'https://obelisk.ar/app';
 
 const world = new World($('scene'), $('overlay'));
+// The island in a corner, with the houses, the people and you (ui/minimap.ts); a house on the big map walks you there.
+const minimap = new Minimap($('app'), world.plan, (id) => world.hooks.onGroupClick?.(id));
+minimap.setShown(false);
 const director = new Director();
 const sound = new Soundscape();
 // Music near people dancing or working out, only where it's heard (audio/emoteMusic.ts).
@@ -132,6 +136,8 @@ function applyPrefs(p: Prefs): void {
   world.applyPrefs(timeParam && ['day', 'sunset', 'night'].includes(timeParam) ? { ...p, timeOfDay: timeParam as Prefs['timeOfDay'] } : p);
   document.documentElement.style.setProperty('--chat-alpha', String(p.chatOpacity));
   $('feed').hidden = !p.feed;
+  minimap.setShown(p.minimap && ready);
+  minimap.rotate = p.minimapRotate;
   sound.setVolume(p.volume);
   if (soundUnlocked) sound.setEnabled(p.sound);
   emoteMusic.enabled = p.emoteMusic;
@@ -364,6 +370,7 @@ void (async () => {
   loading.setProgress(loadAt('village', 0));
   await firstState.wait(villageStateComing, FIRST_STATE_WAIT_MS);
   ready = true;
+  applyPrefs(prefs.get()); // the minimap shows now the village is there
   // Everything that arrived while loading is built, and the people it
   // brings are placed, while the loading screen still covers them.
   for (const m of pending) handle(m);
@@ -1202,6 +1209,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'v' && world.playerPk) toggleFirstPerson();
   if (e.key.toLowerCase() === 'c' && chatHint) openHintedChat();
   if (e.key.toLowerCase() === 'm' && nearPk) { e.preventDefault(); openDm(nearPk); }
+  // N: the minimap on or off.
+  if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) prefs.set({ minimap: !prefs.get().minimap });
   // Esc releases the mouse first (the browser does that); a second Esc leaves first person.
   if (e.key === 'Escape' && world.cam.firstPerson && !document.pointerLockElement) toggleFirstPerson();
 });
@@ -2446,6 +2455,24 @@ function tickTheater(dt: number): void {
 let contextTimer: ReturnType<typeof setTimeout> | undefined;
 
 let signTimer = 0;
+let minimapTimer = 0;
+/** Each channel's unread count, as its sign shows it (refreshSigns, once a second). */
+const unreadShown = new Map<string, number>();
+
+function updateMinimap(): void {
+  if (minimap.el.hidden) return;
+  const me = world.playerPk;
+  minimap.update({
+    houses: groups.flatMap((g) => {
+      const s = world.slotFor(g.id);
+      return s ? [{ id: g.id, name: g.name, pos: s.pos, unread: unreadShown.get(g.id) ?? 0, ping: pinged.has(g.id) }] : [];
+    }),
+    landmarks: [...world.landmarkSlots].map(([id, s]) => ({ id, pos: s.pos })),
+    people: [...world.people.values()].filter((c) => c.pk !== me && c.opacity > 0.5 && isLivePk(c.pk)).map((c) => c.pos),
+    me: controller ? { pos: controller.pos, heading: controller.heading } : null,
+    cameraYaw: world.cameraYaw(),
+  });
+}
 const pinged = new Set<string>();
 const roofLit = new Set<string>();
 let placeDwell = 0;
@@ -2519,6 +2546,8 @@ function frame(): void {
   }
   signTimer -= dt;
   if (signTimer <= 0) { signTimer = 1; refreshSigns(); }
+  minimapTimer -= dt;
+  if (minimapTimer <= 0) { minimapTimer = 0.25; updateMinimap(); }
   // Only roofs that glow (or just stopped) are touched.
   for (const [id, b] of world.buildings) {
     const on = pinged.has(id);
@@ -2559,7 +2588,9 @@ function refreshSigns(): void {
     if (!readState || !me) continue;
     const ping = pings.get(g.id) ?? null;
     if (ping) pinged.add(g.id);
-    world.overlay.setSignUnread(g.id, countUnread(msgsOf(g.id), readState.cursorFor(g.id), me), !!ping, ping ? pingTitle(world.nameOf(ping.m.pubkey), ping.reason, g.name) : null);
+    const unread = countUnread(msgsOf(g.id), readState.cursorFor(g.id), me);
+    unreadShown.set(g.id, unread);
+    world.overlay.setSignUnread(g.id, unread, !!ping, ping ? pingTitle(world.nameOf(ping.m.pubkey), ping.reason, g.name) : null);
   }
   $('tab-channels-n').textContent = String(groups.length);
   // Online now: live in the village or active in the last minutes (AFK not counted).
