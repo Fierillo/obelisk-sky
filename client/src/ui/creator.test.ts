@@ -29,6 +29,21 @@ describe('look editor preview', () => {
     expect(stage.set).toHaveBeenLastCalledWith(expect.objectContaining({ look: expect.objectContaining({ body: 'f' }) }));
   });
 
+  it('offers "no shirt" to men only, and drops it when the body changes', () => {
+    openCreator(document.body, deps());
+    const panel = document.querySelector('.creator')!;
+    const stage = stages[0];
+    const shirt = [...panel.querySelectorAll<HTMLButtonElement>('.hood .creator-chip')].find((b) => /shirt/i.test(b.textContent ?? ''))!;
+    (panel.querySelector('.body .creator-chip[data-v="m"]') as HTMLButtonElement).click();
+    expect(shirt.disabled).toBe(false);
+    shirt.click();
+    expect(shirt.classList.contains('on')).toBe(true);
+    expect(stage.set).toHaveBeenLastCalledWith(expect.objectContaining({ look: expect.objectContaining({ shirtless: true }) }));
+    (panel.querySelector('.body .creator-chip[data-v="f"]') as HTMLButtonElement).click();
+    expect(shirt.disabled).toBe(true);
+    expect(stage.set.mock.lastCall![0].look).not.toHaveProperty('shirtless');
+  });
+
   it('frees its renderer on cancel, on save and when reopened', async () => {
     openCreator(document.body, deps());
     (document.querySelector('.creator .themes-foot .account-btn:not(.primary)') as HTMLButtonElement).click();

@@ -19,7 +19,7 @@ const EN = {
   welcome: 'Welcome to the village', yours: 'Your look',
   welcomeSub: 'Pick how you look here. Everyone in the village will see you this way. You can change it any time.',
   yoursSub: 'Changes preview on your character. Save to show everyone.',
-  body: 'Body', masculine: 'Masculine', feminine: 'Feminine', hair: 'Hair', beard: 'Beard', clothes: 'Clothes', hood: 'Hood up',
+  body: 'Body', masculine: 'Masculine', feminine: 'Feminine', hair: 'Hair', beard: 'Beard', clothes: 'Clothes', hood: 'Hood up', shirtless: 'No shirt',
   top: 'Top', trousers: 'Trousers', shoes: 'Shoes', hat: 'Hat', pet: 'Pet', none: 'None', petName: 'Pet name', optional: 'Optional',
   later: 'Later', cancel: 'Cancel', save: 'Save', saving: 'Saving…', notSaved: 'Not saved:',
   hair_: { none: 'None', buzzed: 'Buzzed', simpleparted: 'Parted', long: 'Long', buns: 'Buns', buzzedfemale: 'Short' } as Record<Hair, string>,
@@ -36,7 +36,7 @@ const ES: typeof EN = {
   welcome: 'Bienvenido a la aldea', yours: 'Tu aspecto',
   welcomeSub: 'Elegí cómo te ves. Todos en la aldea te van a ver así. Podés cambiarlo cuando quieras.',
   yoursSub: 'Los cambios se ven en tu personaje. Guardá para mostrárselos a todos.',
-  body: 'Cuerpo', masculine: 'Masculino', feminine: 'Femenino', hair: 'Pelo', beard: 'Barba', clothes: 'Ropa', hood: 'Capucha puesta',
+  body: 'Cuerpo', masculine: 'Masculino', feminine: 'Femenino', hair: 'Pelo', beard: 'Barba', clothes: 'Ropa', hood: 'Capucha puesta', shirtless: 'Sin remera',
   top: 'Arriba', trousers: 'Pantalón', shoes: 'Zapatos', hat: 'Sombrero', pet: 'Mascota', none: 'Ninguna', petName: 'Nombre de la mascota', optional: 'Opcional',
   later: 'Más tarde', cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando…', notSaved: 'No se guardó:',
   hair_: { none: 'Sin pelo', buzzed: 'Rapado', simpleparted: 'Con raya', long: 'Largo', buns: 'Rodetes', buzzedfemale: 'Corto' },
@@ -158,7 +158,7 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   section(W.body);
   chips('body', ['m', 'f'] as const, (v) => (v === 'm' ? W.masculine : W.feminine), (v) => {
     look().body = v;
-    if (v === 'f') look().beard = false;
+    if (v === 'f') { look().beard = false; delete look().shirtless; }
   });
   swatches('tone', TONE_PREVIEW, (_v, i) => { look().skin = SKIN_TONES[i].skin; look().skinTint = SKIN_TONES[i].tint; });
 
@@ -182,6 +182,17 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
   hoodBtn.textContent = W.hood;
   hoodBtn.addEventListener('click', () => { if (look().outfit === 'ranger') { look().hood = !look().hood; refresh(); } });
   hood.append(hoodBtn);
+  // Men only (as when swimming): the shirt off, chest and arms bare.
+  const shirtBtn = document.createElement('button');
+  shirtBtn.type = 'button';
+  shirtBtn.className = 'creator-chip';
+  shirtBtn.textContent = W.shirtless;
+  shirtBtn.addEventListener('click', () => {
+    if (look().body !== 'm') return;
+    if (look().shirtless) delete look().shirtless; else look().shirtless = true;
+    refresh();
+  });
+  hood.append(shirtBtn);
   const label = (t: string) => { const d = document.createElement('div'); d.className = 'creator-sub'; d.textContent = t; body.append(d); };
   label(W.top);
   swatches('sw-top', CLOTH_COLORS, (v) => { look().top = v; });
@@ -302,6 +313,8 @@ export function openCreator(parent: HTMLElement, deps: CreatorDeps, first = fals
     beardBtn.disabled = L.body !== 'm';
     hoodBtn.classList.toggle('on', L.hood);
     hoodBtn.disabled = L.outfit !== 'ranger';
+    shirtBtn.classList.toggle('on', !!L.shirtless);
+    shirtBtn.disabled = L.body !== 'm';
     for (const b of el.querySelectorAll<HTMLElement>('.hats .creator-chip')) b.classList.toggle('on', b.dataset.v === draft.hat);
     on('.haunts .creator-chip', (v) => !!draft.haunts?.includes(v as PlaceId));
     for (const b of el.querySelectorAll<HTMLElement>('.hatcolor .creator-swatch')) b.classList.toggle('on', b.dataset.v === draft.hatColor);

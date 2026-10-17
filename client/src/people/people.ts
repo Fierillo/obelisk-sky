@@ -29,6 +29,8 @@ export interface PersonLook {
   hairColor: string;
   outfit: Outfit;
   hood: boolean;
+  /** No shirt (men only): the top garments off, the bare torso shown. Left out when false. */
+  shirtless?: boolean;
   top: string;
   bottom: string;
   shoes: string;
@@ -233,6 +235,17 @@ const cuts = new Map<Set<string>, WeakMap<THREE.BufferGeometry, THREE.BufferGeom
 /** The name of a man's bare torso mesh, and the flag on the garments it stands in for. */
 export const BARE_TORSO = 'bare-torso';
 export const TOP_GARMENT = 'topGarment';
+/** Hair kept hidden under a hood. */
+const UNDER_HOOD = 'underHood';
+
+/** Shirt off or on: the top garments hide and the bare torso shows, or back. */
+export function setBare(root: THREE.Object3D, bare: boolean): void {
+  root.traverse((o) => {
+    if (o.name === BARE_TORSO) o.visible = bare;
+    else if (o.userData[TOP_GARMENT]) o.visible = !bare;
+    else if (o.userData[UNDER_HOOD]) o.visible = bare;
+  });
+}
 
 /**
  * The body mesh cut down to head and neck. Every outfit covers the rest
@@ -398,9 +411,12 @@ export function buildPerson(look: PersonLook): Person | null {
     c.color.set(look.hairColor);
     m.material = c;
   };
-  if (look.hair !== 'none' && !(look.outfit === 'ranger' && look.hood)) dress(FILES.hair[look.hair], hairStyle);
+  // Under a hood the hair is there but hidden: it shows when the hood comes off with the shirt (setBare).
+  const hooded = look.outfit === 'ranger' && look.hood;
+  if (look.hair !== 'none') dress(FILES.hair[look.hair], hooded ? (m) => { hairStyle(m); m.visible = false; m.userData[UNDER_HOOD] = true; } : hairStyle);
   if (look.beard && look.body === 'm') dress(FILES.hair.beard, hairStyle);
   dress(FILES.brows[look.body], hairStyle);
+  if (look.shirtless && look.body === 'm') setBare(root, true);
 
   return { root, bones, materials };
 }
@@ -460,5 +476,6 @@ export function parseLook(raw: unknown): PersonLook | null {
   return {
     body, skin: tone.skin, skinTint: tone.tint, hair, beard: j.beard === true && body === 'm', hairColor,
     outfit, hood: j.hood === true && outfit === 'ranger', top, bottom, shoes,
+    ...(j.shirtless === true && body === 'm' ? { shirtless: true } : {}),
   };
 }

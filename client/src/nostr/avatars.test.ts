@@ -70,6 +70,12 @@ describe('avatar v2 (a full look)', () => {
     expect(f.hood).toBe(false);
     expect(Object.keys(f)).not.toContain('extra');
   });
+  it('keeps "no shirt" for a man only, and leaves it out when off', () => {
+    const a = { ...DEFAULT_AVATAR, v: 2 as const, look: { ...look, shirtless: true } };
+    expect(parseAvatar(avatarTemplate(a).content)).toEqual(a);
+    expect(parseLook({ ...look, body: 'f', beard: false, shirtless: true })!).not.toHaveProperty('shirtless');
+    expect(parseLook({ ...look, shirtless: false })!).not.toHaveProperty('shirtless');
+  });
   it('still reads v1 avatars, with no look', () => {
     const a = parseAvatar(JSON.stringify({ v: 1, skin: 'c', hat: 'cap', hatColor: '#38bdf8', pet: null }))!;
     expect(a.v).toBe(1);

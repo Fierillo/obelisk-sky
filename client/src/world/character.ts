@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { GRAVITY, JUMP_SPEED, SWIM_SPEEDS } from '../player/controller';
-import { BARE_TORSO, buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, TOP_GARMENT, type PersonLook } from '../people/people';
+import { buildPerson, defaultLook, loadLook, peopleClips, MODEL_HEIGHT, setBare, type PersonLook } from '../people/people';
 import { hashStr, type Vec2 } from './layout';
 import { SangreFx } from './sangre';
 import { clipPhase } from './emotes';
@@ -328,7 +328,8 @@ export class Character {
     if (this.shirtless) this.applyShirtless();
   }
 
-  /** Shirt off (a man swimming, world.ts): the outfit's top hides and his bare chest and arms show. */
+  /** Shirt off (a man swimming, world.ts): the outfit's top hides and his bare chest and arms show.
+   *  A look without a shirt (PersonLook.shirtless) stays bare either way. */
   setShirtless(on: boolean): void {
     if (on === this.shirtless) return;
     this.shirtless = on;
@@ -336,10 +337,7 @@ export class Character {
   }
 
   private applyShirtless(): void {
-    this.model?.traverse((o) => {
-      if (o.name === BARE_TORSO) o.visible = this.shirtless;
-      else if (o.userData[TOP_GARMENT]) o.visible = !this.shirtless;
-    });
+    if (this.model) setBare(this.model, this.shirtless || (!!this.look.shirtless && this.look.body === 'm'));
   }
 
   /** How far this body's shoes reach below its origin standing idle (the
