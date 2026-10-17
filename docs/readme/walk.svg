@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="1200" height="380" role="img" aria-labelledby="t d">
+  <title id="t">How Obelisk Sky works</title>
+  <desc id="d">You post in the Bitcoin channel and walk to its house; its count goes up; someone replies, walks over to you and sends a zap.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fd3ff"/><stop offset="1" stop-color="#e8f6ff"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fd14a"/><stop offset="1" stop-color="#3f9a2e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#d9ff9c" stop-opacity="0.9"/><stop offset="1" stop-color="#b4f953" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f2a44" flood-opacity="0.25"/></filter>
+    <clipPath id="frame"><rect width="1200" height="380" rx="24"/></clipPath>
+    <!-- typing reveals -->
+    <clipPath id="type1"><rect x="0" y="-20" width="0" height="40"><animate attributeName="width" dur="12s" repeatCount="indefinite" keyTimes="0;0.05;0.17;1" values="0;0;200;200"/></rect></clipPath>
+    <clipPath id="type2"><rect x="0" y="-20" width="0" height="40"><animate attributeName="width" dur="12s" repeatCount="indefinite" keyTimes="0;0.52;0.62;1" values="0;0;220;220"/></rect></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif">
+    <rect width="1200" height="380" fill="url(#bg)"/>
+    <g fill="#ffffff" opacity="0.8">
+      <g><animateTransform attributeName="transform" type="translate" from="0 0" to="-1200 0" dur="60s" repeatCount="indefinite"/>
+        <path d="M 120 70 a 26 26 0 0 1 48 -14 a 34 34 0 0 1 62 16 a 20 20 0 0 1 4 40 h -112 a 22 22 0 0 1 -2 -42 z"/>
+        <path d="M 760 50 a 20 20 0 0 1 38 -10 a 26 26 0 0 1 48 12 a 16 16 0 0 1 2 32 h -88 a 18 18 0 0 1 0 -34 z"/>
+        <path d="M 1320 70 a 26 26 0 0 1 48 -14 a 34 34 0 0 1 62 16 a 20 20 0 0 1 4 40 h -112 a 22 22 0 0 1 -2 -42 z"/>
+        <path d="M 1960 50 a 20 20 0 0 1 38 -10 a 26 26 0 0 1 48 12 a 16 16 0 0 1 2 32 h -88 a 18 18 0 0 1 0 -34 z"/>
+      </g>
+    </g>
+
+    <!-- ground -->
+    <ellipse cx="600" cy="420" rx="760" ry="170" fill="url(#ground)"/>
+    <path d="M 150 300 C 300 330 520 330 700 292 C 820 268 920 270 1030 296" fill="none" stroke="#e9dcc4" stroke-width="22" stroke-linecap="round" opacity="0.9"/>
+    <path d="M 150 300 C 300 330 520 330 700 292 C 820 268 920 270 1030 296" fill="none" stroke="#ffffff" stroke-width="2" stroke-dasharray="2 10" stroke-linecap="round" opacity="0.8"/>
+
+    <!-- the plaza obelisk -->
+    <circle cx="390" cy="200" r="70" fill="url(#glow)"><animate attributeName="r" values="60;78;60" dur="3s" repeatCount="indefinite"/></circle>
+    <path d="M 390 110 L 400 122 L 406 262 L 374 262 L 380 122 Z" fill="#b4f953" stroke="#5a8f1f" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M 388 116 L 383 124 L 378 260 L 388 260 Z" fill="#86c93a"/>
+    <ellipse cx="390" cy="264" rx="40" ry="9" fill="#e9dcc4"/>
+
+    <!-- trees -->
+    <g fill="#2f7a3a">
+      <path d="M 40 280 l 18 -48 l 18 48 z"/><path d="M 76 290 l 14 -38 l 14 38 z"/><path d="M 1120 280 l 18 -48 l 18 48 z"/><path d="M 1160 296 l 14 -38 l 14 38 z"/>
+      <path d="M 250 262 l 12 -32 l 12 32 z"/><path d="M 600 252 l 10 -26 l 10 26 z"/><path d="M 860 240 l 12 -30 l 12 30 z"/>
+    </g>
+
+    <!-- Nostr dev house -->
+    <g transform="translate(476 196)">
+      <rect x="0" y="40" width="96" height="62" fill="#f5e6d3"/><path d="M -8 44 L 48 0 L 104 44 Z" fill="#3a6fd8"/><rect x="38" y="64" width="20" height="38" fill="#7a4b2a"/>
+      <g transform="translate(48 -22)" filter="url(#sh)">
+        <rect x="-66" y="-14" width="132" height="28" rx="14" fill="#ffffff"/><circle cx="-50" cy="0" r="5" fill="#2fbf5b"/>
+        <text x="-38" y="5" font-size="14" font-weight="600" fill="#0f2a44">Nostr dev</text>
+        <rect x="30" y="-9" width="28" height="18" rx="9" fill="#ef4444"/><text x="44" y="5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">19</text>
+      </g>
+    </g>
+
+    <!-- Bitcoin house: grows when you arrive -->
+    <g transform="translate(700 270)">
+      <g>
+        <animateTransform attributeName="transform" type="scale" dur="12s" repeatCount="indefinite" keyTimes="0;0.44;0.47;0.5;0.95;1" values="1;1;1.14;1.08;1.08;1"/>
+        <g transform="translate(-62 -150)">
+          <rect x="0" y="52" width="124" height="80" fill="#f5e6d3"/><path d="M -10 56 L 62 0 L 134 56 Z" fill="#f2a20c"/>
+          <rect x="50" y="88" width="24" height="44" fill="#7a4b2a"/>
+          <rect x="14" y="74" width="22" height="20" fill="#ffd36b"/><rect x="88" y="74" width="22" height="20" fill="#ffd36b"/>
+          <circle cx="62" cy="34" r="12" fill="#ffffff"/><text x="62" y="40" font-size="16" font-weight="800" fill="#f2a20c" text-anchor="middle">₿</text>
+        </g>
+      </g>
+      <g transform="translate(0 -184)" filter="url(#sh)">
+        <rect x="-62" y="-14" width="124" height="28" rx="14" fill="#ffffff"/><circle cx="-46" cy="0" r="5" fill="#2fbf5b"/>
+        <text x="-34" y="5" font-size="14" font-weight="600" fill="#0f2a44">Bitcoin</text>
+        <rect x="22" y="-9" width="30" height="18" rx="9" fill="#ef4444">
+          <animate attributeName="fill" dur="12s" repeatCount="indefinite" keyTimes="0;0.44;0.46;0.52;1" values="#ef4444;#ef4444;#5a8f1f;#ef4444;#ef4444"/>
+        </rect>
+        <text x="37" y="5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">21<animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.45;0.46;0.99;1" values="1;1;0;0;1" calcMode="discrete"/></text>
+        <text x="37" y="5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" opacity="0">22<animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.45;0.46;0.99;1" values="0;0;1;1;0" calcMode="discrete"/></text>
+      </g>
+    </g>
+
+    <!-- Mate & chat house -->
+    <g transform="translate(960 180)">
+      <rect x="0" y="44" width="110" height="68" fill="#f5e6d3"/><path d="M -10 48 L 55 0 L 120 48 Z" fill="#2fb3a3"/><rect x="44" y="72" width="22" height="40" fill="#7a4b2a"/>
+      <g transform="translate(55 -22)" filter="url(#sh)">
+        <rect x="-74" y="-14" width="148" height="28" rx="14" fill="#ffffff"/><circle cx="-58" cy="0" r="5" fill="#9aa3ad"/>
+        <text x="-46" y="5" font-size="14" font-weight="600" fill="#0f2a44">Mate &amp; chat</text>
+        <rect x="38" y="-9" width="28" height="18" rx="9" fill="#ef4444"/><text x="52" y="5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">17</text>
+      </g>
+    </g>
+
+    <!-- You: post, then walk to the Bitcoin house -->
+    <g>
+      <animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.2;0.44;0.97;1" keyPoints="0;0;1;1;0" calcMode="linear" path="M 150 300 C 300 330 520 330 690 296"/>
+      <ellipse cx="0" cy="2" rx="14" ry="4" fill="#0f2a44" opacity="0.2"/>
+      <g>
+        <animateTransform attributeName="transform" type="translate" dur="0.36s" repeatCount="indefinite" values="0 0;0 -3;0 0"/>
+        <rect x="-9" y="-30" width="18" height="30" rx="8" fill="#ff5fa2"/>
+        <circle cx="0" cy="-38" r="9" fill="#f2c9a5"/>
+        <circle cx="0" cy="-64" r="12" fill="#ff5fa2" stroke="#fff" stroke-width="2.5"/><text x="0" y="-59" font-size="13" font-weight="800" fill="#fff" text-anchor="middle">Y</text>
+      </g>
+      <!-- your message bubble -->
+      <g transform="translate(-20 -128)" opacity="0">
+        <animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.03;0.05;0.4;0.44;1" values="0;0;1;1;0;0"/>
+        <g filter="url(#sh)"><rect x="0" y="0" width="216" height="44" rx="14" fill="#ffffff"/><path d="M 22 44 l 10 12 l 6 -12 z" fill="#ffffff"/></g>
+        <text x="14" y="17" font-size="11" font-weight="700" fill="#7c5cff">you · #bitcoin</text>
+        <g clip-path="url(#type1)" transform="translate(14 34)"><text x="0" y="0" font-size="15" font-weight="600" fill="#0f2a44">gm, who's running a node? ⚡</text></g>
+      </g>
+    </g>
+
+    <!-- Someone replies, walks over to you, zaps -->
+    <g>
+      <animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.62;0.8;0.97;1" keyPoints="0;0;1;1;0" calcMode="linear" path="M 1030 296 C 920 270 820 268 744 288"/>
+      <ellipse cx="0" cy="2" rx="14" ry="4" fill="#0f2a44" opacity="0.2"/>
+      <g>
+        <animateTransform attributeName="transform" type="translate" dur="0.4s" repeatCount="indefinite" values="0 0;0 -3;0 0"/>
+        <rect x="-9" y="-30" width="18" height="30" rx="8" fill="#ffb020"/>
+        <circle cx="0" cy="-38" r="9" fill="#a8744f"/>
+        <circle cx="0" cy="-64" r="12" fill="#7c5cff" stroke="#fff" stroke-width="2.5"/><text x="0" y="-59" font-size="13" font-weight="800" fill="#fff" text-anchor="middle">N</text>
+      </g>
+      <g transform="translate(-200 -128)" opacity="0">
+        <animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.5;0.52;0.78;0.8;1" values="0;0;1;1;0;0"/>
+        <g filter="url(#sh)"><rect x="0" y="0" width="232" height="44" rx="14" fill="#ffffff"/><path d="M 194 44 l 6 12 l 10 -12 z" fill="#ffffff"/></g>
+        <text x="14" y="17" font-size="11" font-weight="700" fill="#2fb3a3">nico ↪ you</text>
+        <g clip-path="url(#type2)" transform="translate(14 34)"><text x="0" y="0" font-size="15" font-weight="600" fill="#0f2a44">two years now. zap for the gm</text></g>
+      </g>
+    </g>
+
+    <!-- the zap -->
+    <g opacity="0">
+      <animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.8;0.81;0.86;0.87;1" values="0;0;1;1;0;0"/>
+      <animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.8;0.86;1" keyPoints="0;0;1;1" calcMode="linear" path="M 744 210 Q 718 150 690 220"/>
+      <path d="M 4 -18 L -10 2 L -1 2 L -6 18 L 12 -4 L 3 -4 L 8 -18 Z" fill="#c5ff6e" stroke="#3d6b12" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <!-- coin burst on arrival -->
+    <g transform="translate(690 220)" fill="#ffd23f" stroke="#c48a00" stroke-width="1.5">
+      <g opacity="0">
+        <animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.87;0.94;0.95;1" values="0;0;1;0;0;0"/>
+        <circle r="5"><animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.94;1" keyPoints="0;0;1;1" calcMode="linear" path="M 0 0 L -34 -30"/></circle>
+        <circle r="5"><animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.94;1" keyPoints="0;0;1;1" calcMode="linear" path="M 0 0 L 36 -26"/></circle>
+        <circle r="5"><animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.94;1" keyPoints="0;0;1;1" calcMode="linear" path="M 0 0 L 0 -44"/></circle>
+        <circle r="4"><animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.94;1" keyPoints="0;0;1;1" calcMode="linear" path="M 0 0 L -22 -48"/></circle>
+        <circle r="4"><animateMotion dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.94;1" keyPoints="0;0;1;1" calcMode="linear" path="M 0 0 L 24 -46"/></circle>
+      </g>
+      <g opacity="0" stroke="none">
+        <animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.86;0.88;0.95;0.97;1" values="0;0;1;1;0;0"/>
+        <rect x="-50" y="-76" width="100" height="28" rx="14" fill="#0f2a44"/>
+        <text x="0" y="-56" font-size="15" font-weight="800" fill="#c5ff6e" text-anchor="middle">⚡ 21 sats</text>
+      </g>
+    </g>
+
+    <!-- caption strip -->
+    <g transform="translate(24 24)">
+      <rect width="440" height="34" rx="17" fill="#0f2a44" opacity="0.88"/>
+      <text x="18" y="22" font-size="14" font-weight="600" fill="#ffffff">
+        <tspan opacity="1">Post in a channel → you walk to its house<animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.48;0.49;0.99;1" values="1;1;0;0;1" calcMode="discrete"/></tspan>
+      </text>
+      <text x="18" y="22" font-size="14" font-weight="600" fill="#c5ff6e" opacity="0">Reply to someone → they walk over to you<animate attributeName="opacity" dur="12s" repeatCount="indefinite" keyTimes="0;0.49;0.5;0.99;1" values="0;0;1;1;0" calcMode="discrete"/></text>
+    </g>
+  </g>
+</svg>

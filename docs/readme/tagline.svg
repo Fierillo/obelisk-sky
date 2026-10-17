@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 56" width="1000" height="56" role="img" aria-label="Every channel is a house. Busier channel, bigger house. Post somewhere, and you walk there. Reply to someone, and you walk over to them. Voice calls, games, mate on the plaza. Your key, your browser. The server holds no keys. Any NIP-29 relay gets its own island. Zaps fly from sender to recipient. ⚡">
+  <style>text { font-family: Inter, 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 700; fill: #5a8f1f; }
+  @media (prefers-color-scheme: dark) { text { fill: #c5ff6e; } }</style>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.0119;0.1310;0.1429;1.0000" values="0;1;1;0;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.0119;0.1310;0.1429;1.0000" values="0 14;0 0;0 0;0 -14;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Every channel is a house. Busier channel, bigger house.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.1429;0.1548;0.2738;0.2857;1.0000" values="0;0;1;1;0;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.1429;0.1548;0.2738;0.2857;1.0000" values="0 14;0 14;0 0;0 0;0 -14;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Post somewhere, and you walk there.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.2857;0.2976;0.4167;0.4286;1.0000" values="0;0;1;1;0;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.2857;0.2976;0.4167;0.4286;1.0000" values="0 14;0 14;0 0;0 0;0 -14;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Reply to someone, and you walk over to them.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.4286;0.4405;0.5595;0.5714;1.0000" values="0;0;1;1;0;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.4286;0.4405;0.5595;0.5714;1.0000" values="0 14;0 14;0 0;0 0;0 -14;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Voice calls, games, mate on the plaza.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.5714;0.5833;0.7024;0.7143;1.0000" values="0;0;1;1;0;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.5714;0.5833;0.7024;0.7143;1.0000" values="0 14;0 14;0 0;0 0;0 -14;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Your key, your browser. The server holds no keys.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.7143;0.7262;0.8452;0.8571;1.0000" values="0;0;1;1;0;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.7143;0.7262;0.8452;0.8571;1.0000" values="0 14;0 14;0 0;0 0;0 -14;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Any NIP-29 relay gets its own island.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.8571;0.8690;0.9881;1.0000" values="0;0;1;1;0"/>
+    <animateTransform attributeName="transform" type="translate" dur="21s" repeatCount="indefinite" keyTimes="0.0000;0.8571;0.8690;0.9881;1.0000" values="0 14;0 14;0 0;0 0;0 -14"/>
+    <text x="500" y="38" text-anchor="middle">Zaps fly from sender to recipient. ⚡</text>
+  </g>
+</svg>

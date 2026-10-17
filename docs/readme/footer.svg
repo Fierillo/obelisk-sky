@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Obelisk Sky at night. Made in Buenos Aires, on Nostr.">
+  <defs>
+    <!-- One 24 s day: day, dusk, night, dawn. Every night-only thing shares these keyTimes. -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fd3ff">
+        
+      </stop>
+      <stop offset="1" stop-color="#e8f6ff">
+        
+      </stop>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff9d6"/><stop offset="0.35" stop-color="#ffe680"/><stop offset="1" stop-color="#ffe680" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="moon" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="0.3" stop-color="#e6eeff"/><stop offset="1" stop-color="#bcd0ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#d9ff9c" stop-opacity="0.95"/><stop offset="0.4" stop-color="#b4f953" stop-opacity="0.45"/><stop offset="1" stop-color="#b4f953" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="obelisk" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#86c93a"/><stop offset="0.5" stop-color="#c5ff6e"/><stop offset="1" stop-color="#b4f953"/>
+    </linearGradient>
+    <linearGradient id="rock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7b5a6e"/><stop offset="1" stop-color="#3b2a44"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fd14a"/><stop offset="1" stop-color="#3f9a2e"/>
+    </linearGradient>
+    <linearGradient id="fall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfeaff" stop-opacity="0.95"/><stop offset="1" stop-color="#bfeaff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.86"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.7"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f2a44" flood-opacity="0.22"/>
+    </filter>
+    <symbol id="cloud" viewBox="0 0 220 90" overflow="visible">
+      <circle cx="60" cy="56" r="34"/><circle cx="110" cy="40" r="44"/><circle cx="160" cy="58" r="30"/>
+      <rect x="26" y="52" width="170" height="38" rx="19"/>
+    </symbol>
+    <symbol id="house" viewBox="0 0 40 40" overflow="visible">
+      <rect x="4" y="16" width="32" height="22" fill="#5d5a7a">
+        
+      </rect>
+      <rect x="15" y="25" width="10" height="13" fill="#7a4b2a"/>
+    </symbol>
+    <clipPath id="frame"><rect width="1200" height="300" rx="24"/></clipPath>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a1530"/><stop offset="1" stop-color="#24346a"/></linearGradient>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="300" fill="url(#night)"/>
+    <g fill="#ffffff"><circle cx="60" cy="40" r="1.5"><animate attributeName="opacity" values="1;0.2;1" dur="2.1s" repeatCount="indefinite"/></circle><circle cx="170" cy="120" r="1.2"><animate attributeName="opacity" values="1;0.2;1" dur="3s" repeatCount="indefinite"/></circle><circle cx="290" cy="30" r="1.7"><animate attributeName="opacity" values="1;0.2;1" dur="2.5s" repeatCount="indefinite"/></circle><circle cx="410" cy="90" r="1.1"><animate attributeName="opacity" values="1;0.2;1" dur="1.8s" repeatCount="indefinite"/></circle><circle cx="520" cy="24" r="1.4"><animate attributeName="opacity" values="1;0.2;1" dur="2.9s" repeatCount="indefinite"/></circle><circle cx="700" cy="30" r="1.6"><animate attributeName="opacity" values="1;0.2;1" dur="2.2s" repeatCount="indefinite"/></circle><circle cx="820" cy="100" r="1.2"><animate attributeName="opacity" values="1;0.2;1" dur="3.3s" repeatCount="indefinite"/></circle><circle cx="930" cy="40" r="1.8"><animate attributeName="opacity" values="1;0.2;1" dur="1.9s" repeatCount="indefinite"/></circle><circle cx="1050" cy="110" r="1.3"><animate attributeName="opacity" values="1;0.2;1" dur="2.7s" repeatCount="indefinite"/></circle><circle cx="1150" cy="36" r="1.5"><animate attributeName="opacity" values="1;0.2;1" dur="2.4s" repeatCount="indefinite"/></circle><circle cx="110" cy="220" r="1.1"><animate attributeName="opacity" values="1;0.2;1" dur="2.6s" repeatCount="indefinite"/></circle><circle cx="1100" cy="230" r="1.2"><animate attributeName="opacity" values="1;0.2;1" dur="2s" repeatCount="indefinite"/></circle></g>
+    <g transform="translate(600 0) scale(0.45) translate(-600 0)">
+    <!-- The island, at night -->
+    <g transform="translate(600 190)">
+      <animateTransform attributeName="transform" type="translate" values="600 190;600 176;600 190" dur="7s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
+      <!-- underside -->
+      <path d="M -250 6 C -230 70 -150 110 -90 150 C -50 180 -20 230 6 270 C 30 220 70 170 120 140 C 180 104 236 60 250 6 Z" fill="url(#rock)"/>
+      <path d="M -150 60 L -110 100 L -80 70 Z M 60 80 L 100 110 L 130 76 Z M -30 120 L 0 170 L 20 120 Z" fill="#2b1f33" opacity="0.35"/>
+      <!-- waterfall off the east edge -->
+      <rect x="168" y="22" width="16" height="230" fill="url(#fall)"/>
+      <line x1="176" y1="22" x2="176" y2="250" stroke="#ffffff" stroke-width="4" stroke-dasharray="10 18" stroke-linecap="round" opacity="0.8">
+        <animate attributeName="stroke-dashoffset" from="0" to="-56" dur="0.9s" repeatCount="indefinite"/>
+      </line>
+      <!-- top -->
+      <ellipse cx="0" cy="6" rx="252" ry="62" fill="#4b8f2e"/>
+      <ellipse cx="0" cy="0" rx="250" ry="58" fill="url(#grass)"/>
+      <!-- night shade over the grass -->
+      <ellipse cx="0" cy="0" rx="250" ry="58" fill="#0a1530" opacity="0.45">
+        
+      </ellipse>
+      <!-- mountain at the back -->
+      <path d="M -150 -18 L -105 -86 L -78 -52 L -50 -100 L -10 -22 Z" fill="#9a7a9a"/>
+      <path d="M -105 -86 L -96 -70 L -112 -72 Z M -50 -100 L -40 -80 L -60 -82 Z" fill="#ffffff"/>
+      <!-- river -->
+      <path d="M -30 -40 C 0 -20 60 -14 90 0 C 120 14 150 16 176 22" fill="none" stroke="#9fdcff" stroke-width="9" stroke-linecap="round"/>
+      <!-- running track -->
+      <ellipse cx="-160" cy="10" rx="44" ry="16" fill="none" stroke="#d9573b" stroke-width="7"/>
+      <ellipse cx="-160" cy="10" rx="44" ry="16" fill="none" stroke="#fff" stroke-width="1" stroke-dasharray="4 4" opacity="0.7"/>
+      <!-- plaza -->
+      <ellipse cx="10" cy="4" rx="46" ry="15" fill="#e9dcc4"/>
+      <!-- trees -->
+      <g fill="#2f7a3a">
+        <path d="M -220 -6 l 12 -28 l 12 28 z"/><path d="M -200 -14 l 10 -24 l 10 24 z"/><path d="M 196 -12 l 12 -28 l 12 28 z"/>
+        <path d="M 210 4 l 10 -22 l 10 22 z"/><path d="M -60 34 l 10 -22 l 10 22 z"/><path d="M 120 -34 l 10 -24 l 10 24 z"/>
+        <path d="M -120 -36 l 9 -20 l 9 20 z"/><path d="M 150 30 l 10 -22 l 10 22 z"/>
+      </g>
+      <!-- houses, each a channel -->
+      <g>
+        <use href="#house" xlink:href="#house" x="-112" y="-28" width="36" height="36"/>
+        <path d="M -112 -14 L -94 -34 L -76 -14 Z" fill="#d94a3d"/>
+        <use href="#house" xlink:href="#house" x="58" y="-38" width="34" height="34"/>
+        <path d="M 58 -25 L 75 -44 L 92 -25 Z" fill="#3a6fd8"/>
+        <use href="#house" xlink:href="#house" x="96" y="2" width="40" height="40"/>
+        <path d="M 96 18 L 116 -4 L 136 18 Z" fill="#f2b632"/>
+        <use href="#house" xlink:href="#house" x="-70" y="10" width="38" height="38"/>
+        <path d="M -70 25 L -51 4 L -32 25 Z" fill="#2fb3a3"/>
+        <use href="#house" xlink:href="#house" x="-10" y="-58" width="30" height="30"/>
+        <path d="M -10 -47 L 5 -64 L 20 -47 Z" fill="#a04ad9"/>
+      </g>
+      <!-- lit windows at night -->
+      <g fill="#ffd36b">
+        <rect x="-106" y="-8" width="6" height="6"/><rect x="-88" y="-8" width="6" height="6"/>
+        <rect x="63" y="-20" width="5" height="5"/><rect x="82" y="-20" width="5" height="5"/>
+        <rect x="102" y="21" width="7" height="7"/><rect x="123" y="21" width="7" height="7"/>
+        <rect x="-64" y="28" width="6" height="6"/><rect x="-44" y="28" width="6" height="6"/>
+      </g>
+      <!-- the obelisk -->
+      <circle cx="10" cy="-60" r="80" fill="url(#glow)">
+        <animate attributeName="r" values="70;92;70" dur="3s" repeatCount="indefinite"/>
+        
+      </circle>
+      <path d="M 10 -150 L 20 -137 L 26 2 L -6 2 L 0 -137 Z" fill="url(#obelisk)" stroke="#5a8f1f" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M 8 -144 L 2 -136 L -3 0 L 8 0 Z" fill="#86c93a"/>
+      <!-- people walking the plaza: a dot per villager -->
+      <circle r="4" fill="#ff5fa2"><animateMotion dur="9s" repeatCount="indefinite" path="M -40 10 C -10 24 40 24 60 6 C 40 -10 -20 -8 -40 10 Z"/></circle>
+      <circle r="4" fill="#ffd23f"><animateMotion dur="7s" repeatCount="indefinite" path="M 90 30 C 60 30 30 20 20 6 C 40 12 70 18 90 30 Z"/></circle>
+      <circle r="4" fill="#7c5cff"><animateMotion dur="11s" repeatCount="indefinite" path="M -160 -6 C -116 -6 -116 26 -160 26 C -204 26 -204 -6 -160 -6 Z"/></circle>
+      <!-- a zap: lime bolt hops from one house to another -->
+      <g opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.55;0.6;0.85;0.9;1" dur="5s" repeatCount="indefinite"/>
+        <animateMotion dur="5s" repeatCount="indefinite" keyTimes="0;0.55;0.9;1" keyPoints="0;0;1;1" calcMode="linear" path="M -94 -30 Q 0 -120 116 -8"/>
+        <path d="M 2 -12 L -6 2 L 0 2 L -3 12 L 7 -3 L 1 -3 L 4 -12 Z" fill="#c5ff6e" stroke="#3d6b12" stroke-width="1.4" stroke-linejoin="round"/>
+      </g>
+    </g>
+
+    </g>
+    <g font-family="Inter, 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" text-anchor="middle">
+      <text x="600" y="250" font-size="22" font-weight="700" fill="#ffffff">The island is up. Come in.</text>
+      <text x="600" y="278" font-size="14" fill="#9fb3d9">Made in Buenos Aires, on Nostr · part of Obelisk</text>
+    </g>
+  </g>
+</svg>
