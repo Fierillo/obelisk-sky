@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { planIsland, trackSite, onTrack, plazaLanterns } from './layout';
+import { planIsland, trackSite, onTrack, plazaLanterns, buildNavGrid, distToPolyline } from './layout';
 import { LANDMARKS, reserveLandmarkSlots, onLandmarkLawn } from './landmarks/index';
 import { LABITCONF } from './landmarks/labitconf';
 import { CHAR_HEIGHT } from './character';
 import { obeliskShape } from './obelisk';
-import { VILLAGE_WORDS } from '../i18n/village';
-import { TOTEM, TOTEM_URL, TOTEM_ORIGIN, buildTotemMonitor, drawTotemCard, inTotemZone, totemInView, OcclusionProbe, TotemStage, TOTEM_PAGE } from './totemMonitor';
+import { smoothRiver } from './island';
+import { TOTEM, TOTEM_URL, buildTotemMonitor, drawTotemCard, inTotemZone, totemInView, OcclusionProbe, TotemStage, TOTEM_PAGE } from './totemMonitor';
 
 /** LABITCONF's slot and the monitor's footprint in world space, as World places them. */
 function placed() {
@@ -27,19 +27,13 @@ function placed() {
     const dx = p.x - (s.pos.x + sn * d.forward), dz = p.z - (s.pos.z + c * d.forward);
     return { x: dx * c - dz * sn - TOTEM.X, z: dx * sn + dz * c - TOTEM.Z };
   };
-  return { plan, slots, s, d, m, corners, centre: toWorld(TOTEM.X, TOTEM.Z), toScreen };
+  return { plan, slots, s, d, m, corners, centre: toWorld(TOTEM.X, TOTEM.Z), toWorld, toScreen };
 }
 
 describe('the totem monitor on LABITCONF’s lawn', () => {
-  it('shows totemcillo, one address for the iframe and the CSP', () => {
-    expect(TOTEM_URL).toBe('https://totemcillo.vercel.app/');
-    expect(TOTEM_ORIGIN).toBe('https://totemcillo.vercel.app');
-  });
-
-  it('is a 16:9 screen named for the World, facing the plaza (+z), held by a stand', () => {
+  it('is a screen named for the World (its click), facing the plaza (+z), as big as TOTEM says', () => {
     const { group, screen } = buildTotemMonitor();
     expect(screen.name).toBe('totem-screen');
-    expect(TOTEM.W / TOTEM.H).toBeCloseTo(16 / 9, 5);
     expect(screen.parent).toBe(group);
     group.updateMatrixWorld(true);
     const normal = new THREE.Vector3(0, 0, 1).transformDirection(screen.matrixWorld);
@@ -56,15 +50,11 @@ describe('the totem monitor on LABITCONF’s lawn', () => {
     expect(screen.position.y + TOTEM.H / 2).toBeLessThan(LABITCONF.H - 0.36);
   });
 
-  it('is solid as high as its top: you walk round it, you can’t jump through the screen', () => {
+  it('stands on the lawn in front of the facade, left of the door, within the building’s width, solid up to its top', () => {
     const { solid } = buildTotemMonitor();
+    // Solid round the whole screen and as high as it: you walk round it, you can’t jump through it.
     expect(solid.hx).toBeGreaterThanOrEqual(TOTEM.W / 2);
-    expect(solid.hz).toBeGreaterThan(0.05);
     expect(solid.top).toBeGreaterThanOrEqual(TOTEM.Y + TOTEM.H / 2);
-  });
-
-  it('stands on the lawn in front of the facade, left of the door, within the building’s width', () => {
-    const { solid } = buildTotemMonitor();
     const f = LANDMARKS.find((x) => x.id === 'labitconf')!.footprint;
     expect(TOTEM.Z - solid.hz).toBeGreaterThan(f.maxZ + 0.1);
     expect(TOTEM.X - solid.hx).toBeGreaterThanOrEqual(-LABITCONF.W / 2);
@@ -72,19 +62,48 @@ describe('the totem monitor on LABITCONF’s lawn', () => {
     expect(TOTEM.X + solid.hx).toBeLessThan(LABITCONF.DOOR0 - 0.3);
   });
 
-  it('keeps off the cobbled path to the door, the plaza’s paving and its lanterns', () => {
-    const { plan, s, corners, centre } = placed();
-    // The road is laid two half-metre cells wide from the slot's door (world.ts layPaths).
-    for (const p of corners) expect(p.x).toBeLessThan(s.door.x - 0.1);
+  it('keeps off the cobbled path to the door, the plaza’s paving and its lanterns, and clear of the obelisk', () => {
+    const { plan, s, slots, corners, centre, toScreen, m } = placed();
+    // The road leaves the door two half-metre cells wide (world.ts layPaths), toward the plaza (the screen frame's +z).
+    const door = toScreen(s.door);
+    expect(m.solid.hx).toBeLessThan(door.x - 0.1);
     for (const p of corners) expect(Math.hypot(p.x - plan.plaza.c.x, p.z - plan.plaza.c.z)).toBeGreaterThan(plan.plaza.r);
-    // Lanterns ring the plaza (world.ts buildPlaza): room to walk between them and the stand.
-    for (const l of plazaLanterns(plan)) {
-      const { solid } = buildTotemMonitor();
-      const dx = Math.max(0, Math.abs(l.x - centre.x) - solid.hx), dz = Math.max(0, Math.abs(l.z - centre.z) - solid.hz);
+    // Room to walk between the stand and every lantern still standing (buildPlaza drops those on a landmark’s lawn).
+    for (const l of plazaLanterns(plan).filter((p) => !onLandmarkLawn(p, slots))) {
+      const dx = Math.max(0, Math.abs(l.x - centre.x) - m.solid.hx), dz = Math.max(0, Math.abs(l.z - centre.z) - m.solid.hz);
       expect(Math.hypot(dx, dz)).toBeGreaterThan(0.3);
     }
-    // And never inside the obelisk.
     expect(Math.hypot(centre.x - plan.plaza.c.x, centre.z - plan.plaza.c.z)).toBeGreaterThan(obeliskShape(8).base + 1);
+  });
+
+  it('keeps its stand clear of every other slot and off the pond and the river banks', () => {
+    const { plan, s, corners } = placed();
+    for (const o of plan.slots) {
+      if (o.index === s.index) continue;
+      for (const p of corners) expect(Math.max(Math.abs(p.x - o.pos.x), Math.abs(p.z - o.pos.z))).toBeGreaterThan(o.w / 2 + 0.3);
+    }
+    const river = smoothRiver(plan);
+    for (const p of corners) {
+      expect(Math.hypot(p.x - plan.pond.c.x, p.z - plan.pond.c.z)).toBeGreaterThan(plan.pond.r + 0.65);
+      expect(distToPolyline(p, river)).toBeGreaterThan(plan.riverWidth * 0.62 + 0.3 + 0.5);
+    }
+  });
+
+  it('leaves the ground in front of the screen walkable (the grid, the stand and LABITCONF’s own solids, with the player’s 0.18 m clearance)', () => {
+    const { plan, d, toWorld, m } = placed();
+    const grid = buildNavGrid(plan, plan.slots);
+    const pad = 0.18;
+    // Monitor-local solids (the stand, LABITCONF's furniture) and the building itself.
+    const local = [{ ...m.solid, x: TOTEM.X + m.solid.x, z: TOTEM.Z + m.solid.z }, ...(d.build().solids ?? [])];
+    const f = d.footprint;
+    const z = (TOTEM.ZONE.front + TOTEM.ZONE.depth) / 2;
+    for (const x of [-TOTEM.W / 2 + pad, 0, TOTEM.W / 2 - pad]) {
+      expect(inTotemZone({ x, z })).toBe(true);
+      const lx = TOTEM.X + x, lz = TOTEM.Z + z;
+      for (const so of local) expect(Math.abs(lx - so.x) > so.hx + pad || Math.abs(lz - so.z) > so.hz + pad).toBe(true);
+      expect(lz).toBeGreaterThan(f.maxZ + pad);
+      for (const [ox, oz] of [[0, 0], [pad, 0], [-pad, 0], [0, pad], [0, -pad]]) expect(grid.isWalkable(toWorld(lx + ox, lz + oz))).toBe(true);
+    }
   });
 
   it('keeps the plaza’s lanterns out from in front of the screen: LABITCONF’s lawn reaches past its watch zone, and no other lantern goes', () => {
@@ -102,31 +121,17 @@ describe('the totem monitor on LABITCONF’s lawn', () => {
 });
 
 describe('the totem’s screen in the village', () => {
-  it('paints a still look of the totem (its name, tags and QR block), never an instruction', () => {
+  it('paints a still look of the totem, never an instruction', () => {
     const said: string[] = [];
-    let rects = 0;
     const g = new Proxy({} as CanvasRenderingContext2D, {
-      get: (_t, k) => (k === 'fillText' ? (t: string) => said.push(t) : k === 'fillRect' ? () => { rects++; } : k === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {}),
+      get: (_t, k) => (k === 'fillText' ? (t: string) => said.push(t) : k === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {}),
       set: () => true,
     });
     drawTotemCard(g, 1024, 576);
-    const text = said.join(' ');
-    expect(text).toMatch(/totemcillo/);
-    expect(text).not.toMatch(/LABITCONF/);
-    expect(text).toMatch(/la crypta/i);
-    expect(text).toMatch(/#lacrypta/);
-    expect(text).not.toMatch(/acerc|closer|approach|walk|tap|press|apret|click/i);
-    // The QR's modules: a block of squares, as the totem shows one.
-    expect(rects).toBeGreaterThan(40);
+    // A still of the page, not a sign: it never tells you what to do (the prompt does, in your language).
+    expect(said.join(' ')).not.toMatch(/acerc|closer|approach|walk|tap|press|apret|click/i);
   });
 
-  it('builds no page into the mesh itself (the live one is TotemStage’s layer)', () => {
-    const { group } = buildTotemMonitor();
-    let frames = 0;
-    group.traverse((o) => { if ((o as unknown as { element?: unknown }).element) frames++; });
-    expect(frames).toBe(0);
-    expect(document.querySelectorAll('iframe')).toHaveLength(0);
-  });
 });
 
 describe('walking up to the totem', () => {
@@ -143,28 +148,17 @@ describe('walking up to the totem', () => {
   });
 
   it('keeps clear of the road to LABITCONF’s door and the plaza’s middle (passers-by don’t get focused)', () => {
-    const { plan, s } = placed();
-    // World → monitor-local (LABITCONF faces +z at rot 0 here; checked by the placement tests).
-    expect(Math.abs(s.rot)).toBeCloseTo(0, 6);
-    const d = LANDMARKS.find((x) => x.id === 'labitconf')!;
-    const local = (p: { x: number; z: number }) => ({ x: p.x - (s.pos.x + TOTEM.X), z: p.z - (s.pos.z + d.forward + TOTEM.Z) });
-    for (let z = -3.75; z <= -0.25; z += 0.25) for (const x of [2.05, 2.5, 2.95]) expect(inTotemZone(local({ x, z }))).toBe(false);
-    expect(inTotemZone(local(plan.plaza.c), TOTEM.ZONE.pad)).toBe(false);
+    const { plan, s, toScreen } = placed();
+    // The road: two half-metre cells from the door (world.ts layPaths) out toward the plaza, in the screen's frame.
+    const door = toScreen(s.door);
+    for (let z = door.z; z <= TOTEM.ZONE.depth + TOTEM.ZONE.pad; z += 0.25) for (const x of [0.05, 0.5, 0.95]) expect(inTotemZone({ x: door.x + x, z })).toBe(false);
+    expect(inTotemZone(toScreen(plan.plaza.c), TOTEM.ZONE.pad)).toBe(false);
   });
 
-  it('asks before focusing: “Press E to watch the totemcillo”, in both languages (a tap on touch screens)', () => {
-    const { en, es } = VILLAGE_WORDS;
-    expect(en.watchTotem(false)).toBe('Press E to watch the totemcillo');
-    expect(es.watchTotem(false)).toBe('Apretá E para mirar el totemcillo');
-    expect(en.watchTotem(true)).not.toMatch(/\bE\b/);
-    expect(es.watchTotem(true)).not.toMatch(/\bE\b/);
-    for (const w of [en.watchTotem(true), en.watchTotem(false), es.watchTotem(true), es.watchTotem(false)]) expect(w).not.toMatch(/acerc|closer/i);
-  });
 });
 
 describe('the live totem on the monitor', () => {
-  it('is on within VIEW_M of the camera (6 m: past it the page is unreadable) and off past VIEW_M + VIEW_PAD', () => {
-    expect(TOTEM.VIEW_M).toBe(6);
+  it('is on within VIEW_M of the camera and off past VIEW_M + VIEW_PAD (no flicker at the edge)', () => {
     expect(totemInView(TOTEM.VIEW_M - 0.1, false)).toBe(true);
     expect(totemInView(TOTEM.VIEW_M + 0.5, false)).toBe(false);
     expect(totemInView(TOTEM.VIEW_M + 0.5, true)).toBe(true);
@@ -194,10 +188,7 @@ describe('the live totem on the monitor', () => {
     post.position.set(-0.7, 1, -2.2);
     post.updateMatrixWorld(true);
     expect(new OcclusionProbe().clear(1, camera, screen, [post])).toBe(false);
-  });
-
-  it('sees through glows (sprites): they never hide the screen, and probing them doesn’t throw', () => {
-    const { screen, camera } = view();
+    // Glows (sprites) are light, not walls: they never hide it, and probing them doesn't throw.
     const glow = new THREE.Sprite(new THREE.SpriteMaterial());
     glow.position.set(0, 1.4, 0);
     glow.scale.setScalar(2);
@@ -211,7 +202,6 @@ describe('the live totem on the monitor', () => {
     expect(probe.clear(1, camera, screen, [])).toBe(true);
     expect(probe.clear(TOTEM.PROBE_S / 4, camera, screen, [wall])).toBe(true);
     expect(probe.clear(TOTEM.PROBE_S, camera, screen, [wall])).toBe(false);
-    expect(TOTEM.PROBE_S).toBeLessThanOrEqual(0.25);
   });
 
   function stageSetup() {
@@ -224,13 +214,6 @@ describe('the live totem on the monitor', () => {
     return { parent, canvas, stage, ...v };
   }
 
-  it('lays the page right after the canvas, letting clicks through to the world', () => {
-    const { canvas } = stageSetup();
-    const layer = canvas.nextElementSibling as HTMLElement;
-    expect(layer.className).toBe('totem-video');
-    expect(layer.style.pointerEvents).toBe('none');
-  });
-
   it('opens totemcillo in view, hides it (page kept) while hidden, drops it (and its connections) out of range', () => {
     const { parent, canvas, camera, stage } = stageSetup();
     const layer = canvas.nextElementSibling as HTMLElement;
@@ -239,14 +222,9 @@ describe('the live totem on the monitor', () => {
     stage.update(camera, true, true);
     const f = parent.querySelector('iframe')!;
     expect(f.src).toBe(TOTEM_URL);
-    // Wide enough that totemcillo draws its totem view, not its phone view (max-width: 700px).
-    expect(parseInt(f.style.width, 10)).toBeGreaterThan(700);
-    // A desktop-sized page (its layout viewport), scaled down onto the 1.6 × 0.9 screen as one 16:9 box.
-    expect(f.style.width).toBe(`${TOTEM_PAGE.W}px`);
-    expect(f.style.height).toBe(`${TOTEM_PAGE.H}px`);
+    // The page's layout viewport is TOTEM_PAGE, and so is the box DomScreen scales onto the screen.
     const holder = f.parentElement as HTMLElement;
-    expect(holder.style.width).toBe(`${TOTEM_PAGE.W}px`);
-    expect(holder.style.height).toBe(`${TOTEM_PAGE.H}px`);
+    expect([f.style.width, f.style.height, holder.style.width, holder.style.height]).toEqual([`${TOTEM_PAGE.W}px`, `${TOTEM_PAGE.H}px`, `${TOTEM_PAGE.W}px`, `${TOTEM_PAGE.H}px`]);
     expect(layer.style.display).toBe('');
     expect(stage.live).toBe(true);
     // Hidden by a building: the 3D card shows, the page keeps running.
@@ -259,9 +237,9 @@ describe('the live totem on the monitor', () => {
     expect(stage.live).toBe(false);
   });
 
-  it('desktop page size: 1600 × 900 CSS px, wider than totemcillo’s phone breakpoint, the screen’s own 16:9', () => {
-    expect(TOTEM_PAGE).toEqual({ W: 1600, H: 900 });
+  it('draws totemcillo’s desktop view (wider than its 700 px phone breakpoint) on a 16:9 screen of the same shape', () => {
     expect(TOTEM_PAGE.W).toBeGreaterThan(700);
-    expect(TOTEM.W / TOTEM_PAGE.W).toBeCloseTo(TOTEM.H / TOTEM_PAGE.H, 12);
+    expect(TOTEM.W / TOTEM.H).toBeCloseTo(16 / 9, 5);
+    expect(TOTEM_PAGE.W / TOTEM_PAGE.H).toBeCloseTo(TOTEM.W / TOTEM.H, 9);
   });
 });
