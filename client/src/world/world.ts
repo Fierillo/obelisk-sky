@@ -20,7 +20,7 @@ import { bridgeHeightAt, bridgeSpecs, buildBridge, type BridgeSpec } from './bri
 import {
   assignByDistrict, buildNavGrid, circleSpots, dist, distToPolyline, hashStr, inFootprint, inWater, onTrack, planIsland, rng, trackSite, TRACK,
   type District, type IslandPlan, type NavGrid, type Slot, type Vec2,
-  millBlocked, type MillSite, turnedHalf, waterworks, parkSite, PLINTH_HALF, CELL as NAV_CELL,
+  millBlocked, type MillSite, turnedHalf, waterworks, parkSite, PLINTH_HALF, CELL as NAV_CELL, plazaLanterns,
 } from './layout';
 import { fbm2 } from './noise';
 import { CALISTHENICS_LAMPS, CALISTHENICS_STATIONS, PARK_MAT, TRACK_LANES, TRACK_TOP, buildArcadeCabinet, buildCalisthenics, buildChoripan, buildCup, buildLaptop, buildPopcorn, buildMate, buildTrack, trackLap } from './districts';
@@ -1216,10 +1216,7 @@ export class World {
     this.solids.push({ minX: c.x - shaft, maxX: c.x + shaft, minZ: c.z - shaft, maxZ: c.z + shaft, top: 99 });
 
     // Lanterns around the plaza.
-    const n = 8;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + 0.2;
-      const p = { x: c.x + Math.cos(a) * (this.plan.plaza.r + 0.25), z: c.z + Math.sin(a) * (this.plan.plaza.r + 0.25) };
+    for (const p of plazaLanterns(this.plan)) {
       if (onLandmarkLawn(p, this.landmarkSlots)) continue; // a landmark's stairs or terrace come down here
       this.lantern(p);
     }

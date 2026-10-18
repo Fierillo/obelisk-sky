@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { planIsland, trackSite, onTrack } from './layout';
+import { planIsland, trackSite, onTrack, plazaLanterns } from './layout';
 import { LANDMARKS, reserveLandmarkSlots, onLandmarkLawn } from './landmarks/index';
 import { LABITCONF } from './landmarks/labitconf';
 import { CHAR_HEIGHT } from './character';
@@ -78,9 +78,7 @@ describe('the totem monitor on LABITCONF’s lawn', () => {
     for (const p of corners) expect(p.x).toBeLessThan(s.door.x - 0.1);
     for (const p of corners) expect(Math.hypot(p.x - plan.plaza.c.x, p.z - plan.plaza.c.z)).toBeGreaterThan(plan.plaza.r);
     // Lanterns ring the plaza (world.ts buildPlaza): room to walk between them and the stand.
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + 0.2;
-      const l = { x: plan.plaza.c.x + Math.cos(a) * (plan.plaza.r + 0.25), z: plan.plaza.c.z + Math.sin(a) * (plan.plaza.r + 0.25) };
+    for (const l of plazaLanterns(plan)) {
       const { solid } = buildTotemMonitor();
       const dx = Math.max(0, Math.abs(l.x - centre.x) - solid.hx), dz = Math.max(0, Math.abs(l.z - centre.z) - solid.hz);
       expect(Math.hypot(dx, dz)).toBeGreaterThan(0.3);
@@ -94,9 +92,7 @@ describe('the totem monitor on LABITCONF’s lawn', () => {
     const others = LANDMARKS.filter((x) => x.id !== 'labitconf');
     let inFront = 0;
     // The ring of lanterns round the plaza (world.ts buildPlaza), each dropped on a landmark's lawn.
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + 0.2;
-      const l = { x: plan.plaza.c.x + Math.cos(a) * (plan.plaza.r + 0.25), z: plan.plaza.c.z + Math.sin(a) * (plan.plaza.r + 0.25) };
+    for (const l of plazaLanterns(plan)) {
       const front = inTotemZone(toScreen(l), TOTEM.ZONE.pad);
       if (front) inFront++;
       expect(onLandmarkLawn(l, slots)).toBe(front || onLandmarkLawn(l, slots, others));
