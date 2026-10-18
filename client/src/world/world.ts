@@ -49,6 +49,7 @@ import { builtClipName, emoteAnchor, emoteOf, EMOTE_SYNC_M, type EmoteKind } fro
 import { parseHaunts, pickIdle, type PlaceId } from './places';
 import { vw } from '../i18n/village';
 import { YoutubeStage } from './youtubeStage';
+import { TOTEM, OcclusionProbe, TotemStage, buildTotemMonitor, totemInView, type TotemMonitor } from './totemMonitor';
 import { DomScreen } from './domScreen';
 import { LABITCONF } from './landmarks/labitconf';
 
@@ -107,6 +108,8 @@ export interface WorldHooks {
   onSeatClick?: (seat: Seat) => void;
   /** The theater's big screen was clicked. */
   onTheaterScreenClick?: () => void;
+  /** The totem monitor's screen was clicked (main.ts: focus it, as the theater's screen opens Watch mode). */
+  onTotemScreenClick?: () => void;
   onBubbleClick?: (msgId: string) => void;
 }
 
@@ -204,6 +207,12 @@ export class World {
   private stage: YoutubeStage | null = null;
   /** The theater's film over its screen, made the first time one plays while you're in the hall. */
   private film: DomScreen | null = null;
+  /** The totem monitor on LABITCONF's lawn, built with the landmarks, and its live page (world/totemMonitor.ts). */
+  private totem: TotemMonitor | null = null;
+  private totemStage: TotemStage | null = null;
+  private totemProbe = new OcclusionProbe();
+  /** The totem's focus is open (main.ts): its page is there, not on the monitor. */
+  private totemFocused = false;
   /** LABITCONF's video may sound (main.ts: the Sound switch, after a gesture). */
   stageSound = false;
   /** Furniture the player bumps into but can jump onto (see PlayerController). */
@@ -303,6 +312,7 @@ export class World {
     this.camera.updateProjectionMatrix();
     this.post.setSize(w, h);
     this.stage?.setSize(w, h);
+    this.totemStage?.setSize(w, h);
     this.film?.setSize(w, h);
   }
 
@@ -562,6 +572,7 @@ export class World {
     this.decorate();
     this.buildSportsGround();
     this.buildLandmarks();
+    this.buildTotem();
     // Every seat (bench, stool, log, chair) is solid up to its seat height.
     for (const seat of this.seats) {
       if (seat.dynamic || seat.managed) continue;
@@ -692,16 +703,33 @@ export class World {
       b.group.traverse((o) => { o.userData.landmark = d.id; });
       this.staticRoot.add(b.group);
       this.landmarks.set(d.id, b);
-      for (const so of b.solids ?? []) {
-        const c = this.landmarkToWorld(s, d.forward, { x: so.x, z: so.z });
-        const cs = Math.abs(Math.cos(s.rot)), sn = Math.abs(Math.sin(s.rot));
-        const hx = so.hx * cs + so.hz * sn, hz = so.hx * sn + so.hz * cs;
-        this.solids.push({ minX: c.x - hx, maxX: c.x + hx, minZ: c.z - hz, maxZ: c.z + hz, top: so.top });
-      }
+      for (const so of b.solids ?? []) this.solids.push(this.landmarkSolid(s, d.forward, so));
       for (const seat of b.seats ?? []) {
         this.seats.push({ pos: this.landmarkToWorld(s, d.forward, seat.pos), face: seat.face + s.rot, y: seat.y, taken: null, prop: seat.prop, landmark: d.id, laptop: seat.laptop, indoor: seat.indoor, bench: seat.bench ? `${d.id}:${seat.bench}` : undefined });
       }
     }
+  }
+
+  /** A landmark's local solid (axis-aligned in its frame) as a world solid. */
+  private landmarkSolid(s: Slot, forward: number, so: { x: number; z: number; hx: number; hz: number; top: number }): Solid {
+    const c = this.landmarkToWorld(s, forward, { x: so.x, z: so.z });
+    const cs = Math.abs(Math.cos(s.rot)), sn = Math.abs(Math.sin(s.rot));
+    const hx = so.hx * cs + so.hz * sn, hz = so.hx * sn + so.hz * cs;
+    return { minX: c.x - hx, maxX: c.x + hx, minZ: c.z - hz, maxZ: c.z + hz, top: so.top };
+  }
+
+  /** The totem monitor on LABITCONF's lawn, facing the plaza as the hall does (world/totemMonitor.ts). */
+  private buildTotem(): void {
+    const s = this.landmarkSlots.get('labitconf');
+    const d = LANDMARKS.find((x) => x.id === 'labitconf');
+    if (!s || !d || this.totem) return;
+    const m = buildTotemMonitor();
+    const at = this.landmarkToWorld(s, d.forward, { x: TOTEM.X, z: TOTEM.Z });
+    m.group.position.set(at.x, 0, at.z);
+    m.group.rotation.y = s.rot;
+    this.staticRoot.add(m.group);
+    this.solids.push(this.landmarkSolid(s, d.forward, { ...m.solid, x: TOTEM.X + m.solid.x, z: TOTEM.Z + m.solid.z }));
+    this.totem = m;
   }
 
   /** World → a landmark's local frame. */
@@ -2214,6 +2242,36 @@ export class World {
     this.stage.update(this.camera, inside, dt);
   }
 
+  /** The totem's live page is on the monitor while the camera is near enough and nothing hides the screen; never while its focus is open. */
+  private updateTotem(dt: number): void {
+    if (!this.totem) return;
+    const at = new THREE.Vector3().setFromMatrixPosition(this.totem.screen.matrixWorld);
+    const on = !this.totemFocused && totemInView(this.camera.position.distanceTo(at), !!this.totemStage?.live);
+    if (!this.totemStage) {
+      if (!on) return;
+      const parent = this.canvas.parentElement;
+      if (!parent) return;
+      this.totemStage = new TotemStage(parent, this.canvas, this.totem.screen, TOTEM.W, TOTEM.H);
+      this.totemStage.setSize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight);
+    }
+    // What can stand between the camera and the screen: houses, landmarks, the obelisk.
+    const clear = on && this.totemProbe.clear(dt, this.camera, this.totem.screen, [this.buildingRoot, ...[...this.landmarks.values()].map((b) => b.group), this.obelisk.group]);
+    this.totemStage.update(this.camera, on, clear);
+  }
+
+  /** main.ts opens (or closes) the totem's focus: one page at a time, so the monitor's goes meanwhile. */
+  setTotemFocused(on: boolean): void {
+    this.totemFocused = on;
+    if (on) this.totemStage?.update(this.camera, false, false);
+  }
+
+  /** p in the totem monitor's frame (x across its screen, z out of its face), for main.ts's focus; null without it. */
+  totemLocal(p: Vec2): Vec2 | null {
+    if (!this.totem) return null;
+    const l = this.toLandmarkLocal('labitconf', p);
+    return l && { x: l.x - TOTEM.X, z: l.z - TOTEM.Z };
+  }
+
   /** Is `pk` sitting in the theater? */
   inTheaterSeat(pk: string): boolean {
     return this.seatOf.get(pk)?.landmark === 'theater';
@@ -3048,13 +3106,14 @@ export class World {
       const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       this.raycaster.setFromCamera(ndc, this.camera);
       const ground = this.staticRoot.getObjectByName('ground');
-      const targets: THREE.Object3D[] = [...[...this.people.values()].map((c) => c.root), this.gameRoot, this.buildingRoot, ...[...this.landmarks.values()].map((b) => b.group), ...(ground ? [ground] : [])];
+      const targets: THREE.Object3D[] = [...[...this.people.values()].map((c) => c.root), this.gameRoot, this.buildingRoot, ...[...this.landmarks.values()].map((b) => b.group), ...(this.totem ? [this.totem.group] : []), ...(ground ? [ground] : [])];
       const hit = this.raycaster.intersectObjects(targets, true)[0];
       const noWalk = this.hooks.onTap?.() ?? false;
       if (!hit) return;
       if (hit.object === ground) { if (!noWalk) this.hooks.onGroundClick?.({ x: hit.point.x, z: hit.point.z }); return; }
       let o: THREE.Object3D | null = hit.object;
       if (o.name === 'theater-screen' || o.name === 'theater-screen-back') { this.hooks.onTheaterScreenClick?.(); return; }
+      if (o.name === 'totem-screen') { this.hooks.onTotemScreenClick?.(); return; }
       let person = false;
       for (let q: THREE.Object3D | null = o; q; q = q.parent) if (q.userData.pk) person = true;
       if (!person && !noWalk) {
@@ -3336,6 +3395,7 @@ export class World {
       this.cam.guard();
       this.post.render(dt);
       this.updateStage(dt);
+      this.updateTotem(dt);
       this.updateFilm();
     }
     return dt;
