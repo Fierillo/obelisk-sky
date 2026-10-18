@@ -22,6 +22,7 @@ import * as THREE from 'three';
 import type { Vec2 } from './layout';
 import { canvasTexture } from './landmarks/signs';
 import { DomScreen } from './domScreen';
+import { lookOnlyFrame } from '../ui/theaterPanel';
 
 /** The page focus mode shows; its origin is in the server's CSP frame-src. */
 export const TOTEM_URL = 'https://totemcillo.vercel.app/';
@@ -109,14 +110,8 @@ export class TotemStage {
   /** Once a frame, after the world drew: `on` puts the page in or takes it out; `clear` (nothing in front) lets the layer show. */
   update(camera: THREE.PerspectiveCamera, on: boolean, clear: boolean): void {
     if (on && !this.iframe) {
-      const f = document.createElement('iframe');
-      f.src = this.url;
-      f.title = 'Totem LABITCONF';
-      // Its scripts and its own storage; no popups, no navigating the village away; looked at, not clicked.
-      f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-      f.allow = 'autoplay';
-      f.style.cssText = `width:${TOTEM_PAGE.W}px;height:${TOTEM_PAGE.H}px;border:0;pointer-events:none;display:block`;
-      f.tabIndex = -1;
+      const f = lookOnlyFrame(this.url, 'Totem LABITCONF');
+      Object.assign(f.style, { width: `${TOTEM_PAGE.W}px`, height: `${TOTEM_PAGE.H}px`, border: '0', display: 'block' });
       this.layer.holder.append(f);
       this.iframe = f;
     } else if (!on && this.iframe) {

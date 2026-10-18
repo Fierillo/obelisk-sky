@@ -23,10 +23,6 @@ describe('watch mode', () => {
     const w = new WatchView(() => { closed++; }, document.body, 'https://totemcillo.vercel.app/');
     const f = w.el.querySelector('iframe')!;
     expect(f.src).toBe('https://totemcillo.vercel.app/');
-    expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
-    // Looked at, never clicked: the keys stay with the village (Esc), nothing inside takes focus.
-    expect(f.tabIndex).toBe(-1);
-    expect(f.style.pointerEvents).toBe('none');
     expect(w.el.querySelector('video')).toBeNull();
     expect(w.el.classList.contains('theater-watch-page')).toBe(true);
     expect(w.el.textContent).toContain(vw.backToVillage);
@@ -35,5 +31,14 @@ describe('watch mode', () => {
     w.close();
     expect(document.querySelectorAll('iframe')).toHaveLength(0);
     expect(document.body.classList.contains('watching')).toBe(false);
+  });
+
+  it('frames a page to be looked at, not used: its scripts and storage only, no pointer, no focus (Esc stays with the village)', async () => {
+    const { lookOnlyFrame } = await import('./theaterPanel');
+    const f = lookOnlyFrame('https://totemcillo.vercel.app/', 'Totem LABITCONF');
+    expect(f.src).toBe('https://totemcillo.vercel.app/');
+    expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
+    expect(f.tabIndex).toBe(-1);
+    expect(f.style.pointerEvents).toBe('none');
   });
 });

@@ -243,9 +243,6 @@ describe('the live totem on the monitor', () => {
     stage.update(camera, true, true);
     const f = parent.querySelector('iframe')!;
     expect(f.src).toBe(TOTEM_URL);
-    expect(f.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
-    expect(f.style.pointerEvents).toBe('none');
-    expect(f.tabIndex).toBe(-1);
     // Wide enough that totemcillo draws its totem view, not its phone view (max-width: 700px).
     expect(parseInt(f.style.width, 10)).toBeGreaterThan(700);
     // A desktop-sized page (its layout viewport), scaled down onto the 1.6 × 0.9 screen as one 16:9 box.

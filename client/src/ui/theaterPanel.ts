@@ -21,6 +21,19 @@ const btn = (text: string, cls: string, on: () => void, title = ''): HTMLButtonE
   return b;
 };
 
+/** A page in an <iframe>, to be looked at, not used: its scripts and its own storage, no popups, no navigating the village away;
+ *  no pointer and no focus (Esc stays with the village; a page's QR is the way in). The totem's monitor and Watch mode's page. */
+export function lookOnlyFrame(src: string, title: string): HTMLIFrameElement {
+  const f = h('iframe');
+  f.src = src;
+  f.title = title;
+  f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+  f.allow = 'autoplay';
+  f.tabIndex = -1;
+  f.style.pointerEvents = 'none';
+  return f;
+}
+
 /**
  * Watch mode: the film fills the page under the chat and the call bar; the 3D village isn't drawn (main.ts skips the frame) until
  * you come back. `show` swaps the stream (or a card's words when nothing
@@ -44,15 +57,7 @@ export class WatchView {
     this.card = h('div', 'theater-watch-card');
     const back = btn(vw.backToVillage, 'theater-watch-back', () => this.onClose(), 'Esc');
     if (page) {
-      // Looked at, not clicked (its QR is the way in): no pointer, no focus, so Esc stays with the village.
-      const f = h('iframe');
-      f.src = page;
-      f.title = 'Totem LABITCONF';
-      f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-      f.allow = 'autoplay';
-      f.tabIndex = -1;
-      f.style.pointerEvents = 'none';
-      this.el.append(f, back);
+      this.el.append(lookOnlyFrame(page, 'Totem LABITCONF'), back);
     } else this.el.append(this.video, this.card, back);
     parent.prepend(this.el);
     document.body.classList.add('watching');
