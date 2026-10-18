@@ -110,11 +110,13 @@ Find a house and say hi. Busier channel, bigger house. Not admitted yet? You lan
 </tr>
 <tr>
 <td><img src="docs/readme/shots/first-person.jpg" alt="First-person view at night, your own hands in front of you"></td>
-<td><img src="docs/readme/shots/la-crypta.jpg" alt="La Crypta landmark with its info card"></td>
+<td valign="middle"><b>First person.</b> Press <kbd>V</kbd> and look around through your own eyes, hands and all.</td>
 </tr>
 <tr>
-<td><b>First person.</b> Press <kbd>V</kbd> and look around through your own eyes, hands and all.</td>
-<td><b>Landmarks from Buenos Aires.</b> La Crypta, the nostr-wot HQ, the café, the parrilla, Liberture's house, the theater, and LABITCONF with La Bitcoineta parked inside.</td>
+<td colspan="2"><img src="docs/readme/shots/landmarks.jpg" alt="Six landmarks: La Crypta's brick house, the nostr-wot HQ, the café, the parrilla, Liberture's house and the theater"></td>
+</tr>
+<tr>
+<td colspan="2"><b>Landmarks from Buenos Aires.</b> La Crypta, the nostr-wot HQ, the café, the parrilla, Liberture's house, the theater, and LABITCONF with La Bitcoineta parked inside.</td>
 </tr>
 </table>
 
