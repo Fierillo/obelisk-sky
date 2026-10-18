@@ -7,7 +7,7 @@ import { LABITCONF } from './landmarks/labitconf';
 import { CHAR_HEIGHT } from './character';
 import { obeliskShape } from './obelisk';
 import { VILLAGE_WORDS } from '../i18n/village';
-import { TOTEM, TOTEM_URL, TOTEM_ORIGIN, buildTotemMonitor, drawTotemCard, inTotemZone, totemInView, OcclusionProbe, TotemStage } from './totemMonitor';
+import { TOTEM, TOTEM_URL, TOTEM_ORIGIN, buildTotemMonitor, drawTotemCard, inTotemZone, totemInView, OcclusionProbe, TotemStage, TOTEM_PAGE } from './totemMonitor';
 
 /** LABITCONF's slot and the monitor's footprint in world space, as World places them. */
 function placed() {
@@ -248,6 +248,12 @@ describe('the live totem on the monitor', () => {
     expect(f.tabIndex).toBe(-1);
     // Wide enough that totemcillo draws its totem view, not its phone view (max-width: 700px).
     expect(parseInt(f.style.width, 10)).toBeGreaterThan(700);
+    // A desktop-sized page (its layout viewport), scaled down onto the 1.6 × 0.9 screen as one 16:9 box.
+    expect(f.style.width).toBe(`${TOTEM_PAGE.W}px`);
+    expect(f.style.height).toBe(`${TOTEM_PAGE.H}px`);
+    const holder = f.parentElement as HTMLElement;
+    expect(holder.style.width).toBe(`${TOTEM_PAGE.W}px`);
+    expect(holder.style.height).toBe(`${TOTEM_PAGE.H}px`);
     expect(layer.style.display).toBe('');
     expect(stage.live).toBe(true);
     // Hidden by a building: the 3D card shows, the page keeps running.
@@ -258,5 +264,11 @@ describe('the live totem on the monitor', () => {
     stage.update(camera, false, true);
     expect(parent.querySelectorAll('iframe')).toHaveLength(0);
     expect(stage.live).toBe(false);
+  });
+
+  it('desktop page size: 1600 × 900 CSS px, wider than totemcillo’s phone breakpoint, the screen’s own 16:9', () => {
+    expect(TOTEM_PAGE).toEqual({ W: 1600, H: 900 });
+    expect(TOTEM_PAGE.W).toBeGreaterThan(700);
+    expect(TOTEM.W / TOTEM_PAGE.W).toBeCloseTo(TOTEM.H / TOTEM_PAGE.H, 12);
   });
 });

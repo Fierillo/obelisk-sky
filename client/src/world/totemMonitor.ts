@@ -45,8 +45,9 @@ export const TOTEM = {
   PROBE_S: 0.2,
 } as const;
 
-/** The iframe's width in CSS pixels: over totemcillo's phone breakpoint (700), so it draws the totem view. */
-const PX_W = 1280;
+/** The page's size in CSS pixels, the screen's 16:9: its layout viewport is a desktop's (totemcillo draws its phone view at 700 px wide
+ *  and below), and DomScreen scales the box down onto the 1.6 × 0.9 screen. */
+export const TOTEM_PAGE = { W: 1600, H: 900 } as const;
 
 /** Is `l` (monitor-local: x across the screen, z out of its face) on the ground in front of the screen? */
 export function inTotemZone(l: Vec2, pad = 0): boolean {
@@ -93,7 +94,7 @@ export class TotemStage {
   private iframe: HTMLIFrameElement | null = null;
 
   constructor(parent: HTMLElement, after: Element | null, screen: THREE.Object3D, width: number, height: number, private url = TOTEM_URL) {
-    this.layer = new DomScreen(parent, after, screen, width, height, 'totem-video', PX_W);
+    this.layer = new DomScreen(parent, after, screen, width, height, 'totem-video', TOTEM_PAGE.W);
   }
 
   /** Is the page in the document? */
@@ -114,7 +115,7 @@ export class TotemStage {
       // Its scripts and its own storage; no popups, no navigating the village away; looked at, not clicked.
       f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
       f.allow = 'autoplay';
-      f.style.cssText = `width:${PX_W}px;height:${Math.round((PX_W * TOTEM.H) / TOTEM.W)}px;border:0;pointer-events:none;display:block`;
+      f.style.cssText = `width:${TOTEM_PAGE.W}px;height:${TOTEM_PAGE.H}px;border:0;pointer-events:none;display:block`;
       f.tabIndex = -1;
       this.layer.holder.append(f);
       this.iframe = f;
