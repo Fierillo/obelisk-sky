@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { planIsland, trackSite, onTrack } from './layout';
-import { LANDMARKS, reserveLandmarkSlots } from './landmarks/index';
+import { LANDMARKS, reserveLandmarkSlots, onLandmarkLawn } from './landmarks/index';
 import { LABITCONF } from './landmarks/labitconf';
 import { CHAR_HEIGHT } from './character';
 import { obeliskShape } from './obelisk';
@@ -14,14 +14,20 @@ function placed() {
   const plan = planIsland();
   const track = trackSite(plan);
   const free = plan.slots.filter((s) => !track || !onTrack(s.pos, track, s.w * 0.7 + 0.6));
-  const s = reserveLandmarkSlots(free, plan.plaza.c).get('labitconf')!;
+  const slots = reserveLandmarkSlots(free, plan.plaza.c);
+  const s = slots.get('labitconf')!;
   const d = LANDMARKS.find((x) => x.id === 'labitconf')!;
   const c = Math.cos(s.rot), sn = Math.sin(s.rot);
   const toWorld = (x: number, z: number) => ({ x: s.pos.x + sn * d.forward + x * c + z * sn, z: s.pos.z + c * d.forward - x * sn + z * c });
   const m = buildTotemMonitor();
   const so = m.solid;
   const corners = [[-so.hx, -so.hz], [so.hx, -so.hz], [-so.hx, so.hz], [so.hx, so.hz]].map(([x, z]) => toWorld(TOTEM.X + x, TOTEM.Z + z));
-  return { plan, s, d, m, corners, centre: toWorld(TOTEM.X, TOTEM.Z) };
+  // World → the screen's frame (x across it, z out of its face), as World.totemLocal.
+  const toScreen = (p: { x: number; z: number }) => {
+    const dx = p.x - (s.pos.x + sn * d.forward), dz = p.z - (s.pos.z + c * d.forward);
+    return { x: dx * c - dz * sn - TOTEM.X, z: dx * sn + dz * c - TOTEM.Z };
+  };
+  return { plan, slots, s, d, m, corners, centre: toWorld(TOTEM.X, TOTEM.Z), toScreen };
 }
 
 describe('the totem monitor on LABITCONF’s lawn', () => {
@@ -81,6 +87,21 @@ describe('the totem monitor on LABITCONF’s lawn', () => {
     }
     // And never inside the obelisk.
     expect(Math.hypot(centre.x - plan.plaza.c.x, centre.z - plan.plaza.c.z)).toBeGreaterThan(obeliskShape(8).base + 1);
+  });
+
+  it('keeps the plaza’s lanterns out from in front of the screen: LABITCONF’s lawn reaches past its watch zone, and no other lantern goes', () => {
+    const { plan, slots, toScreen } = placed();
+    const others = LANDMARKS.filter((x) => x.id !== 'labitconf');
+    let inFront = 0;
+    // The ring of lanterns round the plaza (world.ts buildPlaza), each dropped on a landmark's lawn.
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + 0.2;
+      const l = { x: plan.plaza.c.x + Math.cos(a) * (plan.plaza.r + 0.25), z: plan.plaza.c.z + Math.sin(a) * (plan.plaza.r + 0.25) };
+      const front = inTotemZone(toScreen(l), TOTEM.ZONE.pad);
+      if (front) inFront++;
+      expect(onLandmarkLawn(l, slots)).toBe(front || onLandmarkLawn(l, slots, others));
+    }
+    expect(inFront).toBe(1); // the one that stood between the plaza and the screen
   });
 });
 

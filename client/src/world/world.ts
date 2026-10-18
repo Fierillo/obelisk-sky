@@ -33,7 +33,7 @@ import { chooseLights, lampLevel, lightBudget, LightScan, scanOnChange, type Lig
 import { buildObelisk, obeliskShape, plinthSteps, type Obelisk } from './obelisk';
 import { Overlay } from './overlay';
 import { Pet, buildHat } from './pet';
-import { LANDMARKS, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
+import { LANDMARKS, onLandmarkLawn, reserveLandmarkSlots, type LandmarkBuild, type LandmarkId, type LandmarkInterior, type SeatProp } from './landmarks';
 import { THEATER, type TheaterHall } from './landmarks/theater';
 import { buildMill, type Mill } from './mill';
 import type { Avatar } from '../nostr/avatars';
@@ -655,19 +655,6 @@ export class World {
     return false;
   }
 
-  /** Is p on a landmark's front lawn (where its stairs or terrace come down)? */
-  private onLandmarkLawn(p: Vec2): boolean {
-    for (const d of LANDMARKS) {
-      const s = this.landmarkSlots.get(d.id);
-      if (!s || !d.lawn) continue;
-      const dx = p.x - s.pos.x, dz = p.z - s.pos.z;
-      const along = dx * Math.sin(s.rot) + dz * Math.cos(s.rot);
-      const across = dx * Math.cos(s.rot) - dz * Math.sin(s.rot);
-      if (along > 0 && along < d.lawn.along && Math.abs(across) < d.lawn.across) return true;
-    }
-    return false;
-  }
-
   /** Slot-local → world, for a landmark standing in slot `s` pushed `forward`. */
   private landmarkToWorld(s: Slot, forward: number, p: Vec2): Vec2 {
     const c = Math.cos(s.rot), sn = Math.sin(s.rot);
@@ -1233,7 +1220,7 @@ export class World {
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + 0.2;
       const p = { x: c.x + Math.cos(a) * (this.plan.plaza.r + 0.25), z: c.z + Math.sin(a) * (this.plan.plaza.r + 0.25) };
-      if (this.onLandmarkLawn(p)) continue; // a landmark's stairs or terrace come down here
+      if (onLandmarkLawn(p, this.landmarkSlots)) continue; // a landmark's stairs or terrace come down here
       this.lantern(p);
     }
     // Three long benches, three places each, sharing a mate. They stand
